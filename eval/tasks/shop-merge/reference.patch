@@ -1,0 +1,63 @@
+diff --git a/lib/carts.js b/lib/carts.js
+index 35fab63..34b53d0 100644
+--- a/lib/carts.js
++++ b/lib/carts.js
+@@ -12,6 +12,11 @@ function findLine(customer, productId) {
+ }
+ 
+ function add(customer, productId, qty) {
++  const line = findLine(customer, productId);
++  if (line) {
++    line.qty += qty;
++    return;
++  }
+   linesOf(customer).push({ productId, qty });
+ }
+ 
+diff --git a/server.js b/server.js
+index 7b0c8fd..d75f510 100644
+--- a/server.js
++++ b/server.js
+@@ -60,15 +60,30 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ function listProducts({ res, url }) {
+   let rows = catalog.all();
++  const q = (url.searchParams.get('q') || '').toLowerCase();
++  if (q) rows = rows.filter((p) => p.name.toLowerCase().includes(q));
+   send(res, 200, rows);
+ }
+ 
++function categories({ res }) {
++  send(res, 200, [...new Set(catalog.all().map((p) => p.category))].sort());
++}
++
+ function showCart({ req, res }) {
+   send(res, 200, cartView(customerOf(req)));
+ }
+ 
++function cartCount({ req, res }) {
++  const count = carts.linesOf(customerOf(req)).reduce((sum, line) => sum + line.qty, 0);
++  send(res, 200, { count });
++}
++
+ async function addItem({ req, res }) {
+   const customer = customerOf(req);
+   const { productId, qty = 1 } = await readJson(req);
+@@ -109,8 +124,11 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [] };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'GET' && pathname === '/products') return listProducts(ctx);
++  if (method === 'GET' && pathname === '/categories') return categories(ctx);
+   if (method === 'GET' && pathname === '/cart') return showCart(ctx);
++  if (method === 'GET' && pathname === '/cart/count') return cartCount(ctx);
+   if (method === 'POST' && pathname === '/cart/items') return addItem(ctx);
+   const line = /^\/cart\/items\/(\d+)$/.exec(pathname);
+   if (method === 'DELETE' && line) return removeItem({ ...ctx, params: [line[1]] });

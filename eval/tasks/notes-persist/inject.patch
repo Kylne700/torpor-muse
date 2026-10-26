@@ -1,0 +1,9 @@
+diff --git a/lib/store.js b/lib/store.js
+index c5d22ec..bc42cb9 100644
+--- a/lib/store.js
++++ b/lib/store.js
+@@ -16,3 +16,3 @@ function load(name) {
+ function save(name, rows) {
+-  fs.writeFileSync(path.join(DATA, name + '.json'), JSON.stringify(rows, null, 2) + '\n');
++  fs.writeFileSync(path.join(DATA, name + '.json.tmp'), JSON.stringify(rows, null, 2) + '\n');
+ }

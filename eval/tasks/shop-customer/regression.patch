@@ -1,0 +1,67 @@
+diff --git a/server.js b/server.js
+index 7b0c8fd..e3ddd07 100644
+--- a/server.js
++++ b/server.js
+@@ -35,7 +35,9 @@ function readJson(req) {
+ }
+ 
+ function customerOf(req) {
+-  return String(req.headers['x-customer'] || '').trim() || 'guest';
++  const name = String(req.headers['x-customer'] || '').trim();
++  if (!name) throw Object.assign(new Error('X-Customer header required'), { status: 400 });
++  return name;
+ }
+ 
+ function cartView(customer) {
+@@ -60,15 +62,36 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
+-function listProducts({ res, url }) {
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
++function listProducts({ req, res, url }) {
++  customerOf(req);
+   let rows = catalog.all();
+   send(res, 200, rows);
+ }
+ 
++function getProduct({ req, res, params }) {
++  customerOf(req);
++  const product = catalog.byId(Number(params[0]));
++  if (!product) return send(res, 404, { error: 'no such product' });
++  send(res, 200, product);
++}
++
++function categories({ res }) {
++  send(res, 200, [...new Set(catalog.all().map((p) => p.category))].sort());
++}
++
+ function showCart({ req, res }) {
+   send(res, 200, cartView(customerOf(req)));
+ }
+ 
++function cartCount({ req, res }) {
++  const count = carts.linesOf(customerOf(req)).reduce((sum, line) => sum + line.qty, 0);
++  send(res, 200, { count });
++}
++
+ async function addItem({ req, res }) {
+   const customer = customerOf(req);
+   const { productId, qty = 1 } = await readJson(req);
+@@ -109,8 +132,13 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [] };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'GET' && pathname === '/products') return listProducts(ctx);
++  const product = /^\/products\/(\d+)$/.exec(pathname);
++  if (method === 'GET' && product) return getProduct({ ...ctx, params: [product[1]] });
++  if (method === 'GET' && pathname === '/categories') return categories(ctx);
+   if (method === 'GET' && pathname === '/cart') return showCart(ctx);
++  if (method === 'GET' && pathname === '/cart/count') return cartCount(ctx);
+   if (method === 'POST' && pathname === '/cart/items') return addItem(ctx);
+   const line = /^\/cart\/items\/(\d+)$/.exec(pathname);
+   if (method === 'DELETE' && line) return removeItem({ ...ctx, params: [line[1]] });

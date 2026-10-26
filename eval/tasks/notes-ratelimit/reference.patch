@@ -1,0 +1,83 @@
+diff --git a/lib/auth.js b/lib/auth.js
+index 0762cdd..7a03ac4 100644
+--- a/lib/auth.js
++++ b/lib/auth.js
+@@ -38,6 +38,28 @@ function currentUser(req) {
+   return userId ? store.getUser(userId) : null;
+ }
+ 
++const failures = new Map(); // key -> { count, windowEnd, until }
++const MAX_FAILURES = 5;
++const WINDOW_MS = 60 * 1000;
++
++function isLocked(key) {
++  const f = failures.get(key);
++  return Boolean(f && f.until > Date.now());
++}
++
++function recordFailure(key) {
++  const now = Date.now();
++  let f = failures.get(key);
++  if (!f || f.windowEnd <= now) f = { count: 0, windowEnd: now + WINDOW_MS, until: 0 };
++  f.count += 1;
++  if (f.count >= MAX_FAILURES) f.until = now + WINDOW_MS;
++  failures.set(key, f);
++}
++
++function clearFailures(key) {
++  failures.delete(key);
++}
++
+ module.exports = {
+   hashPassword,
+   verifyPassword,
+@@ -46,4 +68,7 @@ module.exports = {
+   createSession,
+   destroySession,
+   currentUser,
++  isLocked,
++  recordFailure,
++  clearFailures,
+ };
+diff --git a/server.js b/server.js
+index 709599a..e9003d3 100644
+--- a/server.js
++++ b/server.js
+@@ -38,6 +38,7 @@ async function handle(req, res) {
+   const method = req.method;
+ 
+   if (method === 'GET' && path === '/') return send(res, 200, PAGE);
++  if (method === 'GET' && path === '/health') return send(res, 200, { status: 'ok' });
+ 
+   if (method === 'POST' && path === '/register') {
+     const { username, password } = await readJson(req);
+@@ -51,10 +52,16 @@ async function handle(req, res) {
+ 
+   if (method === 'POST' && path === '/login') {
+     const { username, password } = await readJson(req);
+-    const user = store.findUser(username);
++    const key = String(username).toLowerCase();
++    if (auth.isLocked(key)) {
++      return send(res, 429, { error: 'too many failed logins, try again later' }, { 'Retry-After': '60' });
++    }
++    const user = store.findUser(String(username).toLowerCase());
+     if (!user || !auth.verifyPassword(password, user.password)) {
++      auth.recordFailure(key);
+       return send(res, 401, { error: 'wrong username or password' });
+     }
++    auth.clearFailures(key);
+     const sid = auth.createSession(user.id);
+     return send(res, 200, { username: user.username }, { 'Set-Cookie': `sid=${sid}; HttpOnly; Path=/` });
+   }
+@@ -67,6 +74,11 @@ async function handle(req, res) {
+   if (!user) return send(res, 401, { error: 'login required' });
+ 
+   if (method === 'GET' && path === '/me') return send(res, 200, { id: user.id, username: user.username });
++  if (method === 'GET' && path === '/stats') return send(res, 200, { notes: store.notesOf(user.id).length });
++  if (method === 'GET' && path === '/export') {
++    const rows = store.notesOf(user.id).map((n) => ({ id: n.id, title: n.title, body: n.body }));
++    return send(res, 200, rows, { 'Content-Disposition': 'attachment; filename="notes.json"' });
++  }
+ 
+   if (path === '/notes' && method === 'GET') {
+     let rows = store.notesOf(user.id);

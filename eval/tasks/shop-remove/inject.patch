@@ -1,0 +1,11 @@
+diff --git a/lib/carts.js b/lib/carts.js
+index 35fab63..51774cf 100644
+--- a/lib/carts.js
++++ b/lib/carts.js
+@@ -20,2 +20,6 @@ function remove(customer, productId) {
+   if (!line) return false;
++  if (line.qty > 1) {
++    line.qty -= 1;
++    return true;
++  }
+   const lines = linesOf(customer);

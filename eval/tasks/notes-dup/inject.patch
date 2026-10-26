@@ -1,0 +1,9 @@
+diff --git a/server.js b/server.js
+index 011e9d6..ee21ff6 100644
+--- a/server.js
++++ b/server.js
+@@ -47,3 +47,3 @@ async function handle(req, res) {
+     }
+-    if (store.findUser(username)) return send(res, 409, { error: 'username taken' });
++    if (store.findUser(String(username).toUpperCase())) return send(res, 409, { error: 'username taken' });
+     const user = store.addUser(username, auth.hashPassword(password));

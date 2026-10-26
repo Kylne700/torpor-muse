@@ -1,0 +1,114 @@
+diff --git a/lib/db.js b/lib/db.js
+index c601afe..51647a2 100644
+--- a/lib/db.js
++++ b/lib/db.js
+@@ -55,4 +55,10 @@ function removeTodo(todo) {
+   save();
+ }
+ 
++function removeTodos(list) {
++  data.todos = data.todos.filter((t) => !list.includes(t));
++  save();
++}
++
+ module.exports = { data, save, findUser, getUser, addUser, todosOf, getTodo, addTodo, removeTodo };
++module.exports.removeTodos = removeTodos;
+diff --git a/server.js b/server.js
+index e3c7288..26afe4c 100644
+--- a/server.js
++++ b/server.js
+@@ -45,6 +45,10 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ async function signup({ req, res }) {
+   const { username, password } = await readJson(req);
+   if (!auth.validUsername(username) || !auth.validPassword(password)) {
+@@ -66,6 +70,8 @@ async function login({ req, res }) {
+ 
+ function listTodos({ res, url, user }) {
+   let rows = db.todosOf(user.id);
++  const done = url.searchParams.get('done');
++  if (done === 'true' || done === 'false') rows = rows.filter((t) => t.done === (done === 'true'));
+   send(res, 200, rows.map(present));
+ }
+ 
+@@ -101,29 +107,54 @@ function deleteTodo({ res, params, user }) {
+   res.end();
+ }
+ 
++function stats({ res, user }) {
++  const rows = db.todosOf(user.id);
++  const done = rows.filter((t) => t.done).length;
++  send(res, 200, { total: rows.length, done, open: rows.length - done });
++}
++
++function clearDone({ res, user }) {
++  const finished = db.todosOf(user.id).filter((t) => t.done);
++  db.removeTodos(finished);
++  send(res, 200, { removed: finished.length });
++}
++
++const routes = [
++  ['GET', '/', home, false],
++  ['GET', '/health', health, false],
++  ['POST', '/signup', signup, false],
++  ['POST', '/token', login, false],
++  ['GET', '/stats', stats, true],
++  ['POST', '/todos/clear-done', clearDone, true],
++  ['GET', '/todos', listTodos, true],
++  ['POST', '/todos', createTodo, true],
++  ['GET', '/todos/:id', getTodo, true],
++  ['PATCH', '/todos/:id', patchTodo, true],
++  ['DELETE', '/todos/:id', deleteTodo, true],
++].map(([method, pattern, handler, needsLogin]) => ({
++  method,
++  handler,
++  needsLogin,
++  regex: new RegExp('^' + pattern.replace(/:\w+/g, '(\\d+)') + '$'),
++}));
++
+ async function dispatch(req, res) {
+   const url = new URL(req.url, 'http://localhost');
+-  const { pathname } = url;
+-  const method = req.method;
+-  const ctx = { req, res, url, params: [], user: null };
+-
+-  if (method === 'GET' && pathname === '/') return home(ctx);
+-  if (method === 'POST' && pathname === '/signup') return signup(ctx);
+-  if (method === 'POST' && pathname === '/token') return login(ctx);
+-
+-  ctx.user = auth.userFor(req);
+-  if (!ctx.user) return send(res, 401, { error: 'login required' });
+-
+-  if (pathname === '/todos' && method === 'GET') return listTodos(ctx);
+-  if (pathname === '/todos' && method === 'POST') return createTodo(ctx);
+-  const one = /^\/todos\/(\d+)$/.exec(pathname);
+-  if (one) {
+-    ctx.params = [one[1]];
+-    if (method === 'GET') return getTodo(ctx);
+-    if (method === 'PATCH') return patchTodo(ctx);
+-    if (method === 'DELETE') return deleteTodo(ctx);
++  const target = url.pathname;
++  let pathKnown = false;
++  for (const route of routes) {
++    const m = route.regex.exec(target);
++    if (!m) continue;
++    pathKnown = true;
++    if (route.method !== req.method) continue;
++    const ctx = { req, res, url, params: m.slice(1), user: null };
++    if (route.needsLogin) {
++      ctx.user = auth.userFor(req);
++      if (!ctx.user) return send(res, 401, { error: 'login required' });
++    }
++    return route.handler(ctx);
+   }
+-  send(res, 404, { error: 'not found' });
++  send(res, pathKnown ? 405 : 404, { error: pathKnown ? 'method not allowed' : 'not found' });
+ }
+ 
+ http

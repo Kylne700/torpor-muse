@@ -1,0 +1,9 @@
+diff --git a/lib/db.js b/lib/db.js
+index 51647a2..60c03ed 100644
+--- a/lib/db.js
++++ b/lib/db.js
+@@ -14,3 +14,3 @@ try {
+ function save() {
+-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2) + '\n');
++  fs.writeFileSync(FILE + '.tmp', JSON.stringify(data, null, 2) + '\n');
+ }

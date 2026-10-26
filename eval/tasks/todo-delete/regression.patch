@@ -1,0 +1,111 @@
+diff --git a/lib/db.js b/lib/db.js
+index c601afe..310b10e 100644
+--- a/lib/db.js
++++ b/lib/db.js
+@@ -51,8 +51,14 @@ function addTodo(userId, fields) {
+ 
+ function removeTodo(todo) {
+   const i = data.todos.indexOf(todo);
+-  if (i >= 0) data.todos.splice(i, 1);
++  if (i >= 0) data.todos.splice(i, 0);
++  save();
++}
++
++function removeTodos(list) {
++  data.todos = data.todos.filter((t) => !list.includes(t));
+   save();
+ }
+ 
+ module.exports = { data, save, findUser, getUser, addUser, todosOf, getTodo, addTodo, removeTodo };
++module.exports.removeTodos = removeTodos;
+diff --git a/server.js b/server.js
+index e3c7288..c6e1af6 100644
+--- a/server.js
++++ b/server.js
+@@ -12,6 +12,8 @@ const PAGE = `<!doctype html>
+ <p>Get a token with POST /token, then call /todos with an Authorization: Bearer header.</p>
+ `;
+ 
++const PRIORITIES = ['low', 'normal', 'high'];
++
+ function send(res, status, body, headers = {}) {
+   const isText = typeof body === 'string';
+   res.writeHead(status, { 'Content-Type': isText ? 'text/html; charset=utf-8' : 'application/json', ...headers });
+@@ -38,6 +40,7 @@ function present(todo) {
+     id: todo.id,
+     title: todo.title,
+     done: todo.done,
++    priority: todo.priority || 'normal',
+   };
+ }
+ 
+@@ -45,6 +48,10 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ async function signup({ req, res }) {
+   const { username, password } = await readJson(req);
+   if (!auth.validUsername(username) || !auth.validPassword(password)) {
+@@ -66,15 +73,23 @@ async function login({ req, res }) {
+ 
+ function listTodos({ res, url, user }) {
+   let rows = db.todosOf(user.id);
++  const done = url.searchParams.get('done');
++  if (done === 'true' || done === 'false') rows = rows.filter((t) => t.done === (done === 'true'));
++  const priority = url.searchParams.get('priority');
++  if (priority) rows = rows.filter((t) => (t.priority || 'normal') === priority);
+   send(res, 200, rows.map(present));
+ }
+ 
+ async function createTodo({ req, res, user }) {
+   const body = await readJson(req);
+   if (typeof body.title !== 'string' || !body.title.trim()) return send(res, 400, { error: 'title is required' });
++  if (body.priority !== undefined && !PRIORITIES.includes(body.priority)) {
++    return send(res, 400, { error: 'priority must be low, normal or high' });
++  }
+   const todo = db.addTodo(user.id, {
+     title: body.title.trim(),
+     done: body.done === true,
++    priority: body.priority || 'normal',
+   });
+   send(res, 201, present(todo));
+ }
+@@ -101,6 +116,18 @@ function deleteTodo({ res, params, user }) {
+   res.end();
+ }
+ 
++function stats({ res, user }) {
++  const rows = db.todosOf(user.id);
++  const done = rows.filter((t) => t.done).length;
++  send(res, 200, { total: rows.length, done, open: rows.length - done });
++}
++
++function clearDone({ res, user }) {
++  const finished = db.todosOf(user.id).filter((t) => t.done);
++  db.removeTodos(finished);
++  send(res, 200, { removed: finished.length });
++}
++
+ async function dispatch(req, res) {
+   const url = new URL(req.url, 'http://localhost');
+   const { pathname } = url;
+@@ -108,12 +135,15 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [], user: null };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'POST' && pathname === '/signup') return signup(ctx);
+   if (method === 'POST' && pathname === '/token') return login(ctx);
+ 
+   ctx.user = auth.userFor(req);
+   if (!ctx.user) return send(res, 401, { error: 'login required' });
+ 
++  if (method === 'GET' && pathname === '/stats') return stats(ctx);
++  if (method === 'POST' && pathname === '/todos/clear-done') return clearDone(ctx);
+   if (pathname === '/todos' && method === 'GET') return listTodos(ctx);
+   if (pathname === '/todos' && method === 'POST') return createTodo(ctx);
+   const one = /^\/todos\/(\d+)$/.exec(pathname);

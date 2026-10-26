@@ -1,0 +1,83 @@
+diff --git a/lib/carts.js b/lib/carts.js
+index 35fab63..34b53d0 100644
+--- a/lib/carts.js
++++ b/lib/carts.js
+@@ -12,6 +12,11 @@ function findLine(customer, productId) {
+ }
+ 
+ function add(customer, productId, qty) {
++  const line = findLine(customer, productId);
++  if (line) {
++    line.qty += qty;
++    return;
++  }
+   linesOf(customer).push({ productId, qty });
+ }
+ 
+diff --git a/server.js b/server.js
+index 7b0c8fd..efb8dc9 100644
+--- a/server.js
++++ b/server.js
+@@ -49,9 +49,12 @@ function cartView(customer) {
+       lineCents: product.priceCents * line.qty,
+     };
+   });
+-  const totalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
++  const subtotalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
++  const vatCents = Math.round((subtotalCents * 17) / 117);
++  const totalCents = subtotalCents + vatCents;
+   return {
+     items,
++    vatCents,
+     totalCents,
+   };
+ }
+@@ -60,15 +63,28 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ function listProducts({ res, url }) {
+   let rows = catalog.all();
+   send(res, 200, rows);
+ }
+ 
++function categories({ res }) {
++  send(res, 200, [...new Set(catalog.all().map((p) => p.category))].sort());
++}
++
+ function showCart({ req, res }) {
+   send(res, 200, cartView(customerOf(req)));
+ }
+ 
++function cartCount({ req, res }) {
++  const count = carts.linesOf(customerOf(req)).reduce((sum, line) => sum + line.qty, 0);
++  send(res, 200, { count });
++}
++
+ async function addItem({ req, res }) {
+   const customer = customerOf(req);
+   const { productId, qty = 1 } = await readJson(req);
+@@ -93,6 +109,7 @@ function checkout({ req, res }) {
+   if (!view.items.length) return send(res, 400, { error: 'the cart is empty' });
+   const order = orders.create(customer, {
+     items: view.items,
++    vatCents: view.vatCents,
+     totalCents: view.totalCents,
+   });
+   send(res, 201, order);
+@@ -109,8 +126,11 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [] };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'GET' && pathname === '/products') return listProducts(ctx);
++  if (method === 'GET' && pathname === '/categories') return categories(ctx);
+   if (method === 'GET' && pathname === '/cart') return showCart(ctx);
++  if (method === 'GET' && pathname === '/cart/count') return cartCount(ctx);
+   if (method === 'POST' && pathname === '/cart/items') return addItem(ctx);
+   const line = /^\/cart\/items\/(\d+)$/.exec(pathname);
+   if (method === 'DELETE' && line) return removeItem({ ...ctx, params: [line[1]] });
