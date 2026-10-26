@@ -1,0 +1,9 @@
+diff --git a/lib/db.js b/lib/db.js
+index 51647a2..310b10e 100644
+--- a/lib/db.js
++++ b/lib/db.js
+@@ -53,3 +53,3 @@ function removeTodo(todo) {
+   const i = data.todos.indexOf(todo);
+-  if (i >= 0) data.todos.splice(i, 1);
++  if (i >= 0) data.todos.splice(i, 0);
+   save();

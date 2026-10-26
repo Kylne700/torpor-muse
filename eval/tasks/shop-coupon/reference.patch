@@ -1,0 +1,119 @@
+diff --git a/lib/carts.js b/lib/carts.js
+index 35fab63..0f55c87 100644
+--- a/lib/carts.js
++++ b/lib/carts.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ // Carts live in memory, one per customer, and are gone after a restart. Orders are the durable part.
+ const carts = new Map();
++const coupons = new Map();
+ 
+ function linesOf(customer) {
+   if (!carts.has(customer)) carts.set(customer, []);
+@@ -25,6 +26,10 @@ function remove(customer, productId) {
+ 
+ function clear(customer) {
+   linesOf(customer).splice(0);
++  coupons.delete(customer);
+ }
+ 
+-module.exports = { linesOf, findLine, add, remove, clear };
++const setCoupon = (customer, coupon) => coupons.set(customer, coupon);
++const couponOf = (customer) => coupons.get(customer);
++
++module.exports = { linesOf, findLine, add, remove, clear, setCoupon, couponOf };
+diff --git a/server.js b/server.js
+index 7b0c8fd..f65c307 100644
+--- a/server.js
++++ b/server.js
+@@ -6,6 +6,7 @@ const carts = require('./lib/carts');
+ const orders = require('./lib/orders');
+ 
+ const PORT = Number(process.env.PORT) || 3000;
++const COUPONS = { WELCOME10: 10 };
+ 
+ const PAGE = `<!doctype html>
+ <title>shop</title>
+@@ -49,9 +50,13 @@ function cartView(customer) {
+       lineCents: product.priceCents * line.qty,
+     };
+   });
+-  const totalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
++  const subtotalCents = items.reduce((sum, item) => sum + item.lineCents, 0);
++  const coupon = carts.couponOf(customer);
++  const discountCents = coupon ? Math.floor((subtotalCents * coupon.percent) / 100) : 0;
++  const totalCents = subtotalCents - discountCents;
+   return {
+     items,
++    discountCents,
+     totalCents,
+   };
+ }
+@@ -60,15 +65,28 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ function listProducts({ res, url }) {
+   let rows = catalog.all();
+   send(res, 200, rows);
+ }
+ 
++function categories({ res }) {
++  send(res, 200, [...new Set(catalog.all().map((p) => p.category))].sort());
++}
++
+ function showCart({ req, res }) {
+   send(res, 200, cartView(customerOf(req)));
+ }
+ 
++function cartCount({ req, res }) {
++  const count = carts.linesOf(customerOf(req)).reduce((sum, line) => sum + line.qty, 0);
++  send(res, 200, { count });
++}
++
+ async function addItem({ req, res }) {
+   const customer = customerOf(req);
+   const { productId, qty = 1 } = await readJson(req);
+@@ -87,14 +105,25 @@ function removeItem({ req, res, params }) {
+   send(res, 200, cartView(customer));
+ }
+ 
++async function applyCoupon({ req, res }) {
++  const customer = customerOf(req);
++  const { code } = await readJson(req);
++  const percent = COUPONS[code];
++  if (typeof percent !== 'number') return send(res, 400, { error: 'unknown coupon' });
++  carts.setCoupon(customer, { code, percent });
++  send(res, 200, cartView(customer));
++}
++
+ function checkout({ req, res }) {
+   const customer = customerOf(req);
+   const view = cartView(customer);
+   if (!view.items.length) return send(res, 400, { error: 'the cart is empty' });
+   const order = orders.create(customer, {
+     items: view.items,
++    discountCents: view.discountCents,
+     totalCents: view.totalCents,
+   });
++  carts.clear(customer);
+   send(res, 201, order);
+ }
+ 
+@@ -109,8 +138,12 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [] };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'GET' && pathname === '/products') return listProducts(ctx);
++  if (method === 'GET' && pathname === '/categories') return categories(ctx);
+   if (method === 'GET' && pathname === '/cart') return showCart(ctx);
++  if (method === 'GET' && pathname === '/cart/count') return cartCount(ctx);
++  if (method === 'POST' && pathname === '/cart/coupon') return applyCoupon(ctx);
+   if (method === 'POST' && pathname === '/cart/items') return addItem(ctx);
+   const line = /^\/cart\/items\/(\d+)$/.exec(pathname);
+   if (method === 'DELETE' && line) return removeItem({ ...ctx, params: [line[1]] });

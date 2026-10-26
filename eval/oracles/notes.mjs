@@ -63,19 +63,19 @@ const checks = {
     status(await t.app.client().get('/notes'), 401, 'GET /notes without a cookie');
   },
 
+  // Seeded accounts: login, list and isolation only. Agents test with them and write into data/, so every
+  // count, title or content check uses fresh users.
   'b-legacy-login': async (t) => {
-    const seeded = [
-      ['alice', 'alice-pass-1', 'Welcome', 1, 'Shopping', 2],
-      ['bob', 'bob-pass-2', 'Shopping', 2, 'Welcome', 1],
-    ];
-    for (const [name, pw, mine, myId, theirs, theirId] of seeded) {
+    const seen = [];
+    for (const [name, pw] of [['alice', 'alice-pass-1'], ['bob', 'bob-pass-2']]) {
       const c = t.app.client();
       status(await c.post('/login', { json: { username: name, password: pw } }), 200, `login as ${name}`);
-      const list = status(await c.get('/notes'), 200, 'list notes');
-      assert.ok(list.json.some((n) => n.title === mine), `${name} sees the note ${mine}`);
-      assert.ok(!list.json.some((n) => n.id === theirId && n.title === theirs), `${name} must not see ${theirs}`);
-      assert.ok(myId > 0);
+      status(await c.get('/me'), 200, `session of ${name}`);
+      const list = status(await c.get('/notes'), 200, `list notes of ${name}`);
+      assert.ok(Array.isArray(list.json), 'the list is an array');
+      seen.push(list.json.map((n) => n.id));
     }
+    assert.ok(!seen[0].some((id) => seen[1].includes(id)), 'alice and bob must not share a note');
   },
 
   'b-notes-crud': async (t) => {
@@ -218,15 +218,15 @@ const checks = {
 
   'l4-health': async (t) => {
     const r = status(await t.app.client().get('/health'), 200, 'GET /health without login');
-    assert.deepEqual(r.json, { status: 'ok' });
+    assert.equal(r.json && r.json.status, 'ok');
   },
 
   'l5-stats': async (t) => {
     const { c } = await signup(t.app);
-    assert.deepEqual(status(await c.get('/stats'), 200, 'stats').json, { notes: 0 });
+    assert.equal(status(await c.get('/stats'), 200, 'stats').json.notes, 0);
     await newNote(c, 'one');
     await newNote(c, 'two');
-    assert.deepEqual(status(await c.get('/stats'), 200, 'stats').json, { notes: 2 });
+    assert.equal(status(await c.get('/stats'), 200, 'stats').json.notes, 2);
   },
 
   'l6-export': async (t) => {

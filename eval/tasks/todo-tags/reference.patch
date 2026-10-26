@@ -1,0 +1,92 @@
+diff --git a/lib/db.js b/lib/db.js
+index c601afe..51647a2 100644
+--- a/lib/db.js
++++ b/lib/db.js
+@@ -55,4 +55,10 @@ function removeTodo(todo) {
+   save();
+ }
+ 
++function removeTodos(list) {
++  data.todos = data.todos.filter((t) => !list.includes(t));
++  save();
++}
++
+ module.exports = { data, save, findUser, getUser, addUser, todosOf, getTodo, addTodo, removeTodo };
++module.exports.removeTodos = removeTodos;
+diff --git a/server.js b/server.js
+index e3c7288..df648b5 100644
+--- a/server.js
++++ b/server.js
+@@ -38,6 +38,7 @@ function present(todo) {
+     id: todo.id,
+     title: todo.title,
+     done: todo.done,
++    tags: Array.isArray(todo.tags) ? todo.tags : [],
+   };
+ }
+ 
+@@ -45,6 +46,10 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ async function signup({ req, res }) {
+   const { username, password } = await readJson(req);
+   if (!auth.validUsername(username) || !auth.validPassword(password)) {
+@@ -66,6 +71,10 @@ async function login({ req, res }) {
+ 
+ function listTodos({ res, url, user }) {
+   let rows = db.todosOf(user.id);
++  const done = url.searchParams.get('done');
++  if (done === 'true' || done === 'false') rows = rows.filter((t) => t.done === (done === 'true'));
++  const tag = url.searchParams.get('tag');
++  if (tag) rows = rows.filter((t) => Array.isArray(t.tags) && t.tags.includes(tag));
+   send(res, 200, rows.map(present));
+ }
+ 
+@@ -75,6 +84,7 @@ async function createTodo({ req, res, user }) {
+   const todo = db.addTodo(user.id, {
+     title: body.title.trim(),
+     done: body.done === true,
++    tags: Array.isArray(body.tags) ? body.tags.filter((t) => typeof t === 'string') : [],
+   });
+   send(res, 201, present(todo));
+ }
+@@ -101,6 +111,18 @@ function deleteTodo({ res, params, user }) {
+   res.end();
+ }
+ 
++function stats({ res, user }) {
++  const rows = db.todosOf(user.id);
++  const done = rows.filter((t) => t.done).length;
++  send(res, 200, { total: rows.length, done, open: rows.length - done });
++}
++
++function clearDone({ res, user }) {
++  const finished = db.todosOf(user.id).filter((t) => t.done);
++  db.removeTodos(finished);
++  send(res, 200, { removed: finished.length });
++}
++
+ async function dispatch(req, res) {
+   const url = new URL(req.url, 'http://localhost');
+   const { pathname } = url;
+@@ -108,12 +130,15 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [], user: null };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'POST' && pathname === '/signup') return signup(ctx);
+   if (method === 'POST' && pathname === '/token') return login(ctx);
+ 
+   ctx.user = auth.userFor(req);
+   if (!ctx.user) return send(res, 401, { error: 'login required' });
+ 
++  if (method === 'GET' && pathname === '/stats') return stats(ctx);
++  if (method === 'POST' && pathname === '/todos/clear-done') return clearDone(ctx);
+   if (pathname === '/todos' && method === 'GET') return listTodos(ctx);
+   if (pathname === '/todos' && method === 'POST') return createTodo(ctx);
+   const one = /^\/todos\/(\d+)$/.exec(pathname);

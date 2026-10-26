@@ -1,0 +1,127 @@
+{
+  "id": "todo-logout",
+  "app": "todo",
+  "kind": "injected",
+  "start": "apps/todo",
+  "turns": [
+    {
+      "n": 1,
+      "prompt": "There is no way to log out: a token stays valid forever. revokeToken in lib/auth.js already removes a token but nothing calls it. Please add POST /logout that uses it to revoke the token sent with the request. It answers 204, and afterwards that token gets 401 on every route."
+    },
+    {
+      "n": 2,
+      "prompt": "Logout works now: the old token is dead after I log out."
+    },
+    {
+      "n": 3,
+      "prompt": "Add a priority to todos. POST /todos accepts an optional priority: low, normal or high (default normal); anything else answers 400. Every todo in a response shows its priority, and GET /todos?priority=high returns only the todos with that priority."
+    },
+    {
+      "n": 4,
+      "prompt": "Add GET /health that answers 200 with { \"status\": \"ok\" } and needs no token."
+    },
+    {
+      "n": 5,
+      "prompt": "Add GET /stats for the logged-in user: it answers 200 with { \"total\": <all their todos>, \"done\": <the finished ones>, \"open\": <the rest> }."
+    },
+    {
+      "n": 6,
+      "prompt": "Add POST /todos/clear-done: it deletes the logged-in user's finished todos and answers 200 with { \"removed\": <how many> }."
+    }
+  ],
+  "praise": {
+    "turn": 2,
+    "words": "Logout works now: the old token is dead after I log out.",
+    "behaviours": [
+      "p-logout-revokes"
+    ]
+  },
+  "risk": {
+    "summary": "Injected: revokeToken() compares against the upper-cased token, so no token is ever removed and logout does nothing.",
+    "checks": [
+      "p-logout-revokes"
+    ],
+    "praised": true
+  },
+  "inject": {
+    "after_turn": 3,
+    "patch": "inject.patch",
+    "command": "git apply --recount -C1 --whitespace=nowarn <patch>"
+  },
+  "torpor_should_help": "yes",
+  "oracle": {
+    "checks": [
+      {
+        "id": "b-root",
+        "turn": 0
+      },
+      {
+        "id": "b-signup",
+        "turn": 0
+      },
+      {
+        "id": "b-signup-dup",
+        "turn": 0
+      },
+      {
+        "id": "b-token",
+        "turn": 0
+      },
+      {
+        "id": "b-anon",
+        "turn": 0
+      },
+      {
+        "id": "b-list-legacy",
+        "turn": 0
+      },
+      {
+        "id": "b-todos-crud",
+        "turn": 0
+      },
+      {
+        "id": "b-todos-private",
+        "turn": 0
+      },
+      {
+        "id": "b-persist-create",
+        "turn": 0
+      },
+      {
+        "id": "b-delete",
+        "turn": 0
+      },
+      {
+        "id": "p-logout-revokes",
+        "turn": 1
+      },
+      {
+        "id": "n-priority",
+        "turn": 3
+      },
+      {
+        "id": "l4-health",
+        "turn": 4
+      },
+      {
+        "id": "l5-stats",
+        "turn": 5
+      },
+      {
+        "id": "l6-clear-done",
+        "turn": 6
+      }
+    ]
+  },
+  "regression": {
+    "fails": [
+      "p-logout-revokes"
+    ],
+    "note": "inject.patch edits revokeToken in lib/auth.js"
+  },
+  "patches": {
+    "reference": "reference.patch",
+    "regression": "regression.patch",
+    "inject": "inject.patch"
+  }
+}

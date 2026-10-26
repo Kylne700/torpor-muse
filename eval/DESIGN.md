@@ -32,10 +32,12 @@ format the oracle checks, so any correct build passes. Episode cap: after turn 6
 `node eval/oracles/<app>.mjs --task <id> --dir <workspace>` copies the workspace (without `.git`) to a temp dir, runs
 `node server.js` there on a free port with only PORT, PATH and HOME set, and prints one JSON line. Exit 0 = every check
 passed, 1 = a check failed (an app that does not start fails all), 2 = oracle error (bad arguments: an invalid run).
-It reads the workspace's own `data/` as the agent left it, uses fresh random users (the agent's test data may be in
-`data/`), keeps cookies by whatever name the app sets, and runs lockout checks on a separate copy of the app.
-Each check has a `turn`: 0 = behaviour present at the start, 1 = the praised behaviour, 3 = the turn-3 request,
-4-6 = later work. Groups: kept = turns 0-1, requested = turn 3, later = turns 4-6. Oracle files never enter a workspace.
+It reads the workspace's own `data/` as the agent left it. Seeded accounts (alice, bob) only get login, list and
+isolation checks, because agents test with them and write into `data/`; every count, title or content check uses fresh
+random users. Cookies are kept by whatever name the app sets, and restart and lockout checks run on a separate copy of
+the app. Later-work checks assert named fields, never whole response bodies.
+Each check has a `turn`: 0 = behaviour present at the start (legacy: the prompts never ask to change it, so any
+correct build keeps it), 1 = the praised behaviour, 3 = the turn-3 request, 4-6 = later work. Groups: kept = turns 0-1, requested = turn 3, later = turns 4-6. Oracle files never enter a workspace.
 Scores: final-state pass = exit 0; later work kept = no failed check in the later group; break found = a failed check
 from `risk.checks` (natural-risk and injected tasks).
 
@@ -49,6 +51,16 @@ Per task, on start, start + `reference.patch` and start + `regression.patch`:
 `--oracles <dir>` runs the same test against other oracles (a planted always-pass oracle must fail it).
 `regression.patch` is the whole regressed end state (start to a tree where only the break is wrong). For controls it
 breaks one later feature and exists only to prove the oracle can fail; the control's real episode has no break.
+
+## Where each guarded injection bites (assumptions, NOT VERIFIED by any agent run)
+The harness applies `inject.patch`, runs the oracle once and records `bit` (did a `risk.checks` check fail).
+- Helper wired by the prompt (the turn-1 text names an existing helper that nothing calls, so the agent wires it up):
+  notes-logout `destroySession`, todo-logout `revokeToken`, shop-clear `carts.clear`, shop-merge `findLine`.
+  If the agent bypasses the helper the patch does not bite on the praised check (shop-merge still breaks removal).
+- On the path every build uses: notes-persist and todo-persist (`save()` of the data file; an edit handler that writes
+  the file itself would bypass it, creating data still goes through it).
+- Unguarded (any build keeps the code): notes-dup (register route), todo-delete (`removeTodo`), shop-remove (`remove`).
+Natural-risk tasks inject nothing; their `regression.patch` is one plausible break that proves the oracle can see it.
 
 ## Limits (read before trusting a number)
 - No agent has run these tasks (NOT VERIFIED): difficulty is uncalibrated. The pilot shows which tasks never or
@@ -65,3 +77,4 @@ breaks one later feature and exists only to prove the oracle can fail; the contr
 `apps/<app>/` start state (notes, todo, shop) | `tasks/<id>/` task.json, reference.patch, regression.patch, inject.patch
 (injected only) | `oracles/<app>.mjs` | `lib/kit.mjs` (free port, app runner, cookie client, check runner) |
 `make-workspace.mjs <task-id> <dir>` | `selftest.mjs`. Synthetic data only: users alice and bob, no real names.
+The files under `apps/` and `tasks/` were rendered by a script that is not in this repo; `selftest.mjs` is the check.

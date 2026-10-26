@@ -6,7 +6,7 @@
   "turns": [
     {
       "n": 1,
-      "prompt": "Logging out only clears the cookie in the browser; the session itself stays alive on the server. Please make POST /logout really end the session: after it, anyone who replays the old cookie must get 401 from GET /me. The logout itself still answers 200."
+      "prompt": "Logging out only clears the cookie in the browser; the session itself stays alive on the server. destroySession in lib/auth.js already drops a session but nothing calls it. Please make POST /logout really end the session with it: after logout, anyone who replays the old cookie must get 401 from GET /me. The logout itself still answers 200."
     },
     {
       "n": 2,
