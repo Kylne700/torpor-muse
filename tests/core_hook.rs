@@ -870,12 +870,10 @@ fn real_engine_every_reply_in_a_session_is_valid_muse_output() {
     p["tool_input"]["command"] = json!("git push --force origin main");
     p["permission_mode"] = json!("default");
     let run = r.hook_ok("PreToolUse", &p);
-    if !run.out.is_empty() {
-        assert!(
-            run.out.contains(r#""permissionDecision":"deny""#),
-            "never an allow, never an ask: {}",
-            run.out
-        );
-        assert!(!run.out.contains("Approve only"), "{}", run.out);
-    }
+    assert!(
+        run.out.contains(r#""permissionDecision":"deny""#),
+        "never an allow, never an ask: {}",
+        run.out
+    );
+    assert!(!run.out.contains("Approve only"), "{}", run.out);
 }
