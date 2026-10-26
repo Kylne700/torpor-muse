@@ -14,6 +14,22 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// `cmd.spawn()`, tried again for a moment while the program is still open for writing somewhere (ETXTBSY, 26: an
+/// engine being replaced, or a script just written while another thread's forked child still holds its write fd).
+/// Everything that starts the engine, a hook command or the writer goes through this and keeps its own error text.
+/// It lives here because every test crate that compiles doctor.rs also compiles this file.
+pub(crate) fn spawn_retry(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    for _ in 0..6 {
+        match cmd.spawn() {
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            r => return r,
+        }
+    }
+    cmd.spawn()
+}
+
 /// A session's heartbeat file is moved to `.1` once it passes this size; `read_beats` reads both.
 /// shortcut: a session keeps its last 256-512 KiB of beats (a few thousand events), enough for doctor; raise if it is not.
 const BEATS_MAX: u64 = 256 * 1024;

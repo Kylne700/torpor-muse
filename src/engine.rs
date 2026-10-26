@@ -161,18 +161,6 @@ impl Drain {
     }
 }
 
-fn spawn(cmd: &mut Command, bin: &Path) -> Result<std::process::Child, String> {
-    // ETXTBSY (26): the file is still open for writing somewhere, e.g. an engine being replaced. Retry briefly.
-    for _ in 0..6 {
-        match cmd.spawn() {
-            Err(e) if e.raw_os_error() == Some(26) => thread::sleep(Duration::from_millis(25)),
-            r => return r.map_err(|e| format!("cannot run {}: {e}", bin.display())),
-        }
-    }
-    cmd.spawn()
-        .map_err(|e| format!("cannot run {}: {e}", bin.display()))
-}
-
 /// Spawns `bin args` in its own process group, feeds `stdin`, and waits at most `timeout`.
 fn exec(
     bin: &Path,
@@ -190,7 +178,8 @@ fn exec(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0); // own group: a timeout can kill the engine and everything it started in it
-    let mut child = spawn(&mut cmd, bin)?;
+    let mut child = crate::liveness::spawn_retry(&mut cmd)
+        .map_err(|e| format!("cannot run {}: {e}", bin.display()))?;
     let pgid = child.id() as libc::pid_t;
     if let (Some(mut pipe), Some(data)) = (child.stdin.take(), stdin) {
         let data = data.to_vec();
@@ -329,6 +318,23 @@ mod tests {
         let s = script(&d, "torpor", "echo torpor 0.0.0");
         let e = verify(&s).unwrap_err();
         assert!(e.contains("engine.lock pins"), "{e}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_program_still_open_for_writing_is_started_once_it_is_closed() {
+        let d = scratch("etxtbsy");
+        let s = script(&d, "p", "exit 0");
+        let writer = fs::OpenOptions::new().append(true).open(&s).unwrap();
+        let busy = Command::new(&s).spawn().unwrap_err(); // without the retry this is the flake
+        assert_eq!(busy.raw_os_error(), Some(26), "{busy}");
+        let closer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            drop(writer);
+        });
+        let o = exec(&s, &[], None, Duration::from_secs(20)).unwrap();
+        assert_eq!(o.code, 0);
+        closer.join().unwrap();
         let _ = fs::remove_dir_all(&d);
     }
 }

@@ -1036,8 +1036,8 @@ fn run_shell(
     stdin: &[u8],
     timeout: Duration,
 ) -> Result<Ran, String> {
-    let mut child = Command::new(shell)
-        .arg("-c")
+    let mut cmd = Command::new(shell);
+    cmd.arg("-c")
         .arg(command)
         .env_clear()
         .envs(env.iter().map(|(k, v)| (k, v)))
@@ -1045,9 +1045,9 @@ fn run_shell(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("cannot start {shell}: {e}"))?;
+        .process_group(0);
+    let mut child =
+        crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
     if let Some(mut si) = child.stdin.take() {
         let _ = si.write_all(stdin); // small; a hook that does not read it is fine
     }

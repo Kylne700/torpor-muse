@@ -104,18 +104,21 @@ fn exec_with(
     stdin: Option<&str>,
     limit: Duration,
 ) -> Result<Run, String> {
-    let mut child = Command::new(bin)
-        .args(args)
+    let mut cmd = Command::new(bin);
+    cmd.args(args)
         .current_dir(root)
         .env_remove("META_API_KEY")
         .env_remove("CLAUDECODE")
         .env_remove("TORPOR_MUSE_WORDS")
-        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("cannot start the Torpor engine `{bin}` ({e}): set TORPOR_BIN or put `torpor` on the PATH"))?;
+        .process_group(0);
+    let mut child = crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start the Torpor engine `{bin}` ({e}): set TORPOR_BIN or put `torpor` on the PATH"))?;
     let pgid = i32::try_from(child.id()).unwrap_or(0);
     GROUP.store(pgid, Ordering::SeqCst);
     if let (Some(text), Some(mut si)) = (stdin, child.stdin.take()) {
