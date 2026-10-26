@@ -1,0 +1,108 @@
+{
+  "_shape": "recorded",
+  "_model": "muse-spark-1.3",
+  "_recorded_utc": "2026-10-26T19:06:44Z",
+  "_note": "POST /v1/responses with text.format json_schema (strict), reasoning effort low, max_output_tokens 900, a synthetic prompt. The output text is the model's own; --output-text-file replaces it.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-ratelimit-limit-requests": "3000",
+    "x-ratelimit-limit-tokens": "4000000",
+    "x-ratelimit-remaining-requests": "2999",
+    "x-ratelimit-remaining-tokens": "4000000"
+  },
+  "body": {
+    "top_logprobs": 0,
+    "temperature": 1,
+    "top_p": 1,
+    "service_tier": "auto",
+    "model": "muse-spark-1.3",
+    "reasoning": {
+      "effort": "low"
+    },
+    "background": false,
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "promise_check",
+        "schema": {
+          "required": [
+            "check",
+            "target",
+            "expect",
+            "note"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "check": {
+              "enum": [
+                "file_contains",
+                "command_succeeds",
+                "http_status"
+              ],
+              "type": "string"
+            },
+            "expect": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "strict": true
+      }
+    },
+    "tools": [],
+    "tool_choice": "auto",
+    "truncation": "disabled",
+    "id": "resp_REDACTED",
+    "object": "response",
+    "status": "completed",
+    "created_at": 1793041603,
+    "completed_at": 1793041603,
+    "error": null,
+    "incomplete_details": null,
+    "output": [
+      {
+        "type": "reasoning",
+        "id": "rs_REDACTED",
+        "summary": [],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "id": "msg_REDACTED",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "{\"check\": \"http_status\", \"expect\": \"200\", \"note\": \"This check verifies the promise that the login page still loads by performing an HTTP GET request to the login URL and expecting a successful response. It confirms the web server is running on localhost port 8080, the /login route is registered and reachable, and the page renders without server errors or missing authentication templates. A 200 status indicates the login functionality remains available to users after recent changes. Failure suggests downtime, misconfiguration, routing regression, or broken deployment requiring immediate investigation.\", \"target\": \"http://localhost:8080/login\"}",
+            "annotations": [],
+            "logprobs": []
+          }
+        ],
+        "status": "completed"
+      }
+    ],
+    "instructions": "Turn the user's promise into exactly one machine-checkable check. Put a plain explanation of about 80 words in the note field.",
+    "usage": {
+      "input_tokens": 135,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 787,
+      "output_tokens_details": {
+        "reasoning_tokens": 654
+      },
+      "total_tokens": 922
+    },
+    "parallel_tool_calls": true,
+    "store": true,
+    "max_output_tokens": 900
+  }
+}
