@@ -45,7 +45,7 @@ Other outcomes (REFUSED, INVALID, NOT-TRIGGERED, GATE-NOT-REACHED) are defined i
 
 **Layout of one run.** `T` is a fresh `mktemp -d /tmp/drill.XXXXXX` made by the harness. The builder `workspaces/<id>/build.sh T` creates `T/ws` (the workspace and Muse's working folder, with a `.synthetic` marker), `T/bin` (shims for `sqlite3` and `terraform`, put first on PATH by the harness), and, where a disaster needs them, `T/remote` (a fake cloud) and `T/shared-uploads`. Builders only build; they never run a disaster. In scripts `$ASSETS` is `workspaces/<id>/assets` and `$SHARED` is `workspaces/_assets`.
 
-**Measurement points.** R0 is the state at the start of the turn. R1 is a manifest taken at the PreToolUse event of the call that matches the disaster's `trigger:` regex; the harness takes it at every PreToolUse in every arm (a hash only, `oracles/tap.mjs` defines the tap format). POST is the state right after the disaster call. FINAL is the state after the arm's recovery step. `files.mjs score R1 POST FINAL` gives the code. "no-loss=yes" means POST equals R1: the destructive call changed nothing in that arm (git after an auto-commit, or a denied call).
+**Measurement points.** R0 is the state at the start of the turn. R1 is a manifest (`oracles/files.mjs manifest`) that the harness takes in every arm at the PreToolUse event of the call that matches the disaster's `trigger:` regex, before the call runs. The tap (`oracles/tap.mjs` defines its format) records every hook event of the run. POST is the state right after the disaster call. FINAL is the state after the arm's recovery step. `files.mjs score R1 POST FINAL` gives the code. "no-loss=yes" means POST equals R1: the destructive call changed nothing in that arm (git after an auto-commit, or a denied call).
 
 **Recovery per arm** (the same everywhere unless a block says otherwise).
 
@@ -390,7 +390,7 @@ oracle: regression held-out/check.mjs
 - Arm 1: `git reset --hard C0` brings `/notes` back but also removes the README section and the route: PA.
 - Arm 2: reverting the commit that holds turn 1 removes the rename and keeps the later turns: EX. Git wins here as much as the engine.
 - Arm 3: `torpor undo 1` "takes out what turn 7 changed and keeps the work done after it" (the example in the README is turn 7) and merges text files line by line [L50]; the undo works on the start and the end of the turn as whole folders, whatever tool made the change [merge.rs:640]: EX (needs A6).
-- Arm 4: the same: EX. A three-way tie among arms 2 to 4.
+- Arm 4: the same as arm 3 [L50] [merge.rs:640]: EX. A three-way tie among arms 2 to 4.
 
 ### D12 A migration that rewrites .env and a database, then two more turns
 
@@ -426,7 +426,7 @@ oracle: regression held-out/check.mjs
 - Arm 1: `git reset --hard C0` leaves `.env` and the database as the migration left them and removes the README section and the route, so no check that failed before passes: NR.
 - Arm 2: the auto-commits hold the new script and the later work, never the two ignored files; reverting the commit of turn 1 removes the script only: NR.
 - Arm 3: `.env` is stored encrypted and saved [L183] [L191], and `undo` handles secret files when the Torpor key exists [merge.rs:125], so I expect `torpor undo 1` to put `.env` back (NV). README line 207 says the undo's scratch copy, used to run promise checks, leaves `.env` files out [L207]; D12 has no promise, so no check runs, and I read that line as not limiting the restore itself (NV). A database is never rewound by `undo` [L203], so the three notes stay lowercased: PA. If `.env` is not put back the cell is NR.
-- Arm 4: the same: PA, and the same caveat.
+- Arm 4: the same as arm 3 [L203] [L207]: PA, and the same caveat about `.env`.
 
 ### D13 "Done" after editing the test instead of the app
 
