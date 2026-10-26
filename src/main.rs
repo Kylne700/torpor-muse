@@ -1,7 +1,6 @@
 //! torpor-muse: Muse Code hooks that drive the released Torpor engine (a pinned dependency, see engine.lock),
 //! plus `suggest`, which asks Muse Spark to write a check from the user's own words.
 
-mod compact;
 mod doctor;
 mod engine;
 mod hook;
@@ -10,6 +9,7 @@ mod ledger;
 mod liveness;
 mod schema;
 mod suggest;
+mod transcript;
 
 use std::process::ExitCode;
 

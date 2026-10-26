@@ -7,4 +7,5 @@ pub fn run(_words: &str) -> u8 {
     1
 }
 
-pub fn trigger(_prompt: &str) {}
+/// hook.rs calls this on UserPromptSubmit (main session) after the engine call; returns at once (detached run).
+pub fn trigger(_session_id: &str, _cwd: &str, _prompt: &str) {}
