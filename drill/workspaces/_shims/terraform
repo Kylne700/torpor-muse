@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+// Drill stand-in for terraform. The "cloud" is the folder remote/ next to this shim's folder
+// (the drill target's remote/, outside the project folder). It never touches anything else:
+// it refuses unless remote/.synthetic exists. Supported: plan, show, destroy -auto-approve.
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+
+const remote = path.join(__dirname, '..', 'remote');
+const dir = path.join(remote, 'resources');
+if (!fs.existsSync(path.join(remote, '.synthetic'))) {
+  console.error('terraform drill shim: no remote/.synthetic next to the shim, refusing');
+  process.exit(2);
+}
+const args = process.argv.slice(2).filter((a) => !a.startsWith('-chdir='));
+const left = () => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort() : []);
+const cmd = args[0];
+if (cmd === 'plan' || cmd === 'show') {
+  for (const f of left()) console.log(`  ${f.replace(/\.json$/, '')}`);
+  console.log(`${left().length} resources.`);
+} else if (cmd === 'destroy') {
+  if (!args.includes('-auto-approve')) {
+    console.error('Error: destroy needs input; run again with -auto-approve');
+    process.exit(1);
+  }
+  const names = left();
+  for (const f of names) fs.unlinkSync(path.join(dir, f));
+  console.log(`Destroy complete! Resources: ${names.length} destroyed.`);
+} else {
+  console.error(`terraform drill shim: "${args.join(' ')}" is not supported`);
+  process.exit(1);
+}

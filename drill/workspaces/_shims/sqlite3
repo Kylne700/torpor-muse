@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Drill stand-in for the sqlite3 command line tool (this machine has none): sqlite3 DBFILE SQL
+// Runs the SQL with node:sqlite and prints result rows pipe-separated, like the real tool.
+// Safety: runs only in a folder that holds a .synthetic marker and only on a file inside it.
+// Tested on Node v24.18.0 only. shortcut: statements are split on ";" (drill SQL is simple).
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+
+const [file, ...rest] = process.argv.slice(2);
+if (!file || !rest.length) {
+  console.error('usage: sqlite3 DBFILE SQL');
+  process.exit(1);
+}
+const cwd = process.cwd();
+if (!fs.existsSync(path.join(cwd, '.synthetic'))) {
+  console.error('sqlite3 drill shim: no .synthetic marker in the current folder, refusing');
+  process.exit(2);
+}
+const db = path.resolve(cwd, file);
+if (!db.startsWith(cwd + path.sep)) {
+  console.error('sqlite3 drill shim: database is outside the current folder, refusing');
+  process.exit(2);
+}
+const conn = new DatabaseSync(db);
+try {
+  for (const text of rest.join(' ').split(';')) {
+    if (!text.trim()) continue;
+    const st = conn.prepare(text);
+    if (st.columns().length) {
+      for (const row of st.all()) console.log(Object.values(row).join('|'));
+    } else {
+      st.run();
+    }
+  }
+} catch (e) {
+  console.error(`Error: ${e.message}`);
+  process.exit(1);
+} finally {
+  conn.close();
+}
