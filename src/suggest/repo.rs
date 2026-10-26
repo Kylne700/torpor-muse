@@ -485,7 +485,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("tm-repo-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
-        d
+        fs::canonicalize(&d).unwrap() // the root a run gets is canonical; macOS temp dirs sit behind a symlink
     }
 
     #[test]
@@ -580,7 +580,7 @@ mod tests {
         fs::write(d.join(".gitignore"), "notes.txt\n").unwrap();
         fs::create_dir_all(d.join("node_modules/x")).unwrap();
         fs::write(d.join("node_modules/x/i.js"), "module.exports=1").unwrap();
-        std::os::unix::fs::symlink("/etc/hostname", d.join("link.md")).unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", d.join("link.md")).unwrap();
         let ex = excerpt(&d, true);
         for gone in [
             "CANARY_ENV",
