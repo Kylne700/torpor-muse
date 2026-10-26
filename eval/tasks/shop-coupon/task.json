@@ -14,7 +14,7 @@
     },
     {
       "n": 3,
-      "prompt": "Add a coupon. POST /cart/coupon with { \"code\": \"WELCOME10\" } gives the customer 10% off their cart: GET /cart then shows discountCents (10% of the items total, rounded down) and a totalCents reduced by it, and checkout charges the reduced total. Any other code answers 400 with { \"error\": ... }. A cart without a coupon behaves exactly as before."
+      "prompt": "Add a coupon. POST /cart/coupon with { \"code\": \"WELCOME10\" } gives the customer 10% off their cart: GET /cart then shows discountCents (10% of the items total, rounded down) and a totalCents reduced by it, and checkout charges the reduced total. Any other code answers 400 with { \"error\": ... }."
     },
     {
       "n": 4,

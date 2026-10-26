@@ -14,7 +14,7 @@
     },
     {
       "n": 3,
-      "prompt": "Prices already include 17% VAT. Show the VAT inside every cart and every new order as vatCents: the part of totalCents that is VAT, totalCents x 17 / 117 rounded to the nearest cent. totalCents itself must not change."
+      "prompt": "Prices already include 17% VAT. Show the VAT inside every cart and every new order as vatCents: the part of totalCents that is VAT, totalCents x 17 / 117 rounded to the nearest cent."
     },
     {
       "n": 4,

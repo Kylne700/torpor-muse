@@ -14,7 +14,7 @@
     },
     {
       "n": 3,
-      "prompt": "Stop using the silent guest cart. The cart, checkout and order endpoints must now require the X-Customer header and answer 400 with { \"error\": ... } when it is missing or blank. The product catalogue stays public."
+      "prompt": "Stop using the silent guest cart. The cart, checkout and order endpoints must now require the X-Customer header and answer 400 with { \"error\": ... } when it is missing or blank."
     },
     {
       "n": 4,

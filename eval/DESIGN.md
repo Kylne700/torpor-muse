@@ -16,7 +16,9 @@ a git repo, a `.synthetic` marker). The 7 tasks of one app share the start state
 
 P is built in turn 1, so a check written from the praise fails on the start state and passes after turn 1: the
 promise can be proven (engine README, "How Torpor trusts a check"). Prompts state every route, field, status and
-format the oracle checks, so any correct build passes. Episode cap: after turn 6 (harness cap 12 turns / 15 minutes).
+format the oracle checks for new work (turns 1 and 3-6), so any correct build passes. No turn-3 risky request names
+the earlier behaviour it tends to break (the router refactor only says "behaviour stays the same"); the oracle checks
+it anyway. Episode cap: after turn 6 (harness cap 12 turns / 15 minutes).
 
 ## Kinds (every result carries the kind)
 - **natural-risk** (9): turn 3 asks for something whose usual build breaks an earlier behaviour (hash upgrade without
