@@ -221,6 +221,8 @@ pub struct Sandbox {
     pub ws: PathBuf,
     /// The real engine, when a test uses it instead of the scripted one.
     pub engine: Option<PathBuf>,
+    /// A state dir shared with other sandboxes (the live runs keep one ledger across all their runs).
+    pub state_override: Option<PathBuf>,
 }
 
 impl Sandbox {
@@ -244,6 +246,7 @@ impl Sandbox {
             dir,
             ws,
             engine: None,
+            state_override: None,
         };
         sb.git(&["init", "-q"]);
         sb.git(&["add", "-A"]);
@@ -252,7 +255,9 @@ impl Sandbox {
     }
 
     pub fn state(&self) -> PathBuf {
-        self.dir.join("state")
+        self.state_override
+            .clone()
+            .unwrap_or_else(|| self.dir.join("state"))
     }
     pub fn home(&self) -> PathBuf {
         self.dir.join("home")
@@ -346,13 +351,20 @@ impl Sandbox {
         }
     }
 
-    /// The result file the run left for this workspace (`Null` when there is none).
+    /// The newest result file under the state dir (the run that just ended; `Null` when there is none).
     pub fn result(&self) -> Value {
-        let ws = self.state().join("ws");
-        let Some(d) = fs::read_dir(ws).ok().and_then(|mut r| r.next()) else {
-            return Value::Null;
-        };
-        let text = fs::read_to_string(d.unwrap().path().join("result.json")).unwrap_or_default();
+        let newest = fs::read_dir(self.state().join("ws"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|d| {
+                let p = d.path().join("result.json");
+                Some((fs::metadata(&p).ok()?.modified().ok()?, p))
+            })
+            .max();
+        let text = newest.map_or(String::new(), |(_, p)| {
+            fs::read_to_string(p).unwrap_or_default()
+        });
         serde_json::from_str(&text).unwrap_or(Value::Null)
     }
 
