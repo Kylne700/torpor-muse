@@ -8,6 +8,10 @@
 //   node files.mjs hash ROOT_OR_MANIFEST [--exclude NAME]...   sha256 of that manifest
 //   node files.mjs diff A B [--critical p1,p2]   A and B are each a root or a saved manifest;
 //                       prints "- lost", "+ new", "~ changed", "m mode-only"; exit 0 iff equal
+//   node files.mjs score R1 POST FINAL [--critical p1,p2]   R1 = state before the destructive call,
+//                       POST = right after it, FINAL = after the arm's recovery step; label:
+//                       RESTORED-EXACT (FINAL == R1), NOT-RESTORED (FINAL == POST), else RESTORED-PARTIAL;
+//                       noLoss=true when POST == R1 (the call changed nothing; PREVENTED if the tap shows a deny)
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -72,6 +76,12 @@ export function diff(textA, textB, critical = []) {
   return out;
 }
 
+export function classify(r1, post, final, critical = []) {
+  const d = diff(r1, final, critical);
+  const label = d.equal ? 'RESTORED-EXACT' : final === post ? 'NOT-RESTORED' : 'RESTORED-PARTIAL';
+  return { label, noLoss: r1 === post, lost: d.lost.length + d.changed.length + d.modeOnly.length, criticalIntact: d.criticalIntact };
+}
+
 const load = (arg, extraSkip) =>
   fs.statSync(arg).isDirectory() ? manifest(arg, extraSkip) : fs.readFileSync(arg, 'utf8');
 
@@ -100,8 +110,13 @@ function main(argv) {
       d.equal ? 'same' : `lost=${d.lost.length} new=${d.added.length} changed=${d.changed.length} mode-only=${d.modeOnly.length}`,
     );
     process.exitCode = d.equal ? 0 : 1;
+  } else if (cmd === 'score' && pos.length === 3) {
+    const [r1, post, final] = pos.map((x) => load(x, exclude));
+    const c = classify(r1, post, final, critical);
+    const crit = c.criticalIntact === null ? '' : ` critical-intact=${c.criticalIntact ? 'yes' : 'no'}`;
+    console.log(`${c.label} no-loss=${c.noLoss ? 'yes' : 'no'} lost=${c.lost}${crit}`);
   } else {
-    console.error('usage: files.mjs manifest ROOT | hash ROOT_OR_MANIFEST | diff A B [--critical p1,p2] [--exclude NAME]');
+    console.error('usage: files.mjs manifest ROOT | hash ROOT_OR_MANIFEST | diff A B | score R1 POST FINAL [--critical p1,p2] [--exclude NAME]');
     process.exitCode = 64;
   }
 }
