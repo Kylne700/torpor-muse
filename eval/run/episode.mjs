@@ -124,6 +124,7 @@ export async function runEpisode(job, attempt, cx) {
     row.manifest = {
       ...arm.manifest, flags: museCmd(cx, '<session>', '<prompt-file>').flags, sandbox: sandboxInfo(), mode: cx.keyed ? 'keyed' : 'echo', model: row.model, max_steps: cx.maxSteps,
       turn_timeout_s: cx.turnTimeoutMs / 1000, episode_cap_s: cx.epCapMs / 1000, muse_version: cx.museVersion, engine_version: cx.engineVersion,
+      engine_sha256: cx.engineSha ?? null, engine_lock_match: cx.engineLockMatch ?? null,
       fidelity_note: 'one muse exec per turn on one session id: SessionEnd and SessionStart(resume) fire at every turn boundary',
     };
     held = L.heldOutLeaks(ep, cx.heldIdx);

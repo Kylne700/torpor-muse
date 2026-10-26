@@ -44,6 +44,10 @@ export function armCSettings(engineBin) {
 }
 // For comparing with the drill harness: the file with a placeholder for the engine path.
 export const armCShape = () => JSON.stringify(armCSettings('ENGINE_BIN'), null, 2) + '\n';
+// The table RUN.md shows (the selftest keeps the two the same).
+export const armCList = () => ENGINE_EVENTS.map(([e, m, t]) => `${e.padEnd(20)} timeout ${String(t).padStart(2)}${m ? `  matcher ${m}` : ''}`).join('\n');
+// A settings file as the row's manifest shows it: the paths of this machine replaced, the rest exact.
+const generic = (text, paths) => JSON.parse(paths.reduce((t, [from, to]) => t.split(from).join(to), text));
 
 const writeText = (file, text, mode) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text, { mode }); };
 const muse = (ep) => path.join(ep, 'home', '.config', 'muse', 'settings.json');
@@ -61,7 +65,7 @@ export async function installC(cx, ep) {
   const text = JSON.stringify(armCSettings(cx.engineBin), null, 2) + '\n';
   writeText(muse(ep), text);
   return {
-    manifest: { arm: 'C', install: "the engine's documented `hook <Event>` commands in settings.json, nothing else", engine_bin: path.basename(cx.engineBin), settings_sha256: sha(text), shape_sha256: sha(armCShape()), events: ENGINE_EVENTS.length },
+    manifest: { arm: 'C', install: "the engine's documented `hook <Event>` commands in settings.json, nothing else", engine_bin: path.basename(cx.engineBin), settings_sha256: sha(text), shape_sha256: sha(armCShape()), events: ENGINE_EVENTS.length, settings: generic(text, [[cx.engineBin, '<engine>']]) },
     ro: [cx.engineBin], torporHome: path.join(ep, 'home', '.torpor'), // no TORPOR_HOME in the command: the engine's default state home under HOME
   };
 }
@@ -73,7 +77,8 @@ export async function installD(cx, ep) {
   let text;
   try { text = fs.readFileSync(muse(ep), 'utf8'); } catch { throw new InfraError('adapter_init_wrote_no_settings'); }
   const count = Object.values(JSON.parse(text).hooks || {}).reduce((n, groups) => n + groups.length, 0);
-  const manifest = { arm: 'D', install: '`torpor-muse init` run in the episode HOME', adapter_sha256: cx.adapterSha, adapter_version: cx.adapterVersion, settings_sha256: sha(text), hook_groups: count, writer: 'off' };
+  const manifest = { arm: 'D', install: '`torpor-muse init` run in the episode HOME', adapter_sha256: cx.adapterSha, adapter_version: cx.adapterVersion, settings_sha256: sha(text), hook_groups: count, writer: 'off',
+    settings: generic(text, [[torporHome, '<episode>/torpor-home'], [cx.adapterBin, '<adapter>'], [cx.engineBin, '<engine>'], [ep, '<episode>']]) };
   const ro = [cx.adapterBin, cx.engineBin];
   // The writer (key + day cap) only in keyed runs. In ECHO runs the config has no key_file, so the trigger skips cleanly.
   if (cx.keyed && cx.writerKeyFile) {

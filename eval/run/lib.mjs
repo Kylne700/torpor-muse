@@ -196,10 +196,10 @@ export function readRows(rowsDir) {
   }
   return out;
 }
-// Per episode: the last attempt number, how many attempts were infra failures, and whether it is finished (a valid row, a row that
-// must not be re-run, or all 3 attempts used). A run stopped by the cap or a fatal error is not the episode's failure: it does not use an attempt up.
+// Per episode: the last attempt number, how many attempts were invalid, and whether it is finished (a valid row, a row that must not be
+// re-run (retryable false), or all 3 attempts used). Every invalid row counts, a cap stop included: the analysis refuses a unit with more than
+// 3 rows, so the runner never writes a fourth.
 export const MAX_INFRA = MAX_ATTEMPTS;
-export const stopsRun = (r) => /^(spend_cap|fatal)/.test(r.invalid_reason || '');
 export function episodeStates(rows) {
   const m = new Map();
   for (const r of rows) {
@@ -207,7 +207,7 @@ export function episodeStates(rows) {
     const s = m.get(k) || { last: 0, infra: 0, done: false };
     s.last = Math.max(s.last, r.attempt);
     if (r.valid || r.retryable === false) s.done = true;
-    else if (!stopsRun(r)) s.infra++;
+    else s.infra++;
     m.set(k, s);
   }
   for (const s of m.values()) if (s.infra >= MAX_INFRA) s.done = true;

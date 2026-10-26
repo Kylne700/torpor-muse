@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { armCSettings, armCShape, AGENTS_MD, ENGINE_EVENTS } from './arms.mjs';
+import { armCList, armCSettings, armCShape, AGENTS_MD, ENGINE_EVENTS } from './arms.mjs';
 import { rmEp, runEpisode } from './episode.mjs';
 import * as L from './lib.mjs';
 import { sandbox } from './sandbox.mjs';
@@ -120,14 +120,15 @@ await test('rows: a good row validates; missing or wrong fields do not', () => {
   assert.deepEqual(L.validateRow({ ...ok, valid: false, invalid_reason: 'why', oracle: null, final_pass: null, later_kept: null }), []);
 });
 
-await test('resume bookkeeping: valid rows finish an episode, 3 infra failures finish it, cap stops do not use attempts', () => {
+await test('resume bookkeeping: a valid row, a row marked not re-runnable, or 3 invalid rows (a cap stop counts) finish an episode', () => {
   const r = (task, attempt, valid, reason = null, extra = {}) => ({ task, arm: 'A', rep: 1, attempt, valid, invalid_reason: reason, ...extra });
   const st = L.episodeStates([r('a', 1, true), r('b', 1, false, 'muse_exit_1'), r('c', 1, false, 'x'), r('c', 2, false, 'x'), r('c', 3, false, 'x'), r('d', 1, false, 'inject_failed', { retryable: false }), r('e', 1, false, 'spend_cap: x'), r('e', 2, false, 'spend_cap: x'), r('e', 3, false, 'spend_cap: x')]);
   assert.equal(st.get('a__A__r1').done, true);
   assert.equal(st.get('b__A__r1').done, false); assert.equal(st.get('b__A__r1').last, 1);
   assert.equal(st.get('c__A__r1').done, true);
   assert.equal(st.get('d__A__r1').done, true);
-  assert.equal(st.get('e__A__r1').done, false); assert.equal(st.get('e__A__r1').last, 3);
+  assert.equal(st.get('e__A__r1').done, true); assert.equal(st.get('e__A__r1').last, 3);
+  assert.equal(L.episodeStates([r('f', 1, false, 'spend_cap: x'), r('f', 2, false, 'spend_cap: x')]).get('f__A__r1').done, false);
 });
 
 await test('held out: a planted oracle copy, a renamed task file and a patch are found; a clean workspace is not', () => {
@@ -190,6 +191,11 @@ await test('arms: C is the engine\'s ten documented hook commands and nothing el
   assert.deepEqual(Object.entries(s.hooks).filter(([, g]) => g[0].matcher).map(([e]) => e).sort(), ['PostToolUse', 'PostToolUseFailure', 'PreToolUse']);
   assert.ok(armCShape().includes('ENGINE_BIN hook Stop'));
   assert.ok(!/torpor|engine|save point|undo/i.test(AGENTS_MD) && /NOTES\.md/.test(AGENTS_MD));
+  // RUN.md shows the exact notes text and the exact list of C's events; the lead checks it against PREREG, so it must not drift from the code
+  const md = fs.readFileSync(path.join(HERE, 'RUN.md'), 'utf8');
+  for (const line of AGENTS_MD.split('\n').filter(Boolean)) assert.ok(md.includes(`      ${line}`), `RUN.md lacks the AGENTS.md line: ${line}`);
+  for (const line of armCList().split('\n')) assert.ok(md.includes(`      ${line}`), `RUN.md lacks the arm C line: ${line}`);
+  assert.ok(!md.includes(['', 'home', ''].join('/')), 'RUN.md names a home folder'); // (spelled out so this file does not contain the string itself)
 });
 
 // ---------------------------------------------------------------- sandboxed checks (fake muse)
@@ -297,6 +303,11 @@ await test('cli: a whole run with the fake muse writes valid rows, and running i
   let rows = L.readRows(path.join(out, 'rows'));
   assert.equal(rows.length, 4); assert.ok(rows.every((r) => r.valid && L.validateRow(r).length === 0 && r.seed === 3));
   assert.deepEqual(rows.map((r) => r.order_index).sort(), [0, 1, 2, 3]);
+  // the analysis reads the whole out folder (plan.json and summary.json are not rows) and the rows folder alike
+  for (const d of [out, path.join(out, 'rows')]) {
+    const an = spawnSync(process.execPath, [path.join(HERE, '..', 'analysis', 'analyze.mjs'), '--rows', d, '--json', path.join(mk('an-out'), 'an.json')], { encoding: 'utf8' });
+    assert.equal(an.status, 0, an.stdout + an.stderr);
+  }
   const stamp = fs.readdirSync(path.join(out, 'rows')).map((n) => `${n}:${fs.statSync(path.join(out, 'rows', n)).mtimeMs}`).join();
   const r2 = run();
   assert.equal(r2.status, 0, r2.stderr); assert.match(r2.stderr, /0 to run/);

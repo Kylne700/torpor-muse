@@ -108,11 +108,17 @@ async function main() {
   let adapterCommit = null;
   try { adapterCommit = execFileSync('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* not a git checkout */ }
   const adapterSha = arms.includes('D') ? L.sha(fs.readFileSync(adapterBin)) : null;
+  // C and D run the engine that engine.lock pins; every row records the binary's hash and whether it is the locked linux-x64 asset
+  const needEngine = arms.some((x) => x === 'C' || x === 'D');
+  const engineSha = needEngine ? L.sha(fs.readFileSync(engineBin)) : null;
+  let engineLockMatch = null;
+  if (needEngine) try { engineLockMatch = fs.readFileSync(path.join(REPO, 'engine.lock'), 'utf8').split('\n').some((l) => l.trim().split(/\s+/).slice(0, 3).join(' ') === `asset linux-x64 ${engineSha}`); } catch { /* no engine.lock in this checkout */ }
+  if (engineLockMatch === false) console.error('warning: the engine binary is not the linux-x64 asset that engine.lock pins (rows say engine_lock_match false)');
 
   const spend = new L.Spend(keyed ? a.capUsd : Infinity, path.join(outDir, 'spend.jsonl'));
   const cx = {
     runId, seed: a.seed, keyed, key, model: a.model, effort: a.effort, maxSteps: a.maxSteps, turnTimeoutMs: a.turnTimeoutS * 1000, epCapMs: a.episodeCapS * 1000,
-    evalDir: EVAL, repoDir: REPO, museDir, museVersion, engineBin, engineVersion, adapterBin, adapterSha, adapterVersion, adapterCommit, tmpBase, outDir, rowsDir, tasks,
+    evalDir: EVAL, repoDir: REPO, museDir, museVersion, engineBin, engineVersion, engineSha, engineLockMatch, adapterBin, adapterSha, adapterVersion, adapterCommit, tmpBase, outDir, rowsDir, tasks,
     spend, backoff: new L.Backoff(), heldIdx: L.heldOutIndex(EVAL), writerKeyFile: keyed && a.writerKeyFile ? path.resolve(a.writerKeyFile) : null, writerDayCapUsd: a.writerDayCap, keepEp: !!a.keepEp,
   };
 
@@ -122,56 +128,52 @@ async function main() {
   const pending = jobs.filter((j) => !states.get(L.epKey(j))?.done);
   console.error(`${runId}: ${jobs.length} episodes planned, ${jobs.length - pending.length} already finished, ${pending.length} to run, concurrency ${conc}, ${keyed ? `keyed ${a.model}, cap $${a.capUsd}` : 'echo'}, sandbox ${BACKEND}`);
 
-  // Whole groups. A (task, rep) group is played by one worker, its arms one after another (so the pair runs close in time), and it is
-  // only started when the cap leaves room for all of it. A stop (cap, fatal error, or the first signal) starts no new group and lets the
-  // groups in progress finish; only the second signal kills what runs, which can leave a half group (the same command resumes it).
+  // One group at a time. A (task, rep) group is played whole: its arms run together (up to --concurrency at once), and the next group only
+  // starts when the cap leaves room for all of it. A stop (cap, fatal error, first SIGINT or SIGTERM) starts no new group and lets the group
+  // in progress finish; only the second signal kills what runs, which can leave one half group (the same command finishes it).
   const groups = [];
   for (const j of pending) {
     const k = L.groupKey(j);
     (groups.find((g) => g.key === k) || groups[groups.push({ key: k, jobs: [] }) - 1]).jobs.push(j);
   }
   for (const r of L.readRows(rowsDir)) spend.episodeDone(r.usd_hi + r.writer_usd_hi);
-  let halted = false, draining = false, nextGroup = 0, done = 0, signals = 0, queued = 0;
+  let halted = false, draining = false, done = 0, signals = 0;
   const onSignal = () => {
-    if (++signals === 1) { draining = true; console.error('stop requested: the groups in progress are finished first; send the signal again to kill now'); return; }
+    if (++signals === 1) { draining = true; console.error('stop requested: the group in progress is finished first; send the signal again to kill now'); return; }
     halted = true;
     for (const ep of activeEps) killEp(ep);
     setTimeout(() => process.exit(130), 500);
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
-  const worker = async () => {
+  const play = async (job) => {
     for (;;) {
-      const g = groups[nextGroup];
-      if (!g || halted || draining) return;
-      if (!spend.groupFits(queued + g.jobs.length)) { halted = true; console.error(`stop: group ${g.key} (${g.jobs.length} episodes) might not fit under the cap: $${spend.total.toFixed(4)} spent of $${a.capUsd}`); return; }
-      nextGroup++; queued += g.jobs.length;
-      for (const job of g.jobs) {
-        for (;;) {
-          const st = L.episodeStates(L.readRows(rowsDir)).get(L.epKey(job)) || { last: 0, infra: 0, done: false };
-          if (st.done || halted) break;
-          const attempt = st.last + 1;
-          const { row, stopRun } = await runEpisode(job, attempt, cx);
-          if (stopRun) halted = true;
-          if (stopRun && row.turns_run === 0) { console.error(`stop: ${row.invalid_reason}`); break; } // nothing ran: no row
-          L.writeRow(rowsDir, row);
-          spend.episodeDone(row.usd_hi + row.writer_usd_hi);
-          console.error(`[${++done}/${pending.length}] ${row.task} arm ${row.arm} r${row.rep} a${row.attempt}: ${row.valid ? `valid pass=${row.final_pass} later=${row.later_kept}` : `INVALID ${row.invalid_reason}`} | ${row.minutes} min, ${row.steps_total} steps, $${row.usd_hi.toFixed(4)}+$${row.writer_usd_hi.toFixed(4)} | total $${spend.total.toFixed(4)}`);
-          if (row.valid || row.retryable === false || stopRun) break;
-        }
-        queued--;
-        if (halted) break;
-      }
+      const st = L.episodeStates(L.readRows(rowsDir)).get(L.epKey(job)) || { last: 0, infra: 0, done: false };
+      if (st.done || halted) return;
+      const attempt = st.last + 1;
+      const { row, stopRun } = await runEpisode(job, attempt, cx);
+      if (stopRun) halted = true;
+      if (stopRun && row.turns_run === 0) { console.error(`stop: ${row.invalid_reason}`); return; } // nothing ran: no row
+      L.writeRow(rowsDir, row);
+      spend.episodeDone(row.usd_hi + row.writer_usd_hi);
+      console.error(`[${++done}/${pending.length}] ${row.task} arm ${row.arm} r${row.rep} a${row.attempt}: ${row.valid ? `valid pass=${row.final_pass} later=${row.later_kept}` : `INVALID ${row.invalid_reason}`} | ${row.minutes} min, ${row.steps_total} steps, $${row.usd_hi.toFixed(4)}+$${row.writer_usd_hi.toFixed(4)} | total $${spend.total.toFixed(4)}`);
+      if (row.valid || row.retryable === false || stopRun) return;
     }
   };
-  await Promise.all(Array.from({ length: conc }, worker));
+  for (const g of groups) {
+    if (halted || draining) break;
+    if (!spend.groupFits(g.jobs.length)) { halted = true; console.error(`stop: group ${g.key} (${g.jobs.length} episodes) might not fit under the cap: $${spend.total.toFixed(4)} spent of $${a.capUsd}`); break; }
+    let i = 0;
+    await Promise.all(Array.from({ length: Math.min(conc, g.jobs.length) }, async () => { for (let job; (job = g.jobs[i++]); ) await play(job); }));
+  }
   const rows = L.readRows(rowsDir);
   const validBy = new Map(); // group -> arms with a valid row
   for (const r of rows) if (r.valid) validBy.set(L.groupKey(r), (validBy.get(L.groupKey(r)) || new Set()).add(r.arm));
   const groupsPlanned = new Set(jobs.map(L.groupKey)).size;
   const groupsComplete = [...validBy.values()].filter((arms2) => arms.every((x) => arms2.has(x))).length;
   const stopped = halted || draining;
-  const sum = { run_id: runId, rows: rows.length, valid: rows.filter((r) => r.valid).length, invalid: rows.filter((r) => !r.valid).length, groups_planned: groupsPlanned, groups_complete: groupsComplete, usd_hi: L.round6(rows.reduce((t, r) => t + r.usd_hi + r.writer_usd_hi, 0)), spend_total_usd_hi: L.round6(spend.total), stopped_early: stopped };
+  // no key here may look like a row field (valid, arm, task ...): the analysis reads every json file of a folder
+  const sum = { run_id: runId, rows: rows.length, valid_rows: rows.filter((r) => r.valid).length, invalid_rows: rows.filter((r) => !r.valid).length, groups_planned: groupsPlanned, groups_complete: groupsComplete, usd_hi: L.round6(rows.reduce((t, r) => t + r.usd_hi + r.writer_usd_hi, 0)), spend_total_usd_hi: L.round6(spend.total), stopped_early: stopped };
   L.writeAtomic(path.join(outDir, 'summary.json'), JSON.stringify(sum, null, 1) + '\n');
   console.log(JSON.stringify(sum));
   process.exit(stopped ? 3 : 0);
