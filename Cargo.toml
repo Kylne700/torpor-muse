@@ -10,6 +10,7 @@ publish = false
 
 # Agents add the dependencies they need here; the lead resolves merge conflicts.
 [dependencies]
+libc = "0.2" # killpg on a hook timeout (engine.rs)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

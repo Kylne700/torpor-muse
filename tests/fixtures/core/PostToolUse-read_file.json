@@ -1,0 +1,16 @@
+{
+  "cwd": "<CWD>",
+  "hook_event_name": "PostToolUse",
+  "model": "muse-spark-1.3",
+  "model_provider": "meta",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-7000-8000-000000000001",
+  "tool_input": {
+    "path": "notes.txt"
+  },
+  "tool_name": "read_file",
+  "tool_response": "Read text file `notes.txt`.\n1|alpha\n2|beta\n3|rewind-probe",
+  "tool_use_id": "call_01a1794c5d387714b412480fa0abb792",
+  "transcript_path": null,
+  "turn_id": "00000000-0000-7000-8000-000000000002"
+}
