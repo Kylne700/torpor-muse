@@ -16,8 +16,12 @@ import { denied } from './tap.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WS_DIR = path.join(HERE, '..', 'workspaces');
-const BASE = process.env.DRILL_TEST_BASE ?? '/tmp/claude-1000/T2';
-fs.mkdirSync(BASE, { recursive: true });
+const BASE0 = process.env.DRILL_TEST_BASE ?? '/tmp';
+fs.mkdirSync(BASE0, { recursive: true });
+// One private folder for every test dir; the builders only accept targets under /tmp, and it is removed on exit.
+const BASE = fs.mkdtempSync(path.join(BASE0, 'drill-oracle-selftest.'));
+if (!fs.realpathSync(BASE).startsWith('/tmp/')) throw new Error('test base must be under /tmp');
+process.on('exit', () => fs.rmSync(BASE, { recursive: true, force: true }));
 
 let passed = 0;
 const failed = [];

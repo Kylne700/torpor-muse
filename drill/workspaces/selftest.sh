@@ -8,8 +8,12 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd -P)
 ORACLE=$HERE/../oracles/files.mjs
-BASE=${DRILL_TEST_BASE:-/tmp/claude-1000/T2}
-mkdir -p "${BASE:?}"
+# All test dirs live in one private folder that is removed on exit (set DRILL_TEST_BASE to choose where; it must be under /tmp).
+BASE0=${DRILL_TEST_BASE:-/tmp}
+mkdir -p "${BASE0:?}"
+BASE=$(mktemp -d "${BASE0:?}/drill-selftest.XXXXXX")
+case "$BASE" in /tmp/*) ;; *) echo "refused: test base is not under /tmp" >&2; exit 2 ;; esac
+trap 'rm -rf "${BASE:?}"' EXIT
 UPDATE=0
 if [ "${1:-}" = "--update" ]; then UPDATE=1; shift; fi
 FAILS=0
