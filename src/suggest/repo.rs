@@ -643,10 +643,21 @@ mod tests {
         }
         let ex = excerpt(&d, true);
         assert!(ex.len() <= TOTAL_CAP + 400, "{}", ex.len());
-        assert!(ex.len() > TOTAL_CAP / 2, "the cap binds, the excerpt is not far below it: {}", ex.len());
+        assert!(
+            ex.len() > TOTAL_CAP / 2,
+            "the cap binds, the excerpt is not far below it: {}",
+            ex.len()
+        );
         let files: Vec<&str> = ex.split("\nFILE ").skip(1).collect();
-        assert!(!files.is_empty() && files.len() < 12, "later files are left out: {}", files.len());
-        assert!(files.iter().all(|f| f.len() <= FILE_CAP + 200), "each file is cut to its own cap");
+        assert!(
+            !files.is_empty() && files.len() < 12,
+            "later files are left out: {}",
+            files.len()
+        );
+        assert!(
+            files.iter().all(|f| f.len() <= FILE_CAP + 200),
+            "each file is cut to its own cap"
+        );
         assert!(ex.lines().all(|l| l.chars().count() <= LINE_CAP + 10));
         let _ = fs::remove_dir_all(&d);
     }

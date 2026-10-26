@@ -350,12 +350,14 @@ mod tests {
         p.to_string_lossy().into_owned()
     }
 
+    // `ps` exists on Linux and macOS (no /proc on macOS); a zombie counts as dead.
     fn alive(pid: &str) -> bool {
-        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| {
-            s.rsplit(')')
-                .next()
-                .is_some_and(|t| !t.trim_start().starts_with('Z'))
-        })
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        !s.is_empty() && !s.starts_with('Z')
     }
 
     fn tmp(name: &str) -> std::path::PathBuf {
@@ -400,7 +402,7 @@ mod tests {
         let d = tmp("hang");
         let bin = script(&d, "sleep 30 & echo $! > pidfile; wait");
         let t = Instant::now();
-        let r = exec_with(&bin, &d, &[], None, Duration::from_millis(300)).unwrap();
+        let r = exec_with(&bin, &d, &[], None, Duration::from_millis(1500)).unwrap();
         assert!(
             r.timed_out && t.elapsed() < Duration::from_secs(8),
             "{:?}",

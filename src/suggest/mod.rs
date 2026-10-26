@@ -27,6 +27,7 @@ const MAX_OUT: u32 = 6000;
 const CACHE_KEY: &str = concat!("torpor-muse-writer-", env!("CARGO_PKG_VERSION"));
 const HARD_TIMEOUT: Duration = Duration::from_secs(720);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
+const WATCHDOG_GRACE: Duration = Duration::from_secs(3);
 const WORDS_MAX: usize = 1500;
 const RETRY_WAIT_MAX_S: u64 = 20;
 const RETRY_WAIT_DEFAULT_S: u64 = 2;
@@ -420,7 +421,9 @@ fn ask(c: &mut Ctx, p: &Plan, body: &str, attempt: u32) -> Result<client::Readin
 fn watchdog(c: &Ctx) {
     let (deadline, result, session) = (c.deadline, c.result.clone(), c.session.clone());
     std::thread::spawn(move || {
-        std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+        // A call in flight times out at the deadline itself and is written to the ledger; the watchdog is for what
+        // does not (a stuck engine, a stuck write), so it waits a little longer.
+        std::thread::sleep(deadline.saturating_duration_since(Instant::now()) + WATCHDOG_GRACE);
         if DONE.swap(true, Ordering::SeqCst) {
             return;
         }

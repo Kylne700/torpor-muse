@@ -50,6 +50,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && path === '/login') {
     return sendPage(res, '<h1>Log in</h1><form><input name="user"><input name="password" type="password"></form>');
   }
+  // login:start
   if (req.method === 'POST' && path === '/api/login') {
     return readJson(req, (body) => {
       if (!body || users.get(body.user) !== body.password) {
@@ -60,6 +61,7 @@ const server = http.createServer((req, res) => {
       return sendJson(res, 200, { user: body.user }, { 'set-cookie': 'sid=' + sid + '; Path=/; HttpOnly' });
     });
   }
+  // login:end
   if (req.method === 'GET' && path === '/api/me') {
     const user = signedInUser(req);
     return user ? sendJson(res, 200, { user }) : sendJson(res, 401, { error: 'not signed in' });
