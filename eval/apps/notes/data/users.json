@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "username": "alice",
+    "password": "5d1f9a7c3b2e4f60:6be7c3f70f6f42e2d9b4cd3f9ec7ab5968474540540bacf73dec8e4ccfcafc65"
+  },
+  {
+    "id": 2,
+    "username": "bob",
+    "password": "c0ffee1234abcd99:8b0163b4d65aee015f3d792e198dfe9d8f36218d38d1953f828ae06423ae82e3"
+  }
+]

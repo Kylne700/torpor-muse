@@ -1,0 +1,35 @@
+diff --git a/server.js b/server.js
+index 709599a..9b28543 100644
+--- a/server.js
++++ b/server.js
+@@ -38,6 +38,7 @@ async function handle(req, res) {
+   const method = req.method;
+ 
+   if (method === 'GET' && path === '/') return send(res, 200, PAGE);
++  if (method === 'GET' && path === '/health') return send(res, 200, { status: 'ok' });
+ 
+   if (method === 'POST' && path === '/register') {
+     const { username, password } = await readJson(req);
+@@ -51,7 +52,7 @@ async function handle(req, res) {
+ 
+   if (method === 'POST' && path === '/login') {
+     const { username, password } = await readJson(req);
+-    const user = store.findUser(username);
++    const user = store.findUser(String(username).toLowerCase());
+     if (!user || !auth.verifyPassword(password, user.password)) {
+       return send(res, 401, { error: 'wrong username or password' });
+     }
+@@ -67,9 +68,13 @@ async function handle(req, res) {
+   if (!user) return send(res, 401, { error: 'login required' });
+ 
+   if (method === 'GET' && path === '/me') return send(res, 200, { id: user.id, username: user.username });
++  if (method === 'GET' && path === '/stats') return send(res, 200, { notes: store.notesOf(user.id).length });
+ 
+   if (path === '/notes' && method === 'GET') {
+     let rows = store.notesOf(user.id);
++    if (url.searchParams.get('sort') === 'title') {
++      rows = [...rows].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
++    }
+     return send(res, 200, rows);
+   }
+ 
