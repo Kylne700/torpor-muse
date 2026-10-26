@@ -1,0 +1,13 @@
+# The Torpor engine that torpor-muse drives: a pinned open-source dependency made before the hackathon (not part of the
+# submission). torpor-muse refuses an engine whose `torpor version` output differs. Binaries: dist/<platform>/torpor at
+# the commit below; scripts/fetch-engine.sh downloads the one for this platform and checks its sha256.
+repo = "https://github.com/Kylne700/torpor"
+tag = "pre-event-final"
+commit = "a2289f4c3cdc7779f18cda56f95c607bb01a88cc"
+version = "torpor 2.3.1"
+
+[sha256]
+linux-x64 = "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f"
+linux-arm64 = "0e6e61341e735319b8a5d857031324c192ea675b8d9b4fb29e96672dc6039c7d"
+darwin-x64 = "8b4bbf292026537b0b84db69f3c0c0463650ca76e3d21dd93863d51c40c184dc"
+darwin-arm64 = "0ffd3a1c05f8ddefef4ffe8c04da6c4118625cb3a5465af94a359624650a948b"

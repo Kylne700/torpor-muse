@@ -1,0 +1,18 @@
+[package]
+name = "torpor-muse"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+description = "Muse Code hooks for the Torpor engine, plus a Muse Spark check-writer"
+repository = "https://github.com/Kylne700/torpor-muse"
+publish = false
+
+# Agents add the dependencies they need here; the lead resolves merge conflicts.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
