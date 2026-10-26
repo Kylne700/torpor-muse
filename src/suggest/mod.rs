@@ -344,6 +344,8 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             }
             schema::Verdict::Check => {}
         }
+        // what the steps cannot prove, in the model's words (for a `check` the reason is only that)
+        let gap = c.safe(&answer.reason, 200);
         let check = match schema::to_check(&answer, &p.starts) {
             Ok(v) => v,
             Err(e) if last => return Outcome::new(Kind::Rejected, e),
@@ -361,8 +363,8 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             Err(e) => return Outcome::new(Kind::Error, e),
         };
         let turned_down = match said {
-            attach::Added::Proven { id, line } => return saved(Kind::Proven, id, &line),
-            attach::Added::Advisory { id, line } => return saved(Kind::Advisory, id, &line),
+            attach::Added::Proven { id, line } => return saved(Kind::Proven, id, &line, &gap),
+            attach::Added::Advisory { id, line } => return saved(Kind::Advisory, id, &line, &gap),
             attach::Added::Lint(m) => m,
             attach::Added::NotSaved { why, retry: true } => why,
             attach::Added::NotSaved { why, retry: false } => {
@@ -384,12 +386,17 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
     Outcome::new(Kind::Advisory, "no check was made")
 }
 
-fn saved(kind: Kind, promise: Option<u32>, line: &str) -> Outcome {
+fn saved(kind: Kind, promise: Option<u32>, line: &str, gap: &str) -> Outcome {
+    let message = if gap.is_empty() {
+        line.to_string()
+    } else {
+        format!("{line} Not covered by this check: {gap}")
+    };
     Outcome {
         kind,
         saved: true,
         promise,
-        message: line.to_string(),
+        message,
     }
 }
 

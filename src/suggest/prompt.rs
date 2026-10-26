@@ -18,12 +18,14 @@ For "not_a_claim" and "cannot_check": write a short reason in your own words (on
 
 For "check":
 - name: a short title (at most 60 characters). why: what the developer said (at most 200 characters).
-- start_script: one of the listed scripts. node_env: "" unless the code needs it. ready_path: a path starting with "/" that answers 2xx without signing in; read the code and pick one that exists.
+- start_script: one of the listed scripts. node_env: "" unless the code needs it. ready_path: a path starting with "/" that answers 2xx without signing in and that the app already had before this work, because the check also runs on older versions: the front page "/" when it answers 2xx, never a route the new work added; read the code and pick one that exists.
 - steps: the requests in order; cookies are kept between steps. path starts with "/" and has no host. body_json is the JSON body as text, or "" for none; GET and HEAD never have a body. expect_status is the HTTP status the code really returns for that request (200, 201, ...), or 0 for none. Every step needs at least one of expect_status, json_has (field paths such as "user.name" or "items[0]"), json_types, body_contains.
 - Use only routes, field names and logins that appear in the repo files. Never invent a login or a route. If you cannot find what you need, answer "cannot_check".
 - Where a value must be new on every run (a new account, a note title), write {rand} in the text; it becomes 8 random letters or digits.
 - Do not expect ids, dates, UUIDs or numbers of 5 or more digits. Do not write absolute URLs.
 - The why of every step must contain at least one word of 4 or more letters that the developer wrote, spelled exactly as they wrote it.
+- When the developer names a value (a quantity, a total, a name, a status), assert that exact value with body_contains or json_types, worked out from the data in the repo files; a field that is merely present does not prove it.
+- reason: empty when the steps prove everything the developer said. Otherwise one sentence naming the part they cannot test (a restart of the server, a request header such as a bearer token, replaying an old cookie, waiting for time to pass).
 - Keep the check small: only what the developer said works, at most 6 steps."#;
 
 /// Sixteen hex characters nobody can guess before the run (std's random hash seed).

@@ -15,6 +15,31 @@ fn say_proven(sb: &Sandbox) {
 }
 
 #[test]
+fn a_saved_check_says_which_part_of_the_words_it_cannot_prove() {
+    let sb = Sandbox::new("gap");
+    say_proven(&sb);
+    let mut answer = good_answer();
+    answer["reason"] = json!("it cannot restart the server to see the data survive");
+    let mock = Mock::ok(&sb.dir, &answer);
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    let ctx = format!("out={:?} err={:?}", r.out, r.err);
+    assert_eq!(r.code, 0, "{ctx}");
+    assert!(
+        r.out.starts_with("proven: ")
+            && r.out.ends_with(
+                "Not covered by this check: it cannot restart the server to see the data survive\n"
+            ),
+        "{ctx}"
+    );
+    // nothing to add when the steps cover the words
+    let sb = Sandbox::new("nogap");
+    say_proven(&sb);
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert!(!r.out.contains("Not covered"), "{:?}", r.out);
+}
+
+#[test]
 fn every_fault_ends_rejected_or_advisory_with_the_reason() {
     // (fixture, outcome, requests made, a piece of the reason)
     let table = [

@@ -254,6 +254,37 @@ fn live_timing_of_praise_to_proven() {
     assert!(bad.is_empty(), "{bad:#?}");
 }
 
+/// Every prompt reaches the model, so a prompt that is not praise must save nothing (no stray check, no stray promise).
+#[test]
+#[ignore = "costs money: real calls"]
+fn live_prompts_that_are_not_praise_save_nothing() {
+    let live = Live::new();
+    let prompts = [
+        "please add a delete button to every note",
+        "why is the login so slow?",
+        "the login is broken again, it answers 500",
+        "next I want to add search and tags",
+        "thanks",
+        "no, that is not what I meant",
+        "ok, continue",
+        "the export still does not work",
+        "\u{bf}puedes an\u{f1}adir un bot\u{f3}n para borrar notas?",
+        "Warum ist die Anmeldung so langsam?",
+        "\u{5ea}\u{5d5}\u{5e1}\u{5d9}\u{5e3} \u{5d1}\u{5d1}\u{5e7}\u{5e9}\u{5d4} \u{5db}\u{5e4}\u{5ea}\u{5d5}\u{5e8} \u{5de}\u{5d7}\u{5d9}\u{5e7}\u{5d4}",
+    ];
+    let mut bad = Vec::new();
+    for (i, words) in prompts.iter().enumerate() {
+        let sb = live.sandbox(words);
+        let c = live.ask(&sb, &format!("not praise {}", i + 1), words);
+        let (_, list, _) = sb.torpor(&["promise", "list"], None);
+        if c.code == 0 || c.out.starts_with("proven: ") || list.contains("your words") {
+            bad.push(format!("{words:?}: {} | {list}", c.out));
+        }
+    }
+    println!("LIVE total so far ${:.4}", live.total());
+    assert!(bad.is_empty(), "{bad:#?}");
+}
+
 // ---- The task bank (eval/): the writer on the bank's apps, then its check on builds that break or keep the behaviour.
 
 fn eval_dir() -> PathBuf {
@@ -282,6 +313,7 @@ struct Task {
     app: String,
     first_prompt: String,
     praise: String,
+    behaviours: Vec<String>,
 }
 
 fn load_task(id: &str) -> Task {
@@ -293,6 +325,10 @@ fn load_task(id: &str) -> Task {
         app: s(&v["app"]),
         first_prompt: s(&v["turns"][0]["prompt"]),
         praise: s(&v["praise"]["words"]),
+        behaviours: v["praise"]["behaviours"]
+            .as_array()
+            .map(|a| a.iter().map(&s).collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -733,7 +769,7 @@ impl Score {
     fn print(&self, app: &str) {
         let p = |t: (usize, usize)| format!("{}/{}", t.0, t.1);
         println!(
-            "LIVE SUMMARY {app}: proven {}; regression builds caught {}; harmless variant builds not flagged {}; own breaks caught {}; own harmless edits not flagged {}",
+            "LIVE SUMMARY {app}: proven {}; regression builds caught {}; unrelated-change builds not flagged {}; own breaks caught {}; own harmless edits not flagged {}",
             p(self.proven),
             p(self.caught),
             p(self.spared),
@@ -750,6 +786,12 @@ fn bank_task(live: &Live, id: &str, score: &mut Score, muts: &[Mutation]) {
     let control = id.ends_with("-ctrl");
     let sb = eval_sandbox(live, &task);
     let c = live.ask(&sb, &format!("bank {id}"), &task.praise);
+    let (_, shown, _) = sb.torpor(&["promise", "show", "1"], None);
+    let shown: String = shown.split_whitespace().collect::<Vec<_>>().join(" ");
+    println!(
+        "LIVE   {id} saved: {}",
+        shown.chars().take(1500).collect::<String>()
+    );
     score.proven.1 += 1;
     score.proven.0 += usize::from(c.out.starts_with("proven: "));
     if c.code != 0 {
@@ -764,7 +806,8 @@ fn bank_task(live: &Live, id: &str, score: &mut Score, muts: &[Mutation]) {
     let short: String = line.chars().take(230).collect();
     println!("LIVE   {id} {tag}: check {word}; oracle failed {failed:?} | {short}");
     let (hit, pair) = if control {
-        (word == "PASS" && failed.is_empty(), &mut score.spared)
+        let praised_still_holds = !failed.iter().any(|f| task.behaviours.contains(f));
+        (word == "PASS" && praised_still_holds, &mut score.spared)
     } else {
         (word == "FAIL", &mut score.caught)
     };
@@ -799,10 +842,15 @@ fn bank_task(live: &Live, id: &str, score: &mut Score, muts: &[Mutation]) {
 fn bank(app: &str, tasks: &[&str], muts: &[Mutation]) {
     let live = Live::new();
     let mut score = Score::default();
-    for id in tasks {
+    let only = std::env::var("BANK_ONLY").unwrap_or_default();
+    let wanted = |id: &str| only.is_empty() || only.split(',').any(|o| o == id);
+    for id in tasks.iter().filter(|id| wanted(id)) {
         bank_task(&live, id, &mut score, &[]);
     }
-    bank_task(&live, &format!("{app}-ctrl"), &mut score, muts);
+    let control = format!("{app}-ctrl");
+    if wanted(&control) {
+        bank_task(&live, &control, &mut score, muts);
+    }
     score.print(app);
     println!("LIVE total so far ${:.4}", live.total());
 }
