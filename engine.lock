@@ -24,6 +24,9 @@ release-published 2026-10-26T15:29:56Z
 built-by-tag v2.3.1
 built-by-commit 495ce0816d7ccd814df27fb7f5ff0c3c7b3fa43a
 binaries-commit b20cf87548b863e39d2b149a88a0069c2608e0a8
+# `torpor version` prints `torpor 2.3.1`: measured on dist/linux-x64/torpor at the pinned commit
+# (a file whose sha256 equals the locked linux-x64 asset below), on 2026-10-26 at about 18:45 UTC.
+version 2.3.1
 # The tag the README compares against: between it and pre-event-final only README.md (+2 lines) and
 # THIRD-PARTY-NOTICES.md (+8725 lines) differ (git diff --numstat).
 base-tag pre-event-base
