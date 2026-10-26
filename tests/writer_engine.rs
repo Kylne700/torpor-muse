@@ -94,3 +94,35 @@ fn the_engines_own_lint_words_are_quoted_back_once_then_the_check_stays_advisory
     let (_, list, _) = sb.torpor(&["promise", "list"], None);
     assert!(!list.contains("login works"), "nothing was saved: {list}");
 }
+
+#[test]
+fn a_run_stopped_midway_leaves_at_most_a_proposed_row_and_a_rerun_does_not_pile_on() {
+    let Some(sb) = with_engine("killed") else {
+        return;
+    };
+    sb.engine_history(PRAISE);
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    // the proof takes about twenty seconds on this app; with 12 s the engine call gets about 7 and is stopped midway
+    let r = sb.suggest(
+        Some(&mock.base()),
+        "-",
+        &[
+            ("TORPOR_MUSE_FROM_HOOK", "s1"),
+            ("TORPOR_MUSE_WORDS", PRAISE),
+            ("TORPOR_MUSE_HARD_TIMEOUT_S", "12"),
+        ],
+    );
+    let ctx = format!("out={:?} err={:?} secs={}", r.out, r.err, r.secs);
+    assert_eq!(r.code, 3, "{ctx}");
+    assert!(r.out.contains("did not finish in time"), "{ctx}");
+    assert_eq!(sb.result()["outcome"], "advisory", "{ctx}");
+    // the stopped add may leave a `proposed` row (the engine drops those itself after 15 minutes); never a saved check
+    let (_, list, _) = sb.torpor(&["promise", "list"], None);
+    let rows: Vec<&str> = list.lines().filter(|l| l.contains("login works")).collect();
+    assert!(rows.iter().all(|l| l.contains(" · proposed · ")), "{list}");
+
+    // the engine refuses the same check while that row stands ("already has this check"): the rerun stays out of it
+    let again = hook_run(&sb, &mock.base());
+    assert!(again.out.starts_with("skipped: "), "{}", again.out);
+    assert_eq!(mock.requests().len(), 1, "the model was asked again");
+}

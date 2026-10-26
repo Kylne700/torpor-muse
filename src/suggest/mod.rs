@@ -265,7 +265,7 @@ fn plan(
         if attach::promised_at(root, turn.n) {
             return Err(Outcome::new(
                 Kind::Skipped,
-                "a check from your words at this turn is already saved",
+                "a check from your words at this turn is already saved (or left waiting for its proof by a stopped run)",
             ));
         }
     }
