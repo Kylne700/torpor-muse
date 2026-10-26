@@ -3,7 +3,7 @@
 // A fake `muse` (a small node script) stands in for Muse Code so the whole runner can be played end to end inside the real sandbox.
 // Parts that need bwrap are skipped (and counted) when bwrap cannot run here.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,6 +149,8 @@ await test('turns are classified: a step cap is not infra, a timeout is a fail, 
   const rl = L.classifyTurn({ code: 1, stderr: 'provider error: 429 Too Many Requests, retry-after: 17' });
   assert.deepEqual([rl.kind, rl.retryAfterS], ['rate_limited', 17]);
   assert.equal(L.classifyTurn({ code: 1, stderr: 'http 401 unauthorized' }).kind, 'fatal');
+  assert.equal(L.classifyTurn({ code: 1, stderr: 'failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected — update or unset it' }).kind, 'fatal', 'the message Muse 1.4.13 printed for a bogus key');
+  assert.equal(L.classifyTurn({ code: 1, stderr: 'agent loop failed: model failed: model `x` does not exist or you lack access [request_id=1]' }).kind, 'fatal', 'an unknown model id');
   assert.equal(L.classifyTurn({ code: 134, stderr: 'segfault' }).kind, 'infra');
 });
 
@@ -302,6 +304,41 @@ await test('cli: a whole run with the fake muse writes valid rows, and running i
   assert.deepEqual(fs.readdirSync(tmp), [], 'no episode folder left behind');
   const bad = spawnSync(process.execPath, [path.join(HERE, 'run.mjs'), '--tasks', 'notes-ctrl', '--out', mk('cli-bad')], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   assert.equal(bad.status, 2); assert.match(bad.stderr, /needs META_API_KEY|needs --model/, 'a keyed run without its key stops');
+});
+
+await test('cli: a stop (cap, or a signal) leaves whole (task, rep) groups, and the same command finishes the rest', async () => {
+  if (!bwrapOk) return 'skip';
+  // A fake model call costs $0.01 (100000 input tokens at the contributor price): an episode is $0.06, a group of 2 arms $0.12.
+  const muse = fakeMuse({ model: 'muse-spark-1.3-contributor', input: 100000, output: 0 });
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME, META_API_KEY: 'selftest-not-a-key', EVAL_SANDBOX: 'v2.1' };
+  const args = (out, tmp, cap) => [path.join(HERE, 'run.mjs'), '--tasks', 'notes-ctrl,todo-ctrl,shop-ctrl', '--arms', 'A,B', '--reps', '1', '--seed', '5', '--muse', muse, '--tmp', tmp, '--out', out,
+    '--model', 'muse-spark-1.3-contributor', '--cap-usd', String(cap)];
+  const groupsOf = (out) => { const g = new Map(); for (const r of L.readRows(path.join(out, 'rows'))) g.set(L.groupKey(r), (g.get(L.groupKey(r)) || 0) + 1); return g; };
+  // 1. the cap: room for two groups, not three
+  const out = mk('grp-out'), tmp = mk('grp-tmp');
+  const r1 = spawnSync(process.execPath, args(out, tmp, 0.3), { encoding: 'utf8', env });
+  assert.equal(r1.status, 3, r1.stderr + r1.stdout); assert.match(r1.stderr, /might not fit under the cap/);
+  assert.deepEqual([...groupsOf(out).values()], [2, 2], 'two whole groups, no half group');
+  const sum = JSON.parse(fs.readFileSync(path.join(out, 'summary.json'), 'utf8'));
+  assert.deepEqual([sum.groups_planned, sum.groups_complete, sum.stopped_early], [3, 2, true]);
+  // 2. no room for even the first group: nothing starts
+  const out0 = mk('grp-out0');
+  const r0 = spawnSync(process.execPath, args(out0, mk('grp-tmp0'), 0.1), { encoding: 'utf8', env });
+  assert.equal(r0.status, 3); assert.equal(groupsOf(out0).size, 0);
+  // 3. the same command with room finishes only what is left
+  const r2 = spawnSync(process.execPath, args(out, tmp, 5), { encoding: 'utf8', env });
+  assert.equal(r2.status, 0, r2.stderr); assert.match(r2.stderr, /2 to run/);
+  assert.deepEqual([...groupsOf(out).values()], [2, 2, 2]);
+  const other = spawnSync(process.execPath, [...args(out, tmp, 5), '--run-id', 'another-run'], { encoding: 'utf8', env });
+  assert.equal(other.status, 2); assert.match(other.stderr, /different plan or run id/, 'a folder holds one run id');
+  // 4. one SIGTERM: the group in progress is finished, no new group is started
+  const outS = mk('grp-outS'), tmpS = mk('grp-tmpS');
+  const child = spawn(process.execPath, args(outS, tmpS, 5), { env, stdio: 'ignore' });
+  const exited = new Promise((res) => child.on('exit', (code) => res(code)));
+  for (let i = 0; i < 400 && !(fs.existsSync(path.join(outS, 'rows')) && fs.readdirSync(path.join(outS, 'rows')).length); i++) await new Promise((r) => setTimeout(r, 50));
+  child.kill('SIGTERM');
+  assert.equal(await exited, 3);
+  assert.deepEqual([...groupsOf(outS).values()], [2], 'the group that was running got both arms; the next group never started');
 });
 
 fs.rmSync(TMP, { recursive: true, force: true });

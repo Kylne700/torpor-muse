@@ -60,7 +60,10 @@ async function main() {
   for (const t of want) if (!tasks.has(t)) throw new Error(`unknown task ${t}`);
   const arms = a.arms.split(',').filter(Boolean);
   for (const x of arms) if (!L.ARMS.includes(x)) throw new Error(`unknown arm ${x}`);
-  const runId = a.runId || `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}z-s${a.seed}`;
+  // a resumed folder keeps its run id; a folder holds one run id (the pilot and the main run are never pooled)
+  let prevPlan = null;
+  try { if (a.out) prevPlan = JSON.parse(fs.readFileSync(path.join(path.resolve(a.out), 'plan.json'), 'utf8')); } catch { /* a new folder */ }
+  const runId = a.runId || prevPlan?.run_id || `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}z-s${a.seed}`;
   const jobs = L.planJobs({ tasks: want, arms, reps: a.reps, seed: a.seed });
   if (a.dryRun) { for (const j of jobs) console.log(JSON.stringify(j)); return; }
 
@@ -91,13 +94,14 @@ async function main() {
   const plan = { run_id: runId, seed: a.seed, tasks: want, arms, reps: a.reps, model: keyed ? a.model : 'echo', mode: keyed ? 'keyed' : 'echo', jobs };
   if (fs.existsSync(planFile)) {
     const old = JSON.parse(fs.readFileSync(planFile, 'utf8'));
-    if (JSON.stringify(old.jobs) !== JSON.stringify(jobs) || old.model !== plan.model) throw new Error(`${planFile} holds a different plan: use a new --out or the same flags`);
+    if (JSON.stringify(old.jobs) !== JSON.stringify(jobs) || old.model !== plan.model || old.run_id !== plan.run_id) throw new Error(`${planFile} holds a different plan or run id: use a new --out or the same flags`);
   } else L.writeAtomic(planFile, JSON.stringify(plan, null, 1) + '\n');
 
   // versions, from the real binaries, inside a sandbox
   const probeDir = path.join(tmpBase, `ep-${crypto.randomBytes(5).toString('hex')}`);
-  const ver = async (bin, args) => ((await sandbox({ runDir: probeDir, ro: [bin], cmd: [bin, ...args], timeoutMs: 30000, pid: true })).stdout || '').trim().split('\n')[0];
-  const museVersion = await ver(path.join(museDir, 'muse'), ['--version']);
+  const ver = async (bin, args, ro = [bin]) => ((await sandbox({ runDir: probeDir, ro, cmd: [bin, ...args], timeoutMs: 30000, pid: true })).stdout || '').trim().split('\n')[0];
+  const museVersion = await ver(path.join(museDir, 'muse'), ['--version'], [museDir]); // Muse needs its whole install dir
+  if (!museVersion) throw new Error(`"muse --version" printed nothing inside the sandbox (muse dir ${museDir})`);
   const engineVersion = arms.some((x) => x === 'C' || x === 'D') ? await ver(engineBin, ['--version']) : 'n/a';
   const adapterVersion = arms.includes('D') ? await ver(adapterBin, ['version']) : 'n/a';
   rmEp(probeDir, tmpBase);
@@ -118,34 +122,59 @@ async function main() {
   const pending = jobs.filter((j) => !states.get(L.epKey(j))?.done);
   console.error(`${runId}: ${jobs.length} episodes planned, ${jobs.length - pending.length} already finished, ${pending.length} to run, concurrency ${conc}, ${keyed ? `keyed ${a.model}, cap $${a.capUsd}` : 'echo'}, sandbox ${BACKEND}`);
 
-  let stopping = false, next = 0, done = 0;
-  const onSignal = () => { stopping = true; for (const ep of activeEps) { killEp(ep); } setTimeout(() => process.exit(130), 500); };
+  // Whole groups. A (task, rep) group is played by one worker, its arms one after another (so the pair runs close in time), and it is
+  // only started when the cap leaves room for all of it. A stop (cap, fatal error, or the first signal) starts no new group and lets the
+  // groups in progress finish; only the second signal kills what runs, which can leave a half group (the same command resumes it).
+  const groups = [];
+  for (const j of pending) {
+    const k = L.groupKey(j);
+    (groups.find((g) => g.key === k) || groups[groups.push({ key: k, jobs: [] }) - 1]).jobs.push(j);
+  }
+  for (const r of L.readRows(rowsDir)) spend.episodeDone(r.usd_hi + r.writer_usd_hi);
+  let halted = false, draining = false, nextGroup = 0, done = 0, signals = 0, queued = 0;
+  const onSignal = () => {
+    if (++signals === 1) { draining = true; console.error('stop requested: the groups in progress are finished first; send the signal again to kill now'); return; }
+    halted = true;
+    for (const ep of activeEps) killEp(ep);
+    setTimeout(() => process.exit(130), 500);
+  };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
   const worker = async () => {
     for (;;) {
-      if (stopping) return;
-      const job = pending[next++];
-      if (!job) return;
-      for (;;) {
-        const st = L.episodeStates(L.readRows(rowsDir)).get(L.epKey(job)) || { last: 0, infra: 0, done: false };
-        if (st.done || stopping) break;
-        const attempt = st.last + 1;
-        const { row, stopRun } = await runEpisode(job, attempt, cx);
-        if (stopRun) stopping = true;
-        if (stopRun && row.turns_run === 0) { console.error(`stop: ${row.invalid_reason}`); break; } // nothing ran: no row
-        L.writeRow(rowsDir, row);
-        console.error(`[${++done}/${pending.length}] ${row.task} arm ${row.arm} r${row.rep} a${row.attempt}: ${row.valid ? `valid pass=${row.final_pass} later=${row.later_kept}` : `INVALID ${row.invalid_reason}`} | ${row.minutes} min, ${row.steps_total} steps, $${row.usd_hi.toFixed(4)}+$${row.writer_usd_hi.toFixed(4)} | total $${spend.total.toFixed(4)}`);
-        if (row.valid || row.retryable === false || stopRun) break;
+      const g = groups[nextGroup];
+      if (!g || halted || draining) return;
+      if (!spend.groupFits(queued + g.jobs.length)) { halted = true; console.error(`stop: group ${g.key} (${g.jobs.length} episodes) might not fit under the cap: $${spend.total.toFixed(4)} spent of $${a.capUsd}`); return; }
+      nextGroup++; queued += g.jobs.length;
+      for (const job of g.jobs) {
+        for (;;) {
+          const st = L.episodeStates(L.readRows(rowsDir)).get(L.epKey(job)) || { last: 0, infra: 0, done: false };
+          if (st.done || halted) break;
+          const attempt = st.last + 1;
+          const { row, stopRun } = await runEpisode(job, attempt, cx);
+          if (stopRun) halted = true;
+          if (stopRun && row.turns_run === 0) { console.error(`stop: ${row.invalid_reason}`); break; } // nothing ran: no row
+          L.writeRow(rowsDir, row);
+          spend.episodeDone(row.usd_hi + row.writer_usd_hi);
+          console.error(`[${++done}/${pending.length}] ${row.task} arm ${row.arm} r${row.rep} a${row.attempt}: ${row.valid ? `valid pass=${row.final_pass} later=${row.later_kept}` : `INVALID ${row.invalid_reason}`} | ${row.minutes} min, ${row.steps_total} steps, $${row.usd_hi.toFixed(4)}+$${row.writer_usd_hi.toFixed(4)} | total $${spend.total.toFixed(4)}`);
+          if (row.valid || row.retryable === false || stopRun) break;
+        }
+        queued--;
+        if (halted) break;
       }
     }
   };
   await Promise.all(Array.from({ length: conc }, worker));
   const rows = L.readRows(rowsDir);
-  const sum = { run_id: runId, rows: rows.length, valid: rows.filter((r) => r.valid).length, invalid: rows.filter((r) => !r.valid).length, usd_hi: L.round6(rows.reduce((s, r) => s + r.usd_hi + r.writer_usd_hi, 0)), spend_total_usd_hi: L.round6(spend.total), stopped_early: stopping };
+  const validBy = new Map(); // group -> arms with a valid row
+  for (const r of rows) if (r.valid) validBy.set(L.groupKey(r), (validBy.get(L.groupKey(r)) || new Set()).add(r.arm));
+  const groupsPlanned = new Set(jobs.map(L.groupKey)).size;
+  const groupsComplete = [...validBy.values()].filter((arms2) => arms.every((x) => arms2.has(x))).length;
+  const stopped = halted || draining;
+  const sum = { run_id: runId, rows: rows.length, valid: rows.filter((r) => r.valid).length, invalid: rows.filter((r) => !r.valid).length, groups_planned: groupsPlanned, groups_complete: groupsComplete, usd_hi: L.round6(rows.reduce((t, r) => t + r.usd_hi + r.writer_usd_hi, 0)), spend_total_usd_hi: L.round6(spend.total), stopped_early: stopped };
   L.writeAtomic(path.join(outDir, 'summary.json'), JSON.stringify(sum, null, 1) + '\n');
   console.log(JSON.stringify(sum));
-  process.exit(stopping ? 3 : 0);
+  process.exit(stopped ? 3 : 0);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main().catch((e) => { console.error(`error: ${e.message}\n${usage}`); process.exit(2); });

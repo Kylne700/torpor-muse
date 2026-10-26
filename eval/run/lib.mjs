@@ -40,6 +40,8 @@ export function planJobs({ tasks, arms, reps, seed }) {
   return jobs;
 }
 export const epKey = (j) => `${j.task}__${j.arm}__r${j.rep}`;
+// A group is one (task, rep): every arm of it is played, or none (the stats pair the arms inside a group).
+export const groupKey = (j) => `${j.task}__r${j.rep}`;
 
 // ---------------------------------------------------------------- prices (USD per 1M tokens: cached, input, output; Meta list read 2026-10-26)
 const PRICES = { std: [0.15, 1.25, 4.25], contributor: [0.002, 0.1, 0.2] };
@@ -131,9 +133,12 @@ export function classifyTurn({ code, signal, timedOut, stderr = '' }) {
   if (timedOut) return { kind: 'timeout', reason: 'turn_timeout' };
   if (code === 0) return { kind: 'ok' };
   const first = String(stderr).split('\n').map((s) => s.trim()).filter(Boolean).filter((s) => !s.startsWith('muse: workspace') && !s.startsWith('muse: system'))[0] || '';
+  // Measured with a bogus key (Muse 1.4.13): exit 1, "failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected".
+  // An unknown model id: exit 1, "agent loop failed: model failed: model `X` does not exist or you lack access [request_id=..]", no tokens.
+  // Neither can succeed on a retry, so both stop the run.
   // G0: --max-model-steps reached = exit 1 "model did not reach a terminal state within N step(s)": the model's failure, not an outage.
   if (/did not reach a terminal state within \d+ step/i.test(stderr)) return { kind: 'step_cap', reason: 'step_cap' };
-  if (/\b(401|403)\b|unauthori[sz]ed|invalid api key|forbidden/i.test(stderr)) return { kind: 'fatal', reason: `auth: ${first.slice(0, 120)}` };
+  if (/\b(401|403)\b|unauthori[sz]ed|invalid api key|forbidden|authentication failed|key from META_API_KEY was rejected|does not exist or you lack access/i.test(stderr)) return { kind: 'fatal', reason: `auth: ${first.slice(0, 120)}` };
   if (isRateLimit(stderr)) {
     const m = /retry[- ]after[:= ]+(\d+)/i.exec(stderr);
     return { kind: 'rate_limited', reason: 'rate_limited', retryAfterS: m ? Number(m[1]) : 0 };
@@ -213,7 +218,7 @@ export function episodeStates(rows) {
 export class SpendRefused extends Error {}
 export class Spend {
   constructor(capUsd, file, floorUsd = 0.02) {
-    this.cap = capUsd; this.file = file; this.total = 0; this.largest = floorUsd; this.running = 0;
+    this.cap = capUsd; this.file = file; this.total = 0; this.largest = floorUsd; this.floor = floorUsd; this.largestEp = 0; this.running = 0;
     if (file && fs.existsSync(file)) {
       for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
         if (!l) continue;
@@ -227,6 +232,12 @@ export class Spend {
     if (need > this.cap) throw new SpendRefused(`spend cap: $${this.total.toFixed(4)} spent, next turn up to $${this.largest.toFixed(4)} x ${this.running + 1} running, cap $${this.cap}`);
     this.running++;
   }
+  // Whole groups only: n more episodes (the ones still to run in the groups in progress, plus the new group) at the dearest finished
+  // episode so far (before any finished: six floor turns) must fit under the cap, or the group is not started.
+  groupFits(n) {
+    return this.total + n * (this.largestEp || MAX_TURNS * this.floor) <= this.cap;
+  }
+  episodeDone(usd) { this.largestEp = Math.max(this.largestEp, usd); }
   endTurn(line) {
     this.running = Math.max(0, this.running - 1);
     this.add(line);
