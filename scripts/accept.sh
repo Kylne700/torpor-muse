@@ -8,6 +8,10 @@ cargo fmt --check
 cargo clippy --all-targets --quiet -- -D warnings
 cargo test --quiet
 if [ -d mock/test ]; then node --test mock/test/*.test.mjs >/dev/null; fi
+if [ -f eval/analysis/selftest.mjs ] && ! node eval/analysis/selftest.mjs >/dev/null 2>&1; then
+  echo "accept: eval/analysis/selftest.mjs failed (run it to see the problems)" >&2
+  exit 1
+fi
 if [ -f eval/selftest.mjs ] && ! node eval/selftest.mjs >/dev/null 2>&1; then
   echo "accept: eval/selftest.mjs failed (run it to see the problems)" >&2
   exit 1
