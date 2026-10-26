@@ -18,7 +18,7 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn path_var() -> String {
+pub fn path_var() -> String {
     std::env::var("PATH").unwrap_or_default()
 }
 
@@ -452,9 +452,9 @@ impl Sandbox {
         format!("{}{}", &app[..a], &app[b + "  // login:end\n".len()..])
     }
 
-    /// Gives the real engine a history to qualify checks against: turn 1 starts on the app without the login and
-    /// ends with it, then the developer's praise starts turn 2 (what the hooks of a real session would have seen).
-    pub fn engine_history(&self, praise: &str) {
+    /// Turn 1 for the real engine: it starts on the app without the login and ends with it (what the hooks of a real
+    /// session saw before the developer's praise).
+    pub fn engine_first_turn(&self) {
         let file = self.ws.join("server.js");
         let after = fs::read_to_string(&file).unwrap();
         fs::write(&file, Self::without_login(&after)).unwrap();
@@ -465,6 +465,11 @@ impl Sandbox {
         );
         fs::write(&file, after).unwrap();
         self.hook("Stop", json!({"stop_hook_active": false}));
+    }
+
+    /// Gives the real engine a history to qualify checks against: turn 1, then the praise starts turn 2.
+    pub fn engine_history(&self, praise: &str) {
+        self.engine_first_turn();
         self.hook("UserPromptSubmit", json!({"prompt": praise}));
     }
 }

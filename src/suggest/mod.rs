@@ -484,7 +484,6 @@ fn finish(c: &Ctx, o: Outcome) -> u8 {
 }
 
 /// hook.rs calls this on UserPromptSubmit (main session) after the engine call; returns at once (detached run).
-#[allow(dead_code)] // hook.rs calls this once S3a-core is merged
 pub fn trigger(session_id: &str, cwd: &str, prompt: &str) {
     if let Ok(exe) = std::env::current_exe() {
         let _ = trigger_with(&exe, session_id, cwd, prompt);
