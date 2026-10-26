@@ -1,5 +1,6 @@
 #!/bin/sh
-# Download the pinned Torpor engine for this platform into .engine/torpor; fail unless its sha256 matches engine.lock.
+# Download the pinned Torpor engine for this platform into .engine/torpor; scripts/verify-engine.sh checks its sha256
+# against engine.lock, and its `torpor version` must match the lock's version line.
 set -eu
 cd "$(dirname "$0")/.."
 case "$(uname -s)-$(uname -m)" in
@@ -10,12 +11,13 @@ case "$(uname -s)-$(uname -m)" in
   *) echo "fetch-engine: no pinned binary for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 commit=$(awk '$1 == "commit" { print $2; exit }' engine.lock)
-want=$(awk -v p="$p" '$1 == "asset" && $2 == p { print $3; exit }' engine.lock)
-if [ -z "$commit" ] || [ -z "$want" ]; then echo "fetch-engine: engine.lock lacks the commit or the $p asset" >&2; exit 1; fi
+version=$(awk '$1 == "version" { print $2; exit }' engine.lock)
+if [ -z "$commit" ] || [ -z "$version" ]; then echo "fetch-engine: engine.lock lacks the commit or version line" >&2; exit 1; fi
 mkdir -p .engine
 curl -fsSL -o .engine/torpor.part "https://raw.githubusercontent.com/Kylne700/torpor/$commit/dist/$p/torpor"
-got=$( (sha256sum .engine/torpor.part 2>/dev/null || shasum -a 256 .engine/torpor.part) | cut -c1-64)
-if [ "$got" != "$want" ]; then echo "fetch-engine: sha256 mismatch for $p: $got" >&2; exit 1; fi
+sh scripts/verify-engine.sh .engine/torpor.part "$p"
 chmod 755 .engine/torpor.part
 mv .engine/torpor.part .engine/torpor
-.engine/torpor version
+got=$(.engine/torpor version)
+if [ "$got" != "torpor $version" ]; then echo "fetch-engine: engine prints '$got', engine.lock pins $version" >&2; exit 1; fi
+echo "$got"
