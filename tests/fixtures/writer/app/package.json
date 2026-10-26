@@ -1,0 +1,9 @@
+{
+  "name": "fixture-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Synthetic notes app used by the torpor-muse writer tests.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
