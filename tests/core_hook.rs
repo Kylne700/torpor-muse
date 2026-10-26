@@ -807,10 +807,25 @@ fn turn_with_a_created_and_deleted_file(r: &Rig, pre_bash: bool) {
 }
 
 fn engine_cli(r: &Rig, args: &[&str]) -> (i32, String) {
-    let o = r
+    engine_cli_stdin(r, args, "")
+}
+
+/// The engine's own command line, run the way a person runs it (nothing from Claude Code in the environment).
+fn engine_cli_stdin(r: &Rig, args: &[&str], stdin: &str) -> (i32, String) {
+    let mut child = r
         .command(r.engine.to_str().unwrap(), args)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    let o = child.wait_with_output().unwrap();
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&o.stdout),
@@ -843,6 +858,63 @@ fn real_engine_a_file_made_and_deleted_in_one_turn_comes_back_only_with_the_pre_
     assert!(
         !c.cwd.join("created.txt").exists(),
         "no pre-image, no file: {text}"
+    );
+}
+
+/// AD3 (research/60): a promise the AI adds through its bash tool must not count as the user's words. The engine knows
+/// who ran `torpor keep` only from the row PreToolUse(Bash) leaves (or CLAUDECODE, which Muse does not set), so the same
+/// promise made without that row is the control: it has to reach the stronger tier, or the test proves nothing.
+/// (The engine reads the turn's origin from the transcript; with no transcript the origin is unknown. Once the shim
+/// supplies one that says "human", the engine counts an AI-run keep in that turn as the user's words: see the report.)
+#[test]
+fn real_engine_an_ai_run_keep_stays_advisory_and_the_same_keep_from_the_user_gets_shadow() {
+    const WORDS: &str = "the proof page must answer";
+    const SPEC: &str = r#"{"v":1,"name":"proof page answers","why":"the proof page must answer","start":{"cmd":"python3 -m http.server {port} --bind 127.0.0.1","ready":"/","timeout_s":90},"env":{},"steps":[{"http":{"method":"GET","path":"/proof.html"},"expect":{"status":200},"why":"the proof page answers"}],"unverifiable":false}"#;
+    // turn 1 leaves a save point without the page; the page is then made by hand, outside any turn, so the check is provable
+    let rig = |name: &str| {
+        let r = Rig::real(name);
+        r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+        r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+        r.hook_ok("Stop", &r.fixture("Stop"));
+        fs::write(r.cwd.join("proof.html"), "<p>proof</p>\n").unwrap();
+        r
+    };
+    let keep = |r: &Rig| {
+        let (code, text) = engine_cli_stdin(r, &["keep", WORDS, "--check", "-"], SPEC);
+        assert_eq!(code, 0, "{text}");
+        assert!(
+            text.contains("failed 2 of 2 on the start of turn 1"),
+            "the check must be provable: {text}"
+        );
+    };
+
+    let user = rig("real-ad3-user");
+    keep(&user);
+    let (_, list) = engine_cli(&user, &["promise", "list"]);
+    assert!(
+        list.contains("· shadow ·") && list.contains("your words"),
+        "{list}"
+    );
+
+    let ai = rig("real-ad3-ai");
+    let in_turn_2 = |mut p: Value| {
+        p["turn_id"] = json!("00000000-0000-7000-8000-000000000012");
+        p
+    };
+    ai.hook_ok(
+        "UserPromptSubmit",
+        &in_turn_2(ai.fixture("UserPromptSubmit")),
+    );
+    let mut pre = in_turn_2(ai.fixture("PreToolUse-bash"));
+    pre["tool_input"]["command"] = json!(format!("torpor keep \"{WORDS}\" --check - < spec.json"));
+    ai.hook_ok("PreToolUse", &pre);
+    keep(&ai);
+    let stop = ai.hook_ok("Stop", &in_turn_2(ai.fixture("Stop")));
+    assert!(stop.out.contains("proposed by the AI"), "{}", stop.out);
+    let (_, list) = engine_cli(&ai, &["promise", "list"]);
+    assert!(
+        list.contains("· advisory ·") && list.contains("the AI"),
+        "{list}"
     );
 }
 
