@@ -782,6 +782,15 @@ fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
             format!("gate not proven live since the settings changed: the last Stop heartbeat is {} old, the settings were written {} ago", ago(c.now_ms, stop), ago(c.now_ms, w)),
             how,
         );
+    } else if let Some(stop) = last_stop
+        && engine_down_since(vault, stop)
+    {
+        // the heartbeat is written before the engine is called, so a Stop that failed open still left one
+        r.problem(
+            Level::Fix,
+            format!("gate not live: the last Stop ({} ago, session {}) went through without the engine, see the hook problem below", ago(c.now_ms, stop), short(&sid)),
+            format!("fix the hook problem below; after that {how}"),
+        );
     } else {
         r.add(
             Level::Ok,
@@ -897,6 +906,19 @@ fn problem_level(msg: &str) -> Level {
     } else {
         Level::Warn
     }
+}
+
+/// Did a hook call at or after `since_ms` (to the second) go through without the engine? Same lines as the fixes below.
+fn engine_down_since(vault: &Path, since_ms: u64) -> bool {
+    let f = liveness::shim_dir(vault).join("problems.log");
+    tail_of(&f, PROBLEMS_READ).is_some_and(|text| {
+        text.lines().any(|l| {
+            let mut w = l.splitn(4, ' ');
+            let t = w.next().and_then(|t| t.parse::<u64>().ok());
+            matches!((t, w.nth(2)), (Some(t), Some(msg))
+                if t >= since_ms / 1000 && problem_level(msg) == Level::Fix)
+        })
+    })
 }
 
 /// (unix seconds, event, message) of one problems.log line.

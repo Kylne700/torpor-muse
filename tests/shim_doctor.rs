@@ -889,6 +889,43 @@ fn only_the_log_of_the_vault_the_hooks_write_to_is_read() {
 }
 
 #[test]
+fn a_stop_that_went_through_without_the_engine_is_not_a_live_gate() {
+    // healthy(): the Stop heartbeat is 2 s after the settings were written, doctor's "now" is 60 s after
+    let down = "torpor not found: set TORPOR_BIN or put it on PATH";
+    let w = healthy("problems-gate");
+    must(&w.examine(), Level::Ok, "gate live: Stop ran");
+    // in the same second as the Stop heartbeat or later: that Stop never reached the engine
+    for ago in [58, 30, 0] {
+        write_problems(&w, &[(ago, "Stop", down)]);
+        let r = w.examine();
+        must(
+            &r,
+            Level::Fix,
+            "gate not live: the last Stop (58s ago, session s-main) went through without the engine",
+        );
+        mustnt(&r, Level::Ok, "gate live");
+        must(
+            &r,
+            Level::Fix,
+            "1 hook call(s) went through without a check",
+        );
+        every_problem_says_how(&r);
+    }
+    // a failure from before that Stop: the engine is back, the gate is live (the failure is still reported)
+    write_problems(&w, &[(59, "Stop", down)]);
+    let r = w.examine();
+    must(&r, Level::Ok, "gate live: Stop ran");
+    must(
+        &r,
+        Level::Fix,
+        "1 hook call(s) went through without a check",
+    );
+    // a cut output is a note, not a gate that is down
+    write_problems(&w, &[(10, "Stop", "engine output key foo dropped")]);
+    must(&w.examine(), Level::Ok, "gate live: Stop ran");
+}
+
+#[test]
 fn a_log_with_many_lines_and_no_prompt_is_a_fix() {
     let w = World::new("drift");
     let sid = "01a00000-0000-7000-8000-000000000004";
