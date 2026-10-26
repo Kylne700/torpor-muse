@@ -9,7 +9,7 @@ Written on 2026-10-26, before any run. It fixes how the eval in `eval/DESIGN.md`
 - H1, the primary question, "what did the new work for Muse Code add to the engine": arm D passes the held-out oracle at the end of the episode more often than arm C, on the same (task, repetition) pairs. Smallest effect of interest: 0.4 absolute in pass rate (for example 0.8 against 0.4).
 - H2, secondary, labelled "engine + new work": arm D passes more often than arm A.
 - H3, secondary: arm B, a plain notes file, passes more often than arm A. It shows how much of an effect a notes file gets without Torpor.
-- The null for all three is no difference in pass rate. The tests are two-sided although the hypotheses have a direction; a result in the other direction is reported as it is (section 7.2).
+- The null for all three is no difference in pass rate. The tests are two-sided although the hypotheses have a direction; a result in the other direction is reported as it is (section 7.2). Only H1 gets a verdict word; H2 and H3 are reported as numbers.
 - If arm C scores about the same as arm A (for example because the engine's hooks fail open on Muse Code), the report says so plainly.
 
 ## 2. Arms
@@ -91,7 +91,7 @@ D against C (primary), D against A ("engine + new work") and B against A, each o
 - b = pairs where the first-named arm passed and the second failed; c = the reverse. Effect = (b - c) / pairs, the difference in pass rate.
 - p: exact two-sided McNemar, p = min(1, 2 x P(X <= min(b, c))) with X binomial(b + c, 1/2). With no discordant pairs p = 1.
 - Interval: 95 % cluster bootstrap. It resamples tasks with replacement (all pairs of a drawn task come along), recomputes the effect on each resample, and takes the 2.5 % and 97.5 % percentiles of 10000 resamples. The generator is seeded with 1, so the same rows give the same interval. Other seeds may be shown beside it to show that the interval is stable; the headline is seed 1. With fewer than 2 tasks there is no interval, and the verdict is "inconclusive at this n".
-- Verdict words, fixed now, no others: "D better than C" only if p < 0.05 AND the whole interval is above 0 (strictly); "inconclusive at this n" otherwise, always with the effect and the interval. The same rule gives "D better than A" and "B better than A" for the two secondary comparisons. A result in the other direction (the interval entirely below 0) is also "inconclusive at this n"; the line then adds a plain note that the interval lies below 0.
+- Verdict words, fixed now, no others: "D better than C" only if p < 0.05 AND the whole interval is above 0 (strictly); "inconclusive at this n" otherwise, always with the effect and the interval. Only D against C gets a verdict word. D against A and B against A are secondary: the script prints their b, c, p, effect and interval and no verdict word. A result in the other direction (the interval entirely below 0) is also "inconclusive at this n"; the line then adds a plain note that the interval lies below 0.
 - Why both conditions: the McNemar p treats pairs as independent, and repetitions of one task are not; the interval resamples tasks and so carries that. Both must agree. No correction for several comparisons is applied; only D against C is the primary.
 
 ### 7.3 Everything else
@@ -112,7 +112,7 @@ D against C (primary), D against A ("engine + new work") and B against A, each o
 
 The main run uses the contributor id `muse-spark-1.3-contributor`; whether it has the same weights as the shipped model is NV. To see whether the direction holds on the standard id, a subset runs on `muse-spark-1.3`: arms A and D only, `<subset episodes per arm>` episodes per arm, on the tasks `<subset tasks>`, at most $40 in total (enforced by the runner's spend cap). The lead fixes the tasks and the size from the pilot's measured cost before the tag.
 
-- It is directional only, with no significance claim. It goes through the same script into its own folder (one model id per folder). What is quoted is the pass counts of A and D, the effect and its interval, labelled "standard model, directional"; the script's verdict word is not quoted for it.
+- It is directional only, with no significance claim. It goes through the same script into its own folder (one model id per folder). What is quoted is the pass counts of A and D, the effect and its interval, labelled "standard model, directional"; the script prints no verdict word for it (D against C is not in that folder, and D against A never has one).
 - It is never pooled with the main run. If it points the other way, the report says so next to the main result.
 - Its pass counts are not looked at before the main analysis is done.
 - If the cap stops it early, the finished episodes are reported as they are.

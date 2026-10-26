@@ -23,7 +23,7 @@ const REQUIRED = [
 ]; // a field is missing when its key is absent; null is a legal value (arm A has no adapter, a control has no break_found)
 const ROW_HINT = ['arm', 'task', 'rep', 'attempt', 'valid', 'final_pass']; // a JSON file with none of these is not a row
 const COMPARISONS = [
-  { x: 'D', y: 'C', label: 'primary' },
+  { x: 'D', y: 'C', label: 'primary', primary: true }, // the only comparison that gets a verdict word
   { x: 'D', y: 'A', label: 'engine + new work' },
   { x: 'B', y: 'A', label: 'notes file vs vanilla' },
 ];
@@ -286,7 +286,7 @@ export function compare(units, x, y, outcome, kind, B, seed) {
   };
 }
 
-// The only verdict words (PREREG 7). Strictly: p < 0.05 AND the whole interval above 0.
+// The only verdict words (PREREG 7.2), for the primary comparison D vs C only. Strictly: p < 0.05 AND the whole interval above 0.
 export function verdict(cmp) {
   const ok = cmp.pairs > 0 && cmp.p < 0.05 && cmp.ci?.lo > 0 && cmp.diff > 0;
   return {
@@ -318,12 +318,16 @@ export function analyze(rows, skipped, { seed, boot }) {
     by_kind[k] = {};
     for (const a of arms) if (units.some((u) => u.kind === k && u.arm === a)) by_kind[k][a] = armReport(units.filter((u) => u.kind === k && u.arm === a));
   }
+  const warnings = [];
   const comparisons = [];
-  for (const { x, y, label } of COMPARISONS) {
-    if (x === 'B' && !arms.includes('B')) continue; // B vs A only when B is present
+  for (const { x, y, label, primary } of COMPARISONS) {
+    if (!arms.includes(x) || !arms.includes(y)) { // a comparison needs both arms in the folder; B is optional, so only the primary warns
+      if (primary) warnings.push(`${x} vs ${y} (${label}) is not computed: the folder has no rows for arm ${[x, y].filter((a) => !arms.includes(a)).join(' and ')}`);
+      continue;
+    }
     const add = (outcome, kind, preregistered) => {
-      const c = { id: `${x}_vs_${y}`, label, outcome, preregistered, ...compare(units, x, y, OUTCOMES[outcome], kind, boot, seed) };
-      comparisons.push(preregistered ? { ...c, ...verdict(c) } : c);
+      const c = { id: `${x}_vs_${y}`, label, outcome, preregistered, verdict: null, direction_note: null, ...compare(units, x, y, OUTCOMES[outcome], kind, boot, seed) };
+      comparisons.push(preregistered && primary ? { ...c, ...verdict(c) } : c);
     };
     add('final_pass', null, true);
     add('later_kept', null, false);
@@ -331,7 +335,6 @@ export function analyze(rows, skipped, { seed, boot }) {
     for (const k of KINDS) if (units.some((u) => u.kind === k)) add('final_pass', k, false);
   }
   const first = (a) => a.slice(0, 5).join(', ') + (a.length > 5 ? ', ...' : '');
-  const warnings = [];
   if (skipped.length) warnings.push(`${skipped.length} JSON file(s) in the folder are not rows and were skipped: ${first(skipped)}`);
   const pend = units.filter((u) => u.status === 'pending');
   if (pend.length) warnings.push(`${pend.length} unit(s) have fewer than ${MAX_ATTEMPTS} attempts and none valid (an unfinished run, or a unit the runner did not re-run) and are excluded: ${first(pend.map((u) => u.key))}`);
@@ -354,7 +357,7 @@ export function analyze(rows, skipped, { seed, boot }) {
 
 // ---------- markdown ----------
 const esc = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ');
-const table = (head, rows) => [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map(esc).join(' | ')} |`)].join('\n');
+const table = (head, rows) => (rows.length ? [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${r.map(esc).join(' | ')} |`)].join('\n') : '(none: a paired comparison needs both arms in the folder)');
 const src = (models, runs) => `*Source: model ${models.map((m) => `\`${m}\``).join(', ') || 'none'}; run id${runs.length === 1 ? '' : 's'} ${runs.map((r) => `\`${r}\``).join(', ') || 'none'}.*`;
 const fp = (p) => (p < 0.001 ? '<0.001' : p.toFixed(3));
 const fd = (d) => {
@@ -372,7 +375,8 @@ const f1 = (x) => (x === null ? 'n/a' : Number.isInteger(x) ? String(x) : x.toFi
 const usd = (x) => (x === null ? 'n/a' : `$${x.toFixed(3)}`);
 const name = (c) => `${c.x} vs ${c.y} (${c.label})`;
 const ps = (p) => (p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`);
-const line = (c) => (c.pairs ? `${name(c)}: ${c.verdict}. Effect ${fd(c.diff)}, 95 % CI ${fci(c.ci)}, ${ps(c.p)} (b = ${c.b}, c = ${c.c}), ${c.pairs} pair${c.pairs === 1 ? '' : 's'} over ${c.tasks} task${c.tasks === 1 ? '' : 's'}.${c.direction_note ? ` Note: ${c.direction_note}.` : ''}` : `${name(c)}: ${c.verdict}. No pairs: no (task, rep) is valid in both arms.`);
+const vw = (c) => c.verdict ?? 'secondary, no verdict word'; // only the primary comparison has a verdict
+const line = (c) => (c.pairs ? `${name(c)}: ${vw(c)}. Effect ${fd(c.diff)}, 95 % CI ${fci(c.ci)}, ${ps(c.p)} (b = ${c.b}, c = ${c.c}), ${c.pairs} pair${c.pairs === 1 ? '' : 's'} over ${c.tasks} task${c.tasks === 1 ? '' : 's'}.${c.direction_note ? ` Note: ${c.direction_note}.` : ''}` : `${name(c)}: ${vw(c)}. No pairs: no (task, rep) is valid in both arms.`);
 
 function armTable(reps) {
   const arms = Object.keys(reps);
@@ -414,10 +418,10 @@ export function render(res) {
   out.push('## 1. Pre-registered comparisons (final_pass, all kinds pooled)', '');
   out.push(src(uniq(conf.flatMap((c) => c.models)), uniq(conf.flatMap((c) => c.run_ids))), '');
   out.push(table(['comparison', 'pairs', 'tasks', 'first arm passes', 'second arm passes', 'b', 'c', 'p (exact McNemar)', 'effect', '95 % CI (cluster bootstrap)', 'verdict'],
-    conf.map((c) => [name(c), c.pairs, c.tasks, `${c.kx}/${c.pairs}`, `${c.ky}/${c.pairs}`, c.b, c.c, `${fp(c.p)}${c.note ? ` (${c.note})` : ''}`, fd(c.diff), fci(c.ci), c.verdict])));
+    conf.map((c) => [name(c), c.pairs, c.tasks, `${c.kx}/${c.pairs}`, `${c.ky}/${c.pairs}`, c.b, c.c, `${fp(c.p)}${c.note ? ` (${c.note})` : ''}`, fd(c.diff), fci(c.ci), c.verdict ?? 'none (secondary)'])));
   out.push('', 'b = pairs where the first-named arm passed and the second failed; c = the reverse; effect = (b - c) / pairs, the difference in pass rate.',
     'p = exact two-sided McNemar on b + c. CI = 95 % percentile interval of a cluster bootstrap that resamples TASKS with replacement.',
-    'Verdict words are fixed in advance: "X better than Y" only if p < 0.05 AND the whole interval is above 0; otherwise "inconclusive at this n".');
+    'Verdict words are fixed in advance and only the primary comparison (D vs C) gets one: "D better than C" only if p < 0.05 AND the whole interval is above 0; otherwise "inconclusive at this n". The secondary comparisons show the same numbers and no verdict word.');
   out.push('', ...conf.map((c) => `- ${line(c)}`));
 
   const rest = res.comparisons.filter((c) => !c.preregistered);

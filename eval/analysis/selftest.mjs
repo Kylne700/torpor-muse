@@ -171,15 +171,27 @@ t('mixed model ids in one comparison are refused; one model per folder is fine',
 });
 
 // ---------- verdict words ----------
-t('a planted strong effect yields "D better than C" (and "D better than A")', () => {
+t('a planted strong effect yields "D better than C"; the secondary D vs A gets the numbers and no verdict word', () => {
   const rows = dataset({ tasks: 12, reps: 2, arms: ['A', 'C', 'D'], pass: (arm, i) => arm === 'D' || i < 3 });
   const res = run(rows);
   const dc = find(res, 'D_vs_C');
   assert.deepEqual([dc.pairs, dc.tasks, dc.b, dc.c], [24, 12, 18, 0]);
   assert.equal(dc.verdict, 'D better than C');
   assert.ok(dc.p < 1e-4 && dc.ci.lo > 0 && dc.diff === 0.75);
-  assert.equal(find(res, 'D_vs_A').verdict, 'D better than A');
+  const da = find(res, 'D_vs_A'); // the same planted effect, but only the primary comparison has a verdict word
+  assert.ok(da.preregistered && da.label === 'engine + new work' && da.p < 1e-4 && da.ci.lo > 0 && da.diff === 0.75);
+  assert.equal(da.verdict, null);
+  assert.ok(res.comparisons.filter((c) => c.verdict !== null).every((c) => c.id === 'D_vs_C' && c.outcome === 'final_pass' && c.kind === 'all'));
+  assert.ok(!/better than A/.test(render(res)));
   assert.ok(!res.comparisons.some((c) => c.id === 'B_vs_A')); // B absent: no B vs A
+});
+t('B vs A is a secondary comparison too: numbers, no verdict word', () => {
+  const res = run(dataset({ tasks: 12, reps: 2, arms: ['A', 'B', 'C', 'D'], pass: (arm, i) => arm !== 'A' || i < 3 }));
+  const ba = find(res, 'B_vs_A');
+  assert.deepEqual([ba.pairs, ba.b, ba.c, ba.diff, ba.verdict], [24, 18, 0, 0.75, null]);
+  assert.ok(ba.p < 1e-4 && ba.ci.lo > 0);
+  assert.ok(render(res).includes('B vs A (notes file vs vanilla): secondary, no verdict word. Effect +0.75'));
+  assert.ok(!/better than A/.test(render(res)));
 });
 t('a planted null at n=10 yields "inconclusive at this n" with the effect and the interval', () => {
   // tasks 0-1: D only passes; 2-3: C only; 4-6: both; 7-9: neither -> b = 2, c = 2
@@ -190,8 +202,15 @@ t('a planted null at n=10 yields "inconclusive at this n" with the effect and th
   assert.equal(dc.verdict, 'inconclusive at this n');
   assert.ok(dc.ci.lo <= 0 && dc.ci.hi >= 0);
   assert.ok(/Effect 0\.00, 95 % CI \[/.test(render(res)));
-  assert.ok(render(res).includes('D vs A (engine + new work): inconclusive at this n. No pairs'));
-  assert.equal(find(res, 'D_vs_A').verdict, 'inconclusive at this n'); // no A rows: no pairs
+  assert.equal(find(res, 'D_vs_A'), undefined); // no A rows: D vs A is not computed
+  assert.ok(!render(res).includes('D vs A'));
+});
+t('two arms with no (task, rep) valid in both print "No pairs" instead of an effect', () => {
+  const res = run([mk({ task: 't00', arm: 'C' }), mk({ task: 't01', arm: 'D' })]);
+  const dc = find(res, 'D_vs_C');
+  assert.deepEqual([dc.pairs, dc.b, dc.c, dc.diff, dc.ci], [0, 0, 0, null, null]);
+  assert.equal(dc.verdict, 'inconclusive at this n');
+  assert.ok(render(res).includes('D vs C (primary): inconclusive at this n. No pairs: no (task, rep) is valid in both arms.'));
 });
 t('the verdict needs the interval too: all discordance in one task gives p < 0.05 but "inconclusive at this n"', () => {
   const rows = [];
@@ -218,6 +237,33 @@ t('zero events print "under about 3/n" with n filled in; false alarms have their
   assert.ok(md.includes('under about 3/40 (7.5 %)') && md.includes('under about 3/12 (25.0 %)'));
   assert.ok(/\| false alarms: control episodes with >= 1 gate block \|/.test(md));
   assert.ok(/\| hook_failures: total; episodes with >= 1 \| 0; 0\/40 0\.0 % \[[0-9.-]+\], under about 3\/40/.test(md));
+});
+
+// ---------- the markdown ----------
+t('the markdown puts a source line (model id, run id) above every table, labels D vs A, and has the per-task k/n tables', () => {
+  const md = render(run(dataset({ tasks: 12, reps: 2, arms: ['A', 'B', 'C', 'D'], pass: (arm, i) => arm === 'D' || i < 3 })));
+  const lines = md.split('\n');
+  const heads = lines.flatMap((l, i) => (l.startsWith('|') && !lines[i - 1].startsWith('|') ? [i] : []));
+  assert.equal(heads.length, 9); // pre-registered rows, other rows, per arm, 3 kinds, 3 per-task tables
+  for (const i of heads) assert.equal(lines[i - 2], '*Source: model `syn-contributor`; run id `syn-1`.*', `no source line above the table at line ${i + 1}`);
+  assert.ok(md.includes('D vs A (engine + new work): secondary, no verdict word. Effect +0.75'));
+  assert.ok(md.includes('| task | kind | torpor_should_help | pairs | D passes | C passes | b | c |'));
+  assert.ok(/\| t05 \| injected \| yes \| 2 \| 2\/2 \| 0\/2 \| 2 \| 0 \|/.test(md));
+});
+t('an A+D-only folder (the confirmation subset) shows D vs A with its numbers and no verdict word, and warns that D vs C is not computed', () => {
+  const res = run(dataset({ tasks: 12, reps: 2, arms: ['A', 'D'], pass: (arm) => arm === 'D' }));
+  assert.ok(res.comparisons.length > 0 && res.comparisons.every((c) => c.id === 'D_vs_A' && c.verdict === null));
+  assert.ok(res.warnings.some((w) => w === 'D vs C (primary) is not computed: the folder has no rows for arm C'));
+  const da = find(res, 'D_vs_A');
+  assert.deepEqual([da.pairs, da.b, da.c, da.diff], [24, 24, 0, 1]);
+  const md = render(res);
+  assert.ok(md.includes('D vs A (engine + new work): secondary, no verdict word. Effect +1.00'));
+  assert.ok(!md.split('\n').some((l) => /^[-|] ?D vs A/.test(l) && /better than|inconclusive/.test(l)));
+});
+t('a folder with one arm has no paired rows and says so instead of printing an empty table', () => {
+  const md = render(run(dataset({ tasks: 4, reps: 1, arms: ['D'], pass: () => true })));
+  assert.ok(md.includes('(none: a paired comparison needs both arms in the folder)'));
+  assert.ok(!md.includes('| comparison |'));
 });
 
 // ---------- end to end ----------
