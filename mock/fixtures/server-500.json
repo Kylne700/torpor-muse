@@ -1,0 +1,17 @@
+{
+  "_shape": "assumed",
+  "_source": "https://dev.meta.ai/docs/error-handling, read 2026-10-26 (500 section lists causes but gives no body; the error object format section gives the fields)",
+  "_note": "The message and the code are placeholders; type server_error is from the docs.",
+  "status": 500,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "message": "The server had an error while processing your request. Please retry.",
+      "type": "server_error",
+      "param": null,
+      "code": "server_error"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "_shape": "assumed",
+  "_source": "https://dev.meta.ai/docs/error-handling, read 2026-10-26 (402 section: body example)",
+  "_note": "The docs example, verbatim.",
+  "status": 402,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "message": "Billing account issue. Please check your account status.",
+      "type": "billing_error",
+      "param": null,
+      "code": "billing_not_configured"
+    }
+  }
+}
