@@ -29,7 +29,8 @@ function run(cmd, args, { cwd, timeout = 150000 } = {}) {
     execFile(
       cmd,
       args,
-      { cwd, timeout, maxBuffer: 4 << 20, env: { PATH: process.env.PATH, HOME: os.tmpdir(), GIT_CEILING_DIRECTORIES: '/' } },
+      // TMPDIR passes on: without it a child's os.tmpdir() is /tmp, and make-workspace refuses the macOS temp dir
+      { cwd, timeout, maxBuffer: 4 << 20, env: { PATH: process.env.PATH, HOME: os.tmpdir(), TMPDIR: os.tmpdir(), GIT_CEILING_DIRECTORIES: '/' } },
       (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout, stderr }),
     );
   });
