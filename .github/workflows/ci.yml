@@ -48,6 +48,15 @@ jobs:
         run: node --test mock/test/*.test.mjs
       - name: Eval task bank self-test
         run: node eval/selftest.mjs
+      - name: Drill self-tests (builders, oracles, harness)
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sh drill/workspaces/selftest.sh
+            node drill/oracles/selftest.mjs
+            node drill/harness/selftest.mjs
+          else
+            echo "SKIP drill self-tests: Linux only"
+          fi
 
   linux-musl:
     name: Linux (musl, static)
