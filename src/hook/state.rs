@@ -1,11 +1,12 @@
 //! Our own small files in `<TORPOR_HOME>/muse/` (best effort: a failure here never stops a hook):
-//! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`.
+//! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
+//! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -171,22 +172,78 @@ pub fn end_session(dir: &Path, sid: &str) {
     let _ = fs::remove_file(dir.join("session").join(format!("{}.json", safe(sid))));
 }
 
-/// SessionStart: removes session files nobody has touched for 14 days (a crashed Muse never sends SessionEnd).
+/// SessionStart: removes session and open-turn files nobody has touched for 14 days (a crashed Muse never sends
+/// SessionEnd).
 pub fn sweep(dir: &Path) {
-    let Ok(entries) = fs::read_dir(dir.join("session")) else {
-        return;
-    };
     let limit = Duration::from_secs(KEEP_DAYS * 86_400);
-    for e in entries.flatten() {
-        let old = e
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > limit);
-        if old {
-            let _ = fs::remove_file(e.path());
+    for sub in ["session", "open"] {
+        let Ok(entries) = fs::read_dir(dir.join(sub)) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > limit);
+            if old {
+                let _ = fs::remove_file(e.path());
+            }
         }
+    }
+}
+
+/// The main turn open in a folder. Muse gives a subagent's tool events no parent id (its session id and turn id are its
+/// own), only the folder, so hook.rs files them under the turn recorded here. One file per folder, replaced whole
+/// (the hooks of a parent and its subagents run at the same time).
+#[derive(Serialize, Deserialize)]
+struct Open {
+    cwd: String,
+    sid: String,
+    turn: String,
+    at: u64,
+}
+
+/// A turn open for longer than this is a crashed Muse's leftover, not a running turn.
+const OPEN_MAX_S: u64 = 12 * 3600;
+
+fn open_file(dir: &Path, cwd: &str) -> PathBuf {
+    // FNV-1a: the same hash on every run (std's hasher promises none); the folder is stored inside and compared whole.
+    let h = cwd.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    dir.join("open").join(format!("{h:016x}.json"))
+}
+
+/// A main session's UserPromptSubmit: `turn` of session `sid` is the one open in `cwd`.
+pub fn open_set(dir: &Path, cwd: &str, sid: &str, turn: &str) {
+    let o = Open {
+        cwd: cwd.into(),
+        sid: sid.into(),
+        turn: turn.into(),
+        at: unix_now(),
+    };
+    if let Ok(b) = serde_json::to_vec(&o) {
+        let _ = crate::engine::write_private(&open_file(dir, cwd), &b);
+    }
+}
+
+/// (session id, turn id) of the main turn open in `cwd`, if there is one.
+pub fn open_get(dir: &Path, cwd: &str) -> Option<(String, String)> {
+    let o: Open = serde_json::from_slice(&fs::read(open_file(dir, cwd)).ok()?).ok()?;
+    (o.cwd == cwd && unix_now().saturating_sub(o.at) < OPEN_MAX_S).then_some((o.sid, o.turn))
+}
+
+/// The turn of `sid` is over (a Stop that let it end, StopFailure, SessionEnd). A record of another session stays.
+pub fn open_clear(dir: &Path, cwd: &str, sid: &str) {
+    let f = open_file(dir, cwd);
+    let mine = fs::read(&f)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Open>(&b).ok())
+        .is_some_and(|o| o.sid == sid);
+    if mine {
+        let _ = fs::remove_file(f);
     }
 }
 
@@ -238,6 +295,49 @@ mod tests {
         let mut sorted = seen.clone();
         sorted.sort();
         assert_eq!(sorted, (1..=8).collect::<Vec<_>>(), "{seen:?}");
+    }
+
+    #[test]
+    fn a_folder_has_one_open_turn_and_only_its_session_closes_it() {
+        let dir = scratch("state-open");
+        assert_eq!(open_get(&dir, "/w/a"), None);
+        open_set(&dir, "/w/a", "s1", "t1");
+        open_set(&dir, "/w/b", "s2", "t2");
+        assert_eq!(open_get(&dir, "/w/a"), Some(("s1".into(), "t1".into())));
+        assert_eq!(open_get(&dir, "/w/b"), Some(("s2".into(), "t2".into())));
+        open_clear(&dir, "/w/a", "s2");
+        assert!(open_get(&dir, "/w/a").is_some(), "another session's end");
+        open_set(&dir, "/w/a", "s3", "t3");
+        assert_eq!(open_get(&dir, "/w/a"), Some(("s3".into(), "t3".into())));
+        open_clear(&dir, "/w/a", "s3");
+        assert_eq!(open_get(&dir, "/w/a"), None);
+        assert!(open_get(&dir, "/w/b").is_some(), "the other folder");
+    }
+
+    #[test]
+    fn an_open_turn_from_a_crashed_muse_is_not_used_and_is_swept() {
+        let dir = scratch("state-open-old");
+        let old = Open {
+            cwd: "/w".into(),
+            sid: "s".into(),
+            turn: "t".into(),
+            at: unix_now() - OPEN_MAX_S - 1,
+        };
+        crate::engine::write_private(&open_file(&dir, "/w"), &serde_json::to_vec(&old).unwrap())
+            .unwrap();
+        assert_eq!(open_get(&dir, "/w"), None);
+        // sweep: 15 days untouched goes, in both folders; a fresh file stays
+        let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
+        for f in ["open/old.json", "session/old.json", "open/new.json"] {
+            let p = dir.join(f);
+            crate::engine::write_private(&p, b"{}").unwrap();
+            if !f.ends_with("new.json") {
+                fs::File::open(&p).unwrap().set_modified(stale).unwrap();
+            }
+        }
+        sweep(&dir);
+        assert!(!dir.join("open/old.json").exists() && !dir.join("session/old.json").exists());
+        assert!(dir.join("open/new.json").exists());
     }
 
     #[test]

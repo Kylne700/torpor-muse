@@ -256,16 +256,19 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             return Done::default();
         }
     };
-    let Some(sid) = payload["session_id"].as_str().map(str::to_owned) else {
+    let Some(mut sid) = payload["session_id"].as_str().map(str::to_owned) else {
         state::problem(dir, event, "", "payload has no session_id");
         return Done::default();
     };
     let main = !schema::is_child(&payload);
     liveness::beat(event, &sid, main);
-    if !main {
+    if main {
+        check_shape(dir, event, &sid, &payload);
+    } else if let Some(parent) = adopt(dir, event, &mut payload) {
+        sid = parent;
+    } else {
         return Done::default();
     }
-    check_shape(dir, event, &sid, &payload);
     if ev.act != Act::Engine {
         return Done::default();
     }
@@ -274,6 +277,9 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
     }
     let text = |k: &str| payload[k].as_str().unwrap_or("").to_owned();
     let (cwd, prompt, turn) = (text("cwd"), text("prompt"), text("turn_id"));
+    if main && event == "UserPromptSubmit" && !cwd.is_empty() {
+        state::open_set(dir, &cwd, &sid, &turn);
+    }
     if let Some(m) = payload.as_object_mut() {
         normalise::apply(event, m);
     }
@@ -297,14 +303,47 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
         Ok(out) => {
             done.stdout = reply(dir, event, &sid, &turn, &out.stdout);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
-                done.prompt = Some((sid.clone(), cwd, prompt));
+                done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
         }
+    }
+    if main && !cwd.is_empty() && turn_ended(event, done.stdout.as_deref()) {
+        state::open_clear(dir, &cwd, &sid);
     }
     if event == "SessionEnd" {
         state::end_session(dir, &sid);
     }
     done
+}
+
+/// A model-spawned subagent works inside its parent's turn, but Muse sends its tool events under a session id and turn
+/// id of its own with no link to the parent. The engine's own picture of a subagent is the parent's ids plus an
+/// `agent_id`, so when a main turn is open in the child's folder the child's tool event is rewritten that way and goes
+/// on like a main one: the engine then guards Torpor's own files against the subagent too. Returns the parent's session
+/// id. Everything else a child sends (SubagentStart/Stop, an observer's events) stays heartbeat-only.
+/// shortcut: the parent is found by folder alone (two Muse windows in one folder can swap parents), and a subagent
+/// that outlives its parent's Stop is not seen; upgrade when Muse puts the parent's id into a child's payload.
+fn adopt(dir: &Path, event: &str, payload: &mut Value) -> Option<String> {
+    if !matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure") {
+        return None;
+    }
+    let cwd = payload["cwd"].as_str().filter(|c| !c.is_empty())?;
+    let (parent, turn) = state::open_get(dir, cwd)?;
+    payload["agent_id"] = payload["session_id"].take();
+    payload["session_id"] = Value::String(parent.clone());
+    payload["turn_id"] = Value::String(turn);
+    Some(parent)
+}
+
+/// The turn is over: a Stop that did not block (Muse runs a blocked turn on), StopFailure, SessionEnd.
+fn turn_ended(event: &str, stdout: Option<&str>) -> bool {
+    match event {
+        "StopFailure" | "SessionEnd" => true,
+        "Stop" => !stdout
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .is_some_and(|v| v["decision"] == "block"),
+        _ => false,
+    }
 }
 
 /// The typed parse is a check only (control flow uses the raw JSON): keys we have no field for are logged once.
