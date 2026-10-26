@@ -1,4 +1,4 @@
-# Disaster drill: the pre-registration (draft v1, for the lead's approval)
+# Disaster drill: the pre-registration (v1)
 
 Written on 2026-10-26, before any run. It fixes how the drill in `DISASTERS.md` is run, scored and published, so that nobody can say the rules were bent after the results were in. The lead reads both files and, if they are good, tags this folder `drill-prereg-v1`. After the tag, both files change only through the amendment rule in section 10.
 
@@ -6,7 +6,7 @@ Written on 2026-10-26, before any run. It fixes how the drill in `DISASTERS.md` 
 
 ## 1. Questions and arms
 
-- Q1, the user's question "prove me it is actually life saving": arm 4 against arms 1 and 2.
+- Q1, "does it save the work when things go wrong": arm 4 against arms 1 and 2.
 - Q2, the judges' question "what did the event work add": arm 4 against arm 3.
 
 | Arm | What it is |
@@ -101,7 +101,7 @@ Limits that are stated in advance: the data is synthetic; the calls are scripted
 
 ## 10. Amendments
 
-- Before the first scored run, the list, the predictions, the recovery steps and this file may be amended. Each amendment is a commit that adds a dated entry to the log below with what changed, why, and the words "no scored run has happened". The lead decides whether the tag `drill-prereg-v1` moves; this file never creates or moves a tag.
+- Before the first scored run, the list, the predictions, the recovery steps and this file may be amended. Each amendment is a commit that adds a dated entry to the log below with what changed, why, and the words "no scored run has happened". The lead puts the next tag (`drill-prereg-v2`, `drill-prereg-v3`, ...) on the commit of each amended version. A tag is never moved or deleted.
 - After the first scored run, nothing in the list or the predictions changes. A defect in the harness or an oracle may be fixed, but the fix is logged here with the reason, every affected run is repeated, and both results are published.
 - The lead tags the approved version `drill-prereg-v1`.
 

@@ -1,10 +1,10 @@
-# Disaster drill: the pre-registered list (draft v1, for the lead's approval)
+# Disaster drill: the pre-registered list (v1)
 
 Written on 2026-10-26, before any run. Nothing in this stage was run: no Muse Code, no Meta API call, no disaster command, not even on synthetic data. Every prediction below comes from reading the engine's README and source at the tag `pre-event-final` (commit a2289f4), plus the Muse facts recorded in G0 (`research/59-g0-facts.md` and its fixtures). Anything not checked is marked NOT VERIFIED (NV). The protocol (reps, scoring, exclusions, order) is in `PREREG.md`. Once the lead tags this folder `drill-prereg-v1`, both files change only through the amendment rule in `PREREG.md`.
 
 The drill answers two questions:
 
-- "Is it actually life saving?" is arm 4 against arms 1 and 2.
+- "Does it save the work when things go wrong?" is arm 4 against arms 1 and 2.
 - "What did the event work add?" is arm 4 against arm 3.
 
 ## 1. How to read this
