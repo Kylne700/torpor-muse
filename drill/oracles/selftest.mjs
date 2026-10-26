@@ -273,5 +273,16 @@ await t('D14 check: a renamed config key alone stops the server, renaming it in 
   assert.equal(verdicts(check('D14', ws)), 'PASS [app] PASS [app]');
 });
 
+await t('D16 check: removing the trim keeps the server up but /notes shows untrimmed titles, putting it back passes', () => {
+  const ws = build('D16');
+  assert.equal(verdicts(check('D16', ws)), 'PASS [app] PASS [app]');
+  write(ws, 'src/format.js', read(ws, 'src/format.js').replace('return note.title.trim();', 'return note.title;'));
+  const broken = check('D16', ws);
+  assert.equal(verdicts(broken), 'PASS [app] FAIL [app]');
+  assert.match(broken.lines[1], /got 200/);
+  write(ws, 'src/format.js', read(ws, 'src/format.js').replace('return note.title;', 'return note.title.trim();'));
+  assert.equal(verdicts(check('D16', ws)), 'PASS [app] PASS [app]');
+});
+
 console.log(`${passed} passed, ${failed.length} failed`);
 process.exitCode = failed.length ? 1 : 0;

@@ -1,6 +1,6 @@
 #!/bin/sh
 # D14 "Done" while broken: the agent renames the store key in config.json but not in server.js, then says done without starting it.
-# State built: one commit, clean tree, a working app.
+# State built: one commit, clean tree, a working app (the setup turns and the disaster turn are in DISASTERS.md).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd -P)
 # shellcheck source=../_common.sh
