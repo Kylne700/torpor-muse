@@ -1,0 +1,11 @@
+{
+  "cwd": "<CWD>",
+  "hook_event_name": "UserPromptSubmit",
+  "model": "muse-spark-1.3",
+  "model_provider": "meta",
+  "permission_mode": "bypassPermissions",
+  "prompt": "Make exactly one bash tool call: head -c 24000 filler.txt . After the result, reply with one line: done, followed by every 'G0 session note' code you can see in your context.",
+  "session_id": "00000000-0000-7000-8000-000000000001",
+  "transcript_path": null,
+  "turn_id": "00000000-0000-7000-8000-000000000002"
+}

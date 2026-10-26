@@ -1,0 +1,12 @@
+{
+  "child_session_id": "00000000-0000-7000-8000-000000000001",
+  "cwd": "<CWD>",
+  "hook_event_name": "SubagentStart",
+  "model": "muse-spark-1.3",
+  "model_provider": "meta",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-7000-8000-000000000001",
+  "subagent_id": "goal-reminder",
+  "transcript_path": null,
+  "turn_id": "00000000-0000-7000-8000-000000000001"
+}
