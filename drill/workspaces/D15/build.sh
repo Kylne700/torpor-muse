@@ -4,7 +4,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd -P)
 # shellcheck source=../_common.sh
-. "$HERE/../_common.sh"
+. "${HERE:?}/../_common.sh"
 drill_target "${1:?usage: build.sh TARGET_DIR}"
 
 base_project

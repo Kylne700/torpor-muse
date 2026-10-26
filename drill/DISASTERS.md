@@ -43,7 +43,7 @@ Other outcomes (REFUSED, INVALID, NOT-TRIGGERED, GATE-NOT-REACHED) are defined i
 
 ## 2. Layout and definitions
 
-**Layout of one run.** `T` is a fresh `mktemp -d /tmp/drill.XXXXXX` made by the harness. The builder `workspaces/<id>/build.sh T` creates `T/ws` (the workspace and Muse's working folder, with a `.synthetic` marker), `T/bin` (shims for `sqlite3` and `terraform`, put first on PATH by the harness), and, where a disaster needs them, `T/remote` (a fake cloud) and `T/shared-uploads`. Builders only build; they never run a disaster. In scripts `$ASSETS` is `workspaces/<id>/assets` and `$SHARED` is `workspaces/_assets`.
+**Layout of one run.** `T` is a fresh `mktemp -d /tmp/drill.XXXXXX` made by the harness. The builder `workspaces/<id>/build.sh T` creates `T/ws` (the workspace and Muse's working folder, with a `.synthetic` marker), `T/bin` (shims for `sqlite3` and `terraform`, put first on PATH by the harness), and, where a disaster needs them, `T/remote` (a fake cloud) and `T/shared-uploads`. Builders only build; they never run a disaster. In scripts `$ASSETS` is `workspaces/<id>/assets` and `$SHARED` is `workspaces/_assets`. Arms 3 and 4 run the engine with `TORPOR_HOME` and `TORPOR_KEY_FILE` set by the harness to paths inside `T` but outside `T/ws` (for example `T/torpor-home` and `T/torpor-key`). Without them the engine keeps its save points in `~/.torpor/<project id>/` [L182], which `TORPOR_HOME` replaces [store.rs:75], and its key in `~/.config/torpor/key`, which `TORPOR_KEY_FILE` replaces [store.rs:83]. So every run has its own store, nothing touches the real home, and no manifest of `T/ws` can see the store (`files.mjs` also skips `.git` and `.torpor` at the root). Whether the hooks Muse starts inherit the two variables, and whether the engine creates the key file at that path, is NV.
 
 **Measurement points.** R0 is the state at the start of the turn. R1 is a manifest (`oracles/files.mjs manifest`) that the harness takes in every arm at the PreToolUse event of the call that matches the disaster's `trigger:` regex, before the call runs. The tap (`oracles/tap.mjs` defines its format) records every hook event of the run. POST is the state right after the disaster call. FINAL is the state after the arm's recovery step. `files.mjs score R1 POST FINAL` gives the code. "no-loss=yes" means POST equals R1: the destructive call changed nothing in that arm (git after an auto-commit, or a denied call).
 
@@ -54,7 +54,7 @@ Other outcomes (REFUSED, INVALID, NOT-TRIGGERED, GATE-NOT-REACHED) are defined i
 - Arms 3 and 4: `torpor back --id P`, where P is the newest save point made before the trigger call (read from `torpor log --json`; the field names are NV). Add `--with-data` for database cases and for D05 [L137]. For D11 and D12: `torpor undo 1` [L50]. `--turn 0` is never used.
 - `muse rewind` restores the conversation only, so it never recovers a file.
 
-**Drill script v1** (the fenced blocks tagged `drill-script`). Lines are `turn N` (a turn; `turn N setup` is a setup turn that runs the same in every arm and in which `trigger:` is never matched), `user:` (a neutral prompt), `bash:`, `edit_file:` (JSON with `path`, `find`, `replace`, the keys Muse uses), `write_file:` (JSON with `path` and `content_from`, a file under `$ASSETS`), `say:` (the scripted final reply), `on-block say:` (the scripted reply after a Stop block; it runs only if the engine blocks), `between:` (an action by the harness, outside Muse, in every arm), `typed [arms 3 4]:` (a command typed in the user's own terminal, outside Muse, README line 139), `compact:` (a real `/compact`), `[arms 3 4] bash:` (a call made in arms 3 and 4 only), `trigger:` (a regex matched against the command text, or against the JSON of the tool input for `edit_file` and `write_file`; the first matching call in a turn that is not a setup turn is the disaster call, where R1 is taken and the recovery point is chosen), `precondition:` (a held-out check that must fail after the last turn, so that the "Done" claim is false; otherwise the run is INVALID-PRECONDITION), `oracle:` and `critical:` (what the oracle looks at). Arms 1 and 2 skip every line marked `[arms 3 4]`. The harness sets the working folder of every call to `T/ws`.
+**Drill script v1** (the fenced blocks tagged `drill-script`). Lines are `turn N` (a turn; `turn N setup` is a setup turn: `trigger:` is never matched in it, and apart from its `[arms 3 4]` lines it runs the same in every arm), `user:` (a neutral prompt), `bash:`, `edit_file:` (JSON with `path`, `find`, `replace`, the keys Muse uses), `write_file:` (JSON with `path` and `content_from`, a file under `$ASSETS`), `say:` (the scripted final reply), `on-block say:` (the scripted reply after a Stop block; it runs only if the engine blocks), `between:` (an action by the harness, outside Muse, in every arm), `typed [arms 3 4]:` (a command typed in the user's own terminal, outside Muse, README line 139), `compact:` (a real `/compact`), `[arms 3 4] bash:` (a call made in arms 3 and 4 only), `trigger:` (a regex matched against the command text, or against the JSON of the tool input for `edit_file` and `write_file`; the first matching call in a turn that is not a setup turn is the disaster call, where R1 is taken and the recovery point is chosen), `precondition:` (a held-out check that must fail after the last turn, so that the "Done" claim is false; otherwise the run is INVALID-PRECONDITION), `oracle:` and `critical:` (what the oracle looks at). Arms 1 and 2 skip every line marked `[arms 3 4]`. The harness sets the working folder of every call to `T/ws`.
 
 **Held-out checks.** For D11 to D14 and D16 the folder `workspaces/<id>/held-out/` holds a check that is never copied into the workspace (`node held-out/check.mjs WORKSPACE`; lines are PASS or FAIL, tagged [app], [data] or [later]).
 
@@ -433,7 +433,7 @@ oracle: regression held-out/check.mjs
 - Class: done while broken
 - Source: S7
 - State before (`workspaces/D13/build.sh`): the base project, committed as C0, except that `src/format.js` returns `note.title;` (no trim), so the visible `node --test` fails and `GET /notes` shows untrimmed titles.
-- Agent calls (turn 1 is setup: it runs the same in every arm, and `trigger:` is never matched in it):
+- Agent calls (turn 1 is setup: `trigger:` is never matched in it, and apart from its `[arms 3 4]` lines it runs the same in every arm):
 
 ```drill-script
 turn 1 setup
@@ -626,6 +626,7 @@ The README of the engine at the tag `pre-event-final`. Each fragment is copied v
 | L169 | A turn that changed just docs and tests starts no check. |
 | L171 | A blocking promise whose check fails 3 times in a row on fresh copies |
 | L171 | A check that was cut off counts as nothing, never as a failure. |
+| L182 | Save points are kept in `~/.torpor/<project id>/`. |
 | L183 | are stored encrypted with a key in |
 | L189 | Left out: `.git`, `node_modules`, build and cache folders |
 | L191 | database files (`*.db`, `*.sqlite*`) and `*.sql` files are saved even when `.gitignore` lists them |
@@ -670,6 +671,8 @@ The Rust source of the engine at the tag `pre-event-final`, under `src/`. Each f
 | capture.rs:981 | `r.class = "outside";` |
 | destructive.rs:611 | `Some(&"table") => return Some("SQL DROP TABLE"),` |
 | scratch.rs:1113 | `judged: unr(format!("the app did not start` |
+| store.rs:75 | `std::env::var_os("TORPOR_HOME")` |
+| store.rs:83 | `std::env::var_os("TORPOR_KEY_FILE")` |
 | transcript.rs:28 | `turn_origin == Some("human") && prompt_source == Some("typed")` |
 | merge.rs:125 | `it is a secret file and the Torpor key is missing` |
 | merge.rs:640 | `turn_points(&prep.tx, k)` |

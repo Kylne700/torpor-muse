@@ -4,7 +4,7 @@
 #
 # The guard refuses everything except a fresh `mktemp -d /tmp/drill.XXXXXX` directory
 # that holds exactly the caller's canary file. The caller does:
-#   T=$(mktemp -d /tmp/drill.XXXXXX); printf '%s\n' "$T" > "$T/.drill-canary"; sh build.sh "$T"
+#   T=$(mktemp -d /tmp/drill.XXXXXX); printf '%s\n' "$T" > "${T:?}/.drill-canary"; sh build.sh "$T"
 # The builder removes the canary at the end, so a second build into the same dir is refused.
 umask 022
 
@@ -16,16 +16,16 @@ refuse() {
 # drill_target PATH: run the guard, then set T (target dir, also home of the outside areas) and W (the workspace, T/ws).
 drill_target() {
   _a="${1:?target dir missing}"
-  if [ ! -d "$_a" ] || [ -L "$_a" ]; then refuse "target is not a real directory"; fi
-  _r=$(cd "$_a" && pwd -P) || refuse "cannot enter target"
-  case "$_r" in /tmp/*) ;; *) refuse "target is not under /tmp" ;; esac
+  if [ ! -d "${_a:?}" ] || [ -L "${_a:?}" ]; then refuse "target is not a real directory"; fi
+  _r=$(cd "${_a:?}" && pwd -P) || refuse "cannot enter target"
+  case "${_r:?}" in /tmp/*) ;; *) refuse "target is not under /tmp" ;; esac
   case "${_r##*/}" in drill.*) ;; *) refuse "target name must start with drill." ;; esac
-  if [ "$(stat -c %u "$_r")" != "$(id -u)" ]; then refuse "target is not owned by this user"; fi
-  if [ "$(stat -c %a "$_r")" != 700 ]; then refuse "target mode is not 700, so it did not come from mktemp -d"; fi
-  if [ ! -f "$_r/.drill-canary" ] || [ -L "$_r/.drill-canary" ]; then refuse "no .drill-canary file"; fi
-  case "$(cat "$_r/.drill-canary")" in "$_a" | "$_r") ;; *) refuse "canary does not hold the target path" ;; esac
-  if [ "$(ls -A "$_r")" != ".drill-canary" ]; then refuse "target is not empty"; fi
-  T=$_r
+  if [ "$(stat -c %u "${_r:?}")" != "$(id -u)" ]; then refuse "target is not owned by this user"; fi
+  if [ "$(stat -c %a "${_r:?}")" != 700 ]; then refuse "target mode is not 700, so it did not come from mktemp -d"; fi
+  if [ ! -f "${_r:?}/.drill-canary" ] || [ -L "${_r:?}/.drill-canary" ]; then refuse "no .drill-canary file"; fi
+  case "$(cat "${_r:?}/.drill-canary")" in "${_a:?}" | "${_r:?}") ;; *) refuse "canary does not hold the target path" ;; esac
+  if [ "$(ls -A "${_r:?}")" != ".drill-canary" ]; then refuse "target is not empty"; fi
+  T=${_r:?}
   W=${T:?}/ws
   mkdir "${W:?}"
   printf 'synthetic drill workspace; fake data only\n' > "${W:?}/.synthetic"
@@ -57,7 +57,7 @@ commit_all() {
   g commit -q -m "$*"
 }
 
-# put RELPATH: write stdin to $W/RELPATH, creating folders. app RELPATH: append stdin.
+# put RELPATH: write stdin to ${W:?}/RELPATH, creating folders. app RELPATH: append stdin.
 put() {
   mkdir -p "$(dirname "${W:?}/${1:?}")"
   cat > "${W:?}/${1:?}"
@@ -66,7 +66,7 @@ app() {
   cat >> "${W:?}/${1:?}"
 }
 
-# shim NAME: install shims/NAME (a zero-dependency node script) as $T/bin/NAME. HERE is the builder's folder.
+# shim NAME: install shims/NAME (a zero-dependency node script) as ${T:?}/bin/NAME. HERE is the builder's folder.
 shim() {
   mkdir -p "${T:?}/bin"
   cp "${HERE:?}/../_shims/${1:?}" "${T:?}/bin/${1:?}"
@@ -163,7 +163,7 @@ test('title trims the text', () => assert.strictEqual(title({ title: ' a ' }), '
 EOF
 }
 
-# mkdb RELPATH: create the SQLite file $W/RELPATH from the SQL on stdin (node:sqlite, rollback journal, closed cleanly).
+# mkdb RELPATH: create the SQLite file ${W:?}/RELPATH from the SQL on stdin (node:sqlite, rollback journal, closed cleanly).
 mkdb() {
   mkdir -p "$(dirname "${W:?}/${1:?}")"
   node --no-warnings -e '
