@@ -9,9 +9,9 @@ case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) p=darwin-arm64 ;;
   *) echo "fetch-engine: no pinned binary for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
-val() { sed -n "s/^$1 = \"\(.*\)\"\$/\1/p" engine.lock; }
-commit=$(val commit)
-want=$(val "$p")
+commit=$(awk '$1 == "commit" { print $2; exit }' engine.lock)
+want=$(awk -v p="$p" '$1 == "asset" && $2 == p { print $3; exit }' engine.lock)
+if [ -z "$commit" ] || [ -z "$want" ]; then echo "fetch-engine: engine.lock lacks the commit or the $p asset" >&2; exit 1; fi
 mkdir -p .engine
 curl -fsSL -o .engine/torpor.part "https://raw.githubusercontent.com/Kylne700/torpor/$commit/dist/$p/torpor"
 got=$( (sha256sum .engine/torpor.part 2>/dev/null || shasum -a 256 .engine/torpor.part) | cut -c1-64)

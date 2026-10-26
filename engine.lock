@@ -1,13 +1,36 @@
-# The Torpor engine that torpor-muse drives: a pinned open-source dependency made before the hackathon (not part of the
-# submission). torpor-muse refuses an engine whose `torpor version` output differs. Binaries: dist/<platform>/torpor at
-# the commit below; scripts/fetch-engine.sh downloads the one for this platform and checks its sha256.
-repo = "https://github.com/Kylne700/torpor"
-tag = "pre-event-final"
-commit = "a2289f4c3cdc7779f18cda56f95c607bb01a88cc"
-version = "torpor 2.3.1"
-
-[sha256]
-linux-x64 = "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f"
-linux-arm64 = "0e6e61341e735319b8a5d857031324c192ea675b8d9b4fb29e96672dc6039c7d"
-darwin-x64 = "8b4bbf292026537b0b84db69f3c0c0463650ca76e3d21dd93863d51c40c184dc"
-darwin-arm64 = "0ffd3a1c05f8ddefef4ffe8c04da6c4118625cb3a5465af94a359624650a948b"
+# engine.lock: the pre-event Torpor engine this repo depends on (declared open-source base, not judged).
+# One fact per line: a key, then its value(s), split on spaces. Read by scripts/verify-engine.sh,
+# scripts/new-work.sh and scripts/vendor-engine.sh. Facts read from GitHub on 2026-10-26 at about 18:30 UTC.
+#
+# Why two tags: the GitHub release "pre-event-final" (id 424425907) has no release assets, and tag v2.3.1
+# has no GitHub release at all. The binaries are git blobs at dist/<platform>/torpor in the tree of the
+# pinned commit. The release workflow of tag v2.3.1 built them (run 40231508062, build commit
+# 495ce0816d7ccd814df27fb7f5ff0c3c7b3fa43a) and its bot commit b20cf87 put them on main (2026-10-25T20:38:20Z).
+# The bytes to fetch are therefore dist/<platform>/torpor in the tree of the commit below.
+#
+# Where each sha256 comes from (all three agree for all four files):
+#   1. the bytes downloaded from GitHub (contents API, raw media type, ref pre-event-final);
+#   2. the git blob in a local clone of the engine at the pinned commit;
+#   3. the subject digests of GitHub's SLSA build-provenance statements (workflow release.yml@refs/tags/v2.3.1).
+# The git blob id on each asset line equals the "sha" the GitHub contents API returns for that file.
+# NOT VERIFIED: the release-API "digest" field and "gh release download" (the release has 0 assets);
+# the attestation signatures (gh attestation verify is not in the gh version used; only the statements were read).
+repo https://github.com/Kylne700/torpor.git
+tag pre-event-final
+tag-object 19e5429a10290e89db823a2f8371bcb8ccc3a1e2
+commit a2289f4c3cdc7779f18cda56f95c607bb01a88cc
+tag-created 2026-10-26T15:29:51Z
+release-published 2026-10-26T15:29:56Z
+built-by-tag v2.3.1
+built-by-commit 495ce0816d7ccd814df27fb7f5ff0c3c7b3fa43a
+binaries-commit b20cf87548b863e39d2b149a88a0069c2608e0a8
+# The tag the README compares against: between it and pre-event-final only README.md (+2 lines) and
+# THIRD-PARTY-NOTICES.md (+8725 lines) differ (git diff --numstat).
+base-tag pre-event-base
+base-commit bf28031cc381c95fbaffa7ed9244d30b2ed1b910
+base-created 2026-10-25T22:35:23Z
+# asset <platform> <sha256> <bytes> <git blob sha1>
+asset darwin-arm64 0ffd3a1c05f8ddefef4ffe8c04da6c4118625cb3a5465af94a359624650a948b 6354192 62600f40fa06c3f55aefa9b6d38a6c7dbfaefa82
+asset darwin-x64 8b4bbf292026537b0b84db69f3c0c0463650ca76e3d21dd93863d51c40c184dc 7096920 25f05c711a476362cc94d7e4b0c0bc3dbd8bbc04
+asset linux-arm64 0e6e61341e735319b8a5d857031324c192ea675b8d9b4fb29e96672dc6039c7d 6638816 8cf1fedb4dd80db607923dc62449e6b20b61f3c9
+asset linux-x64 0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f 7896256 ca34aea9e7ab96dda56b71c8edb622d473a8b282
