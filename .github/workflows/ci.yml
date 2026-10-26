@@ -46,6 +46,8 @@ jobs:
           node-version: 22
       - name: Mock API self-tests
         run: node --test mock/test/*.test.mjs
+      - name: Eval task bank self-test
+        run: node eval/selftest.mjs
 
   linux-musl:
     name: Linux (musl, static)

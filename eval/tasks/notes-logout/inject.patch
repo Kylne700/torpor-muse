@@ -1,0 +1,9 @@
+diff --git a/lib/auth.js b/lib/auth.js
+index bb720b5..7d1e8da 100644
+--- a/lib/auth.js
++++ b/lib/auth.js
+@@ -31,3 +31,3 @@ function createSession(userId) {
+ function destroySession(sid) {
+-  sessions.delete(sid);
++  sessions.delete(String(sid).toUpperCase());
+ }

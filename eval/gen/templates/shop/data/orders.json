@@ -1,0 +1,39 @@
+[
+  {
+    "id": 1,
+    "customer": "alice",
+    "items": [
+      {
+        "productId": 1,
+        "name": "Ceramic mug",
+        "qty": 2,
+        "priceCents": 1200,
+        "lineCents": 2400
+      },
+      {
+        "productId": 3,
+        "name": "Notebook A5",
+        "qty": 1,
+        "priceCents": 475,
+        "lineCents": 475
+      }
+    ],
+    "totalCents": 2875,
+    "placedAt": "2026-03-02T10:15:00.000Z"
+  },
+  {
+    "id": 2,
+    "customer": "bob",
+    "items": [
+      {
+        "productId": 2,
+        "name": "Green tea 100g",
+        "qty": 3,
+        "priceCents": 850,
+        "lineCents": 2550
+      }
+    ],
+    "totalCents": 2550,
+    "placedAt": "2026-03-05T16:40:00.000Z"
+  }
+]

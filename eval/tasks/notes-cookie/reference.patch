@@ -1,0 +1,66 @@
+diff --git a/lib/auth.js b/lib/auth.js
+index 0762cdd..528c1d7 100644
+--- a/lib/auth.js
++++ b/lib/auth.js
+@@ -33,11 +33,16 @@ function destroySession(sid) {
+ }
+ 
+ function currentUser(req) {
+-  const match = /(?:^|;\s*)sid=([^;]*)/.exec(req.headers.cookie || '');
++  const match = /(?:^|;\s*)notes_session=([^;]*)/.exec(req.headers.cookie || '');
+   const userId = match && sessions.get(match[1]);
+   return userId ? store.getUser(userId) : null;
+ }
+ 
++function sessionId(req) {
++  const match = /(?:^|;\s*)notes_session=([^;]*)/.exec(req.headers.cookie || '');
++  return match ? match[1] : null;
++}
++
+ module.exports = {
+   hashPassword,
+   verifyPassword,
+@@ -46,4 +51,5 @@ module.exports = {
+   createSession,
+   destroySession,
+   currentUser,
++  sessionId,
+ };
+diff --git a/server.js b/server.js
+index 709599a..af0b4cf 100644
+--- a/server.js
++++ b/server.js
+@@ -38,6 +38,7 @@ async function handle(req, res) {
+   const method = req.method;
+ 
+   if (method === 'GET' && path === '/') return send(res, 200, PAGE);
++  if (method === 'GET' && path === '/health') return send(res, 200, { status: 'ok' });
+ 
+   if (method === 'POST' && path === '/register') {
+     const { username, password } = await readJson(req);
+@@ -56,17 +57,23 @@ async function handle(req, res) {
+       return send(res, 401, { error: 'wrong username or password' });
+     }
+     const sid = auth.createSession(user.id);
+-    return send(res, 200, { username: user.username }, { 'Set-Cookie': `sid=${sid}; HttpOnly; Path=/` });
++    return send(res, 200, { username: user.username }, { 'Set-Cookie': `notes_session=${sid}; HttpOnly; Path=/` });
+   }
+ 
+   if (method === 'POST' && path === '/logout') {
+-    return send(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; Max-Age=0; Path=/' });
++    auth.destroySession(auth.sessionId(req));
++    return send(res, 200, { ok: true }, { 'Set-Cookie': 'notes_session=; Max-Age=0; Path=/' });
+   }
+ 
+   const user = auth.currentUser(req);
+   if (!user) return send(res, 401, { error: 'login required' });
+ 
+   if (method === 'GET' && path === '/me') return send(res, 200, { id: user.id, username: user.username });
++  if (method === 'GET' && path === '/stats') return send(res, 200, { notes: store.notesOf(user.id).length });
++  if (method === 'GET' && path === '/export') {
++    const rows = store.notesOf(user.id).map((n) => ({ id: n.id, title: n.title, body: n.body }));
++    return send(res, 200, rows, { 'Content-Disposition': 'attachment; filename="notes.json"' });
++  }
+ 
+   if (path === '/notes' && method === 'GET') {
+     let rows = store.notesOf(user.id);

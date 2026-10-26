@@ -1,0 +1,41 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "alice",
+      "password": "7a3c91e0d2b4f658$c3a0a75076b7f8b5aa1d73c7017502e6da89a471a4b31351a8c79b063cdff60c"
+    },
+    {
+      "id": 2,
+      "username": "bob",
+      "password": "e1b24c70a96d3f85$bd86682eba88bf78ba65d18a0ba61da492d96843b714013a5f69e44d60c5051f"
+    }
+  ],
+  "tokens": [],
+  "todos": [
+    {
+      "id": 1,
+      "userId": 1,
+      "title": "Buy milk",
+      "done": false
+    },
+    {
+      "id": 2,
+      "userId": 1,
+      "title": "Write report",
+      "done": true
+    },
+    {
+      "id": 3,
+      "userId": 1,
+      "title": "Call mum",
+      "done": false
+    },
+    {
+      "id": 4,
+      "userId": 2,
+      "title": "Fix bike",
+      "done": false
+    }
+  ]
+}

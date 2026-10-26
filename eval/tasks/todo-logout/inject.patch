@@ -1,0 +1,9 @@
+diff --git a/lib/auth.js b/lib/auth.js
+index ab1849a..f7d051e 100644
+--- a/lib/auth.js
++++ b/lib/auth.js
+@@ -34,3 +34,3 @@ function issueToken(userId) {
+ function revokeToken(token) {
+-  db.data.tokens = db.data.tokens.filter((t) => t.token !== token);
++  db.data.tokens = db.data.tokens.filter((t) => t.token !== String(token).toUpperCase());
+   db.save();

@@ -1,0 +1,66 @@
+diff --git a/lib/store.js b/lib/store.js
+index 4d95443..c5d22ec 100644
+--- a/lib/store.js
++++ b/lib/store.js
+@@ -54,6 +54,12 @@ function addNote(userId, title, body) {
+   return note;
+ }
+ 
++function updateNote(note, fields) {
++  Object.assign(note, fields);
++  save('notes', notes);
++  return note;
++}
++
+ function deleteNote(id) {
+   const i = notes.findIndex((n) => n.id === id);
+   if (i >= 0) notes.splice(i, 1);
+@@ -61,3 +67,4 @@ function deleteNote(id) {
+ }
+ 
+ module.exports = { findUser, getUser, addUser, notesOf, getNote, addNote, deleteNote };
++module.exports.updateNote = updateNote;
+diff --git a/server.js b/server.js
+index 709599a..972017e 100644
+--- a/server.js
++++ b/server.js
+@@ -38,6 +38,7 @@ async function handle(req, res) {
+   const method = req.method;
+ 
+   if (method === 'GET' && path === '/') return send(res, 200, PAGE);
++  if (method === 'GET' && path === '/health') return send(res, 200, { status: 'ok' });
+ 
+   if (method === 'POST' && path === '/register') {
+     const { username, password } = await readJson(req);
+@@ -67,9 +68,17 @@ async function handle(req, res) {
+   if (!user) return send(res, 401, { error: 'login required' });
+ 
+   if (method === 'GET' && path === '/me') return send(res, 200, { id: user.id, username: user.username });
++  if (method === 'GET' && path === '/stats') return send(res, 200, { notes: store.notesOf(user.id).length });
++  if (method === 'GET' && path === '/export') {
++    const rows = store.notesOf(user.id).map((n) => ({ id: n.id, title: n.title, body: n.body }));
++    return send(res, 200, rows, { 'Content-Disposition': 'attachment; filename="notes.json"' });
++  }
+ 
+   if (path === '/notes' && method === 'GET') {
+     let rows = store.notesOf(user.id);
++    if (url.searchParams.get('sort') === 'title') {
++      rows = [...rows].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
++    }
+     return send(res, 200, rows);
+   }
+ 
+@@ -89,6 +98,13 @@ async function handle(req, res) {
+       res.writeHead(204);
+       return res.end();
+     }
++    if (method === 'PUT') {
++      const { title, body } = await readJson(req);
++      const fields = {};
++      if (typeof title === 'string' && title.trim()) fields.title = title.trim();
++      if (typeof body === 'string') fields.body = body;
++      return send(res, 200, store.updateNote(note, fields));
++    }
+   }
+ 
+   return send(res, 404, { error: 'not found' });

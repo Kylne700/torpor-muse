@@ -1,0 +1,91 @@
+diff --git a/lib/orders.js b/lib/orders.js
+index 6cc413a..08881c7 100644
+--- a/lib/orders.js
++++ b/lib/orders.js
+@@ -16,6 +16,7 @@ function save() {
+ }
+ 
+ const ordersOf = (customer) => orders.filter((order) => order.customer === customer);
++const getOrder = (customer, id) => ordersOf(customer).find((order) => order.id === id);
+ 
+ function create(customer, fields) {
+   const id = orders.reduce((max, order) => Math.max(max, order.id), 0) + 1;
+@@ -25,4 +26,4 @@ function create(customer, fields) {
+   return order;
+ }
+ 
+-module.exports = { ordersOf, create };
++module.exports = { ordersOf, getOrder, create };
+diff --git a/server.js b/server.js
+index 7b0c8fd..4e51f2d 100644
+--- a/server.js
++++ b/server.js
+@@ -60,15 +60,28 @@ function home({ res }) {
+   send(res, 200, PAGE);
+ }
+ 
++function health({ res }) {
++  send(res, 200, { status: 'ok' });
++}
++
+ function listProducts({ res, url }) {
+   let rows = catalog.all();
+   send(res, 200, rows);
+ }
+ 
++function categories({ res }) {
++  send(res, 200, [...new Set(catalog.all().map((p) => p.category))].sort());
++}
++
+ function showCart({ req, res }) {
+   send(res, 200, cartView(customerOf(req)));
+ }
+ 
++function cartCount({ req, res }) {
++  const count = carts.linesOf(customerOf(req)).reduce((sum, line) => sum + line.qty, 0);
++  send(res, 200, { count });
++}
++
+ async function addItem({ req, res }) {
+   const customer = customerOf(req);
+   const { productId, qty = 1 } = await readJson(req);
+@@ -95,6 +108,7 @@ function checkout({ req, res }) {
+     items: view.items,
+     totalCents: view.totalCents,
+   });
++  carts.clear(customer);
+   send(res, 201, order);
+ }
+ 
+@@ -102,6 +116,12 @@ function listOrders({ req, res }) {
+   send(res, 200, orders.ordersOf(customerOf(req)));
+ }
+ 
++function getOrder({ req, res, params }) {
++  const order = orders.getOrder(customerOf(req), Number(params[0]));
++  if (!order) return send(res, 404, { error: 'no such order' });
++  send(res, 200, order);
++}
++
+ async function dispatch(req, res) {
+   const url = new URL(req.url, 'http://localhost');
+   const { pathname } = url;
+@@ -109,13 +129,18 @@ async function dispatch(req, res) {
+   const ctx = { req, res, url, params: [] };
+ 
+   if (method === 'GET' && pathname === '/') return home(ctx);
++  if (method === 'GET' && pathname === '/health') return health(ctx);
+   if (method === 'GET' && pathname === '/products') return listProducts(ctx);
++  if (method === 'GET' && pathname === '/categories') return categories(ctx);
+   if (method === 'GET' && pathname === '/cart') return showCart(ctx);
++  if (method === 'GET' && pathname === '/cart/count') return cartCount(ctx);
+   if (method === 'POST' && pathname === '/cart/items') return addItem(ctx);
+   const line = /^\/cart\/items\/(\d+)$/.exec(pathname);
+   if (method === 'DELETE' && line) return removeItem({ ...ctx, params: [line[1]] });
+   if (method === 'POST' && pathname === '/checkout') return checkout(ctx);
+   if (method === 'GET' && pathname === '/orders') return listOrders(ctx);
++  const order = /^\/orders\/(\d+)$/.exec(pathname);
++  if (method === 'GET' && order) return getOrder({ ...ctx, params: [order[1]] });
+   send(res, 404, { error: 'not found' });
+ }
+ 

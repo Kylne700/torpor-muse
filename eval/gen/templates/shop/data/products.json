@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "name": "Ceramic mug",
+    "priceCents": 1200,
+    "category": "home"
+  },
+  {
+    "id": 2,
+    "name": "Green tea 100g",
+    "priceCents": 850,
+    "category": "food"
+  },
+  {
+    "id": 3,
+    "name": "Notebook A5",
+    "priceCents": 475,
+    "category": "office"
+  },
+  {
+    "id": 4,
+    "name": "Desk lamp",
+    "priceCents": 3999,
+    "category": "home"
+  },
+  {
+    "id": 5,
+    "name": "Ballpoint pen",
+    "priceCents": 199,
+    "category": "office"
+  },
+  {
+    "id": 6,
+    "name": "Dark chocolate",
+    "priceCents": 599,
+    "category": "food"
+  },
+  {
+    "id": 7,
+    "name": "Wool blanket",
+    "priceCents": 6490,
+    "category": "home"
+  },
+  {
+    "id": 8,
+    "name": "Sticky notes",
+    "priceCents": 325,
+    "category": "office"
+  }
+]
