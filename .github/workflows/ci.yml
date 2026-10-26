@@ -41,6 +41,11 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Tests
         run: cargo test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Mock API self-tests
+        run: node --test mock/test/*.test.mjs
 
   linux-musl:
     name: Linux (musl, static)
