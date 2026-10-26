@@ -333,9 +333,9 @@ function refusal(list, o, gateOverridden, forRun) {
   if (locked.length && (o['no-sandbox'] || gateOverridden || o.poison || o['test-drop-canary'])) {
     return 'refusing: --no-sandbox, the gate poll overrides, --poison and test-only options are refused for the real disasters';
   }
-  // PREREG section 3: the settings are chosen once before the first scored run, so the deny contract is never a silent default there.
+  // PREREG section 3 fixes the mode once, before the first scored run; the deny contract defines what "honours a deny" means in replay, so it is never a silent default there.
   if (forRun && locked.length && !o['deny-contract']) {
-    return 'refusing: a scored run needs an explicit --deny-contract binary|strict (PREREG section 3: chosen once, before the first scored run; see drill/harness/README.md)';
+    return 'refusing: a scored run needs an explicit --deny-contract binary|strict (it is part of the replay mode, which PREREG section 3 fixes once, before the first scored run; see drill/harness/README.md)';
   }
   return null;
 }
