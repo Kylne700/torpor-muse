@@ -1,0 +1,18 @@
+{
+  "_shape": "assumed",
+  "_source": "https://dev.meta.ai/docs/error-handling, read 2026-10-26 (429 section: body example and the Retry-After header)",
+  "_note": "Retry-After is 2 seconds here; the docs example says 15 and the message is adjusted to match.",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "Retry-After": "2"
+  },
+  "body": {
+    "error": {
+      "message": "Rate limit exceeded. Please retry after 2 seconds.",
+      "type": "rate_limit_error",
+      "param": null,
+      "code": "rate_limit_exceeded"
+    }
+  }
+}
