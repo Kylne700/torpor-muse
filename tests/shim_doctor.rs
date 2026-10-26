@@ -894,14 +894,14 @@ fn a_stop_that_went_through_without_the_engine_is_not_a_live_gate() {
     let down = "torpor not found: set TORPOR_BIN or put it on PATH";
     let w = healthy("problems-gate");
     must(&w.examine(), Level::Ok, "gate live: Stop ran");
-    // in the same second as the Stop heartbeat or later: that Stop never reached the engine
-    for ago in [58, 30, 0] {
-        write_problems(&w, &[(ago, "Stop", down)]);
+    // in the same second as the Stop heartbeat or later, whatever the event: a call went through without the engine
+    for (ago, event) in [(58, "Stop"), (30, "UserPromptSubmit"), (0, "SessionStart")] {
+        write_problems(&w, &[(ago, event, down)]);
         let r = w.examine();
         must(
             &r,
             Level::Fix,
-            "gate not live: the last Stop (58s ago, session s-main) went through without the engine",
+            "gate not live: a hook call at or after the last Stop (58s ago, session s-main) went through without the engine",
         );
         mustnt(&r, Level::Ok, "gate live");
         must(

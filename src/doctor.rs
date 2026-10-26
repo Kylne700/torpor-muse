@@ -788,7 +788,7 @@ fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
         // the heartbeat is written before the engine is called, so a Stop that failed open still left one
         r.problem(
             Level::Fix,
-            format!("gate not live: the last Stop ({} ago, session {}) went through without the engine, see the hook problem below", ago(c.now_ms, stop), short(&sid)),
+            format!("gate not live: a hook call at or after the last Stop ({} ago, session {}) went through without the engine, see the hook problem below", ago(c.now_ms, stop), short(&sid)),
             format!("fix the hook problem below; after that {how}"),
         );
     } else {
