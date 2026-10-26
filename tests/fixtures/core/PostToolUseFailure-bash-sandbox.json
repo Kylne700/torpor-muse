@@ -1,0 +1,20 @@
+{
+  "cwd": "<CWD>",
+  "duration_ms": 180,
+  "error": "{\n  \"chunk_id\": \"exec-5-1\",\n  \"exit_code\": 2,\n  \"terminal_status\": \"failed\",\n  \"terminal_reason\": \"The sandbox blocked a write to /bin/sh: it is outside this session's writable roots (workspace, /tmp, $TMPDIR). Options: ask the user to allow it (permission profile: \\\"workspace_roots\\\": {\\\"<dir>\\\": true}), ask for a one-time unsandboxed run of this command, or point the tool at a cache under the workspace or /tmp (for example UV_CACHE_DIR, HOMEBREW_CACHE). Do not retry with sudo or chmod.\\nprocess exited with status 2\",\n  \"output\": \"/bin/sh: 1: cannot create ../outside-probe.txt: Read-only file system\\n\",\n  \"original_output_bytes\": 70,\n  \"original_output_tokens\": 18,\n  \"truncated\": false\n}",
+  "hook_event_name": "PostToolUseFailure",
+  "is_interrupt": false,
+  "model": "muse-spark-1.3",
+  "model_provider": "meta",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-7000-8000-000000000001",
+  "tool_input": {
+    "command": "echo blocked > ../outside-probe.txt",
+    "description": "Attempt write outside workspace",
+    "workdir": "<CWD>"
+  },
+  "tool_name": "bash",
+  "tool_use_id": "call_01a17946206171ca875aff421eb187b3",
+  "transcript_path": null,
+  "turn_id": "00000000-0000-7000-8000-000000000002"
+}

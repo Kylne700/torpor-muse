@@ -1,0 +1,9 @@
+{
+  "cwd": "<CWD>",
+  "hook_event_name": "SessionStart",
+  "model": "unknown",
+  "permission_mode": "default",
+  "session_id": "00000000-0000-7000-8000-000000000001",
+  "source": "clear",
+  "transcript_path": null
+}
