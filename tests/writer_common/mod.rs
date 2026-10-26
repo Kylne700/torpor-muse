@@ -435,7 +435,7 @@ impl Sandbox {
         )
     }
 
-    fn hook(&self, event: &str, extra: Value) {
+    pub fn hook(&self, event: &str, extra: Value) {
         let mut payload = json!({"session_id": "s1", "cwd": self.ws, "hook_event_name": event});
         payload
             .as_object_mut()

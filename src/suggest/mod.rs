@@ -403,13 +403,20 @@ fn ask(c: &mut Ctx, p: &Plan, body: &str, attempt: u32) -> Result<client::Readin
         .map_err(|m| Outcome::new(Kind::Advisory, m))?;
     c.calls += 1;
     let timeout = p.http.min(c.time_left());
+    let sent = Instant::now();
     let reading = match client::post(&p.base, &p.key, body, timeout) {
         Ok(reply) => client::interpret(&reply, worst),
         Err(n) => client::from_net(n, worst),
     };
+    // the call's own time goes into the note, so the ledger shows how long the model took
+    let secs = sent.elapsed().as_secs_f64();
     let note = match &reading.outcome {
-        Ok(_) => format!("attempt {}", attempt + 1),
-        Err(bad) => format!("attempt {}: {}", attempt + 1, c.safe(&bad.reason(), 120)),
+        Ok(_) => format!("attempt {}, {secs:.1}s", attempt + 1),
+        Err(bad) => format!(
+            "attempt {}, {secs:.1}s: {}",
+            attempt + 1,
+            c.safe(&bad.reason(), 120)
+        ),
     };
     c.usd += ledger
         .record(&p.model, &reading.status, reading.charge, &note)
