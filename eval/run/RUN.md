@@ -69,8 +69,8 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
 
   Muse uses the same event names, so the mapping is the identity; it lives in ONE place, `ENGINE_EVENTS` and `armCSettings` in `arms.mjs`.
   The engine's own `hooks.json` also has the matcher `Bash|Edit|Write|MultiEdit|NotebookEdit` on the three tool events; the drill leaves it
-  out, so C does too: the tool events fire for every tool call of Muse, reads and searches included (with the matcher, the first
-  measurements below fired for `bash`, `edit_file` and `write_file` only). `node eval/run/arms.mjs --print-arm-c` prints the file with the
+  out, so C does too. Without the matcher the tool events should fire for every tool call of Muse, reads and searches included (expected,
+  not yet measured with this wiring; with the matcher, the first measurements below fired for `bash`, `edit_file` and `write_file` only). `node eval/run/arms.mjs --print-arm-c` prints the file with the
   placeholders `ENGINE_BIN`, `EPISODE/torpor-home` and, for the key, `EPISODE/` plus the episode's HOME and `.config/torpor/key`, and its
   sha256 (`shape_sha256` in the manifest). The engine binary is the one `engine.lock` pins (linux-x64 asset, `torpor 2.3.1`): every C and D row
   records `engine_sha256` and `engine_lock_match`.
@@ -103,8 +103,10 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
   an older adapter keeps it under `$HOME/.local/state/torpor-muse`, and both places are read). The writer's dollars count against `--cap-usd`.
   **The writer is detached and nothing outlives a sandbox, so with the writer on the launcher waits for it after every turn** (`--drain`, up
   to 60 s, `manifest.writer_drain_s`): the writer of turn n has finished before turn n+1 starts, which a live session would not guarantee.
-  That wait is not the model's time: the turn limit is extended by it and the 15 minutes do not count it. A writer still running when the
-  wait ends is stopped and counted. Per turn: `turn_log[].drain_ms` and `drain_cut_off`; per episode: `writer_wait` (`waited_ms`,
+  That wait is not the model's time: the turn limit is extended by it and the 15 minutes do not count it. Any process still running when the
+  wait ends (the writer, or a server the model left running) is stopped and counted: `still_running` and `drain_cut_off` count leftover
+  processes, not only writers. A hung Muse in such a turn is stopped up to 60 s later than the turn limit. Measured with the real Muse
+  binary (ECHO provider, a hook that leaves a 7 s sleeper behind): the call lasted 9.6 s, Muse 2.2 s, `drain_ms` 7.0 s. Per turn: `turn_log[].drain_ms` and `drain_cut_off`; per episode: `writer_wait` (`waited_ms`,
   `still_running`). Keyed runs with the writer off use `--drain 0`; `--net none` calls take no `--drain` (nothing outlives them). **NOT VERIFIED** until the exploratory episode below has run: that the writer
   fires through Muse's hooks in this setup.
 
