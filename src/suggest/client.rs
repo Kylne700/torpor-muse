@@ -64,6 +64,14 @@ fn check_private(p: &Path, what: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `~/x` in a config value is the home folder (a shell does that for a typed path, nothing does it for a file).
+fn expand_home(v: &str) -> PathBuf {
+    match (v.strip_prefix("~/"), env("HOME")) {
+        (Some(rest), Some(h)) => Path::new(&h).join(rest),
+        _ => PathBuf::from(v),
+    }
+}
+
 pub fn parse_config(text: &str) -> Result<Config, String> {
     let mut c = Config::default();
     for (n, line) in text.lines().enumerate() {
@@ -76,7 +84,7 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
             .ok_or_else(|| format!("config line {}: expected `name = value`", n + 1))?;
         let v = v.trim().trim_matches('"');
         match k.trim() {
-            "key_file" if !v.is_empty() => c.key_file = Some(PathBuf::from(v)),
+            "key_file" if !v.is_empty() => c.key_file = Some(expand_home(v)),
             "day_cap_usd" => {
                 c.day_cap = Some(
                     v.parse::<f64>()
@@ -109,15 +117,22 @@ pub fn load_config() -> Result<Config, String> {
     parse_config(&text)
 }
 
-/// For the trigger: is there a key source a detached run could use (it gets no key in its environment)?
-pub fn key_source_ok(cfg: &Config) -> bool {
-    cfg.key_file
-        .as_deref()
-        .is_some_and(|f| check_private(f, "the key file").is_ok())
+/// For the trigger and `doctor`: why a detached run cannot read its key from a file, or None when it can (the config
+/// names a file only its owner can read; what is inside is not read here).
+pub fn key_file_gap(cfg: &Config) -> Option<String> {
+    match cfg.key_file.as_deref() {
+        None => Some("there is no `key_file = <path>` line in ~/.config/torpor-muse/config".into()),
+        Some(f) => check_private(f, "the key file").err(),
+    }
+}
+
+/// Is there a usable `META_API_KEY` in this process's environment?
+pub fn env_key_ok() -> bool {
+    env("META_API_KEY").is_some_and(|k| Key::new(&k).is_ok())
 }
 
 /// `META_API_KEY` when it is set (run by hand); otherwise the file the config names. Never from argv. A run started
-/// by the trigger gets no `META_API_KEY`, so it always takes the file.
+/// by the trigger gets no `META_API_KEY` when the config names a key file, so it takes the file.
 pub fn load_key(cfg: &Config) -> Result<Key, String> {
     key_from(cfg, env("META_API_KEY"))
 }
@@ -127,7 +142,7 @@ fn key_from(cfg: &Config, from_env: Option<String>) -> Result<Key, String> {
         return Key::new(&k);
     }
     let f = cfg.key_file.as_deref().ok_or(
-        "no API key: set META_API_KEY, or put `key_file = <path of a file holding the key>` in ~/.config/torpor-muse/config",
+        "no API key: set META_API_KEY (for a run by hand), or put `key_file = <path of a file holding the key>` in ~/.config/torpor-muse/config (the run Muse Code starts after a prompt needs the key file)",
     )?;
     check_private(f, "the key file")?;
     Key::new(&fs::read_to_string(f).map_err(|e| format!("cannot read the key file: {e}"))?)
@@ -583,6 +598,28 @@ mod tests {
     }
 
     #[test]
+    fn a_key_file_may_start_with_the_home_folder_sign() {
+        let _g = super::super::state::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let saved = std::env::var_os("HOME");
+        // SAFETY: every test that touches the environment holds ENV_LOCK.
+        unsafe { std::env::set_var("HOME", "/h/u") };
+        let at_home = parse_config("key_file = ~/keys/k\n").unwrap().key_file;
+        let quoted = parse_config("key_file = \"~/k\"\n").unwrap().key_file;
+        let elsewhere = parse_config("key_file = /a/~/k\n").unwrap().key_file;
+        unsafe {
+            match saved {
+                Some(h) => std::env::set_var("HOME", h),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+        assert_eq!(at_home, Some(PathBuf::from("/h/u/keys/k")));
+        assert_eq!(quoted, Some(PathBuf::from("/h/u/k")));
+        assert_eq!(elsewhere, Some(PathBuf::from("/a/~/k")));
+    }
+
+    #[test]
     fn files_that_others_can_read_are_refused_and_the_key_stays_hidden() {
         let d = std::env::temp_dir().join(format!("tm-client-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
@@ -599,10 +636,15 @@ mod tests {
                 .unwrap_err()
                 .contains("only you can read")
         );
-        assert!(!key_source_ok(&cfg));
+        assert!(key_file_gap(&cfg).unwrap().contains("only you can read"));
         fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
         let key = key_from(&cfg, None).unwrap();
-        assert!(key_source_ok(&cfg));
+        assert_eq!(key_file_gap(&cfg), None);
+        assert!(
+            key_file_gap(&Config::default())
+                .unwrap()
+                .contains("key_file")
+        );
         assert_eq!(format!("{key:?}"), "Key(hidden)");
         assert_eq!(key.scrub("a LLM_testkey0123456789 b"), "a [key] b");
         assert!(Key::new("two words").is_err() && Key::new("").is_err());

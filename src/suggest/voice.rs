@@ -40,7 +40,8 @@ fn help() -> String {
          Keywords ({}): up to {KEYWORDS_MAX} words from the names of your code files and the URL paths in your code\n\
          are sent along with the audio, so that the transcription favours your own words. --no-keywords sends\n\
          none, --keywords sends them.\n\n\
-         The clip: a WAV file, PCM, mono, 16-bit, 16000 or 24000 Hz, at most 10 minutes and 32 MB. To convert one:\n\
+         The clip: a WAV file (a path; `-` for standard input is not supported), PCM, mono, 16-bit, 16000 or 24000 Hz,\n\
+         at most 10 minutes and 32 MB. To convert one:\n\
          \x20 {FFMPEG}\n\
          Cost: USD 0.18 per audio hour, counted in the same ledger and day cap as `suggest`; the same API key.",
         if KEYWORDS_DEFAULT {
@@ -66,7 +67,7 @@ pub fn say(args: &[&str]) -> u8 {
             }
             "--keywords" => kw = true,
             "--no-keywords" => kw = false,
-            f if !f.starts_with("--") && file.is_none() => file = Some(f),
+            f if !f.is_empty() && !f.starts_with("--") && file.is_none() => file = Some(f),
             _ => {
                 eprintln!(
                     "usage: torpor-muse say <clip.wav> [--keywords | --no-keywords]  (--help for more)"
@@ -86,6 +87,13 @@ pub fn say(args: &[&str]) -> u8 {
         Ok(r) => r,
         Err(e) => return bail(&e),
     };
+    if let Err(o) = super::local_checks(&root) {
+        if o.kind == super::Kind::Error {
+            return bail(&o.message);
+        }
+        println!("{}: {}", o.kind.word(), o.message);
+        return 3;
+    }
     let words = if kw { keywords(&root) } else { Vec::new() };
     let text = match transcribe(file, &words) {
         Ok((t, _ms)) => t,
@@ -152,8 +160,8 @@ fn check_wav(b: &[u8]) -> Result<u64, String> {
                 let ms = bytes * 1000 / (u64::from(rate) * 2);
                 if ms > MAX_MS {
                     return Err(format!(
-                        "the clip is {} minutes long; the limit is 10",
-                        ms / 60_000
+                        "the clip is {} s long; the limit is 10 minutes (600 s)",
+                        ms.div_ceil(1000)
                     ));
                 }
                 return Ok(ms);
@@ -173,9 +181,11 @@ fn read_clip(path: &str) -> Result<(Vec<u8>, u64), String> {
         return Err(format!("{path} is not a file"));
     }
     if meta.len() > MAX_FILE {
+        let tenths = meta.len().div_ceil(100_000); // rounded up: never "32 MB" about a file over 32 MB
         return Err(hint(format!(
-            "{path} is {} MB; the limit is 32 MB",
-            meta.len() / 1_000_000
+            "{path} is {}.{} MB; the limit is 32 MB",
+            tenths / 10,
+            tenths % 10
         )));
     }
     let bytes = fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
@@ -217,7 +227,9 @@ fn url_paths(text: &str) -> Vec<&str> {
                 .bytes()
                 .zip(0..)
                 .find(|&(c, j)| {
-                    c == b[i] || c == b'\n' || (b[i] == b'`' && rest[j..].starts_with("${"))
+                    c == b[i]
+                        || c == b'\n'
+                        || (b[i] == b'`' && rest.as_bytes()[j..].starts_with(b"${"))
                 })
                 .map_or(rest.len(), |(_, j)| j);
             out.push(repo::cut(&rest[..end], 120));
@@ -501,7 +513,10 @@ mod tests {
         no(&wav_with(1, 1, 44_100, 16, 88_200, &[]), "16000 or 24000");
         no(&wav_with(3, 1, 24_000, 16, 48_000, &[]), "PCM");
         no(&wav_with(1, 1, 24_000, 16, 0, &[]), "no audio");
-        no(&good(16_000, 600_001), "limit is 10");
+        no(
+            &good(16_000, 600_001),
+            "601 s long; the limit is 10 minutes",
+        );
         no(b"not a wav at all, just text", "not a WAV");
         no(b"", "not a WAV");
         let mut no_data = good(24_000, 100);
@@ -524,7 +539,10 @@ mod tests {
             .set_len(MAX_FILE + 1)
             .unwrap(); // sparse: never read
         let e = read_clip(big.to_str().unwrap()).unwrap_err();
-        assert!(e.contains("32 MB") && e.contains(FFMPEG), "{e}");
+        assert!(
+            e.contains("32.1 MB; the limit is 32 MB") && e.contains(FFMPEG),
+            "{e}"
+        );
         let text = d.join("a.wav");
         fs::write(&text, "hello").unwrap();
         let e = read_clip(text.to_str().unwrap()).unwrap_err();
@@ -630,6 +648,16 @@ mod tests {
                 "/commented"
             ]
         );
+    }
+
+    #[test]
+    fn a_multibyte_character_in_a_template_literal_is_not_cut_in_half() {
+        // QA round 4: the look-ahead for `${` sliced the text at a byte inside the character and panicked
+        let code = "// the route `/api/\u{2026}` is live\nfetch(`/n/\u{e9}t\u{e9}/${id}`);\n";
+        assert_eq!(url_paths(code), ["/api/\u{2026}", "/n/\u{e9}t\u{e9}/"]);
+        let d = project("utf8", &[("a.rs", code)]);
+        assert_eq!(keywords(&d), ["api"]);
+        let _ = fs::remove_dir_all(&d);
     }
 
     fn project(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {

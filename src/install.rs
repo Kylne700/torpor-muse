@@ -197,6 +197,16 @@ fn check_foreign(doc: &Value, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Why `init` would refuse the settings file as it is (None = it would not). `doctor` names this instead of a
+/// remedy that `init` then refuses.
+pub fn refusal(path: &Path) -> Option<String> {
+    match read_settings(path) {
+        Err(e) => Some(e),
+        Ok(Some((_, doc))) => check_foreign(&doc, path).err(),
+        Ok(None) => None,
+    }
+}
+
 /// The finished document must hold exactly our entries, as Muse reads them, and leave everything else as it was.
 fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     let mut rest = new.clone();
@@ -415,8 +425,14 @@ fn remove_hooks() -> Result<(), String> {
         );
     } else if bak.exists() || now != json!({"schema_version": 1}) {
         write_atomic(&path, &pretty(&doc), 0o600, || Ok(())).map_err(|e| e.to_string())?;
+        // the copy init saved no longer matches the file (it was edited since), so it stays: say where
+        let left = if bak.exists() {
+            format!("; the copy init saved stays at {}", bak.display())
+        } else {
+            String::new()
+        };
         println!(
-            "torpor-muse hooks removed from {}; your other settings are kept",
+            "torpor-muse hooks removed from {}; your other settings are kept{left}",
             path.display()
         );
     } else {
@@ -630,6 +646,27 @@ mod tests {
             0,
             "a stale temp file with our process id is replaced"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refusal_says_what_init_would_refuse() {
+        let dir = scratch("install-refusal");
+        let target = dir.join("settings.json");
+        assert_eq!(refusal(&target), None, "no file: init makes one");
+        let plant = |text: &str| fs::write(&target, text).unwrap();
+        plant(r#"{"schema_version":1,"hooks":{}}"#);
+        assert_eq!(refusal(&target), None);
+        plant(r#"{"schema_version":2}"#);
+        assert!(refusal(&target).unwrap().contains("schema_version is 2"));
+        plant("{}");
+        assert!(refusal(&target).unwrap().contains("schema_version is null"));
+        plant("[1]");
+        assert!(refusal(&target).unwrap().contains("not a JSON object"));
+        let real = dir.join("real.json");
+        fs::rename(&target, &real).unwrap();
+        std::os::unix::fs::symlink(&real, &target).unwrap();
+        assert!(refusal(&target).unwrap().contains("symbolic link"));
         let _ = fs::remove_dir_all(&dir);
     }
 

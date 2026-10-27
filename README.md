@@ -35,6 +35,8 @@ It cost USD 0.00015 for the transcription and USD 0.005265 for the check-writer.
 
 The check-writer sends two things to Muse Spark through the Meta Model API (model id `muse-spark-1.3`). The first is the words the user typed, whether or not they say that something works (the model decides that); anything that looks like a key is masked, and a prompt over 1500 characters is cut in the middle. The second is a capped excerpt of the project, taken only from allowlisted files and redacted before it is sent. It runs in the background after a prompt in Muse Code, or when the user runs `torpor-muse suggest` by hand.
 
+To give it the key, put your Meta API key alone on one line in a file only you can read (`chmod 600`), and add the line `key_file = ~/path/to/that/file` to `~/.config/torpor-muse/config` (`chmod 600` that file too). The run that starts after a prompt in Muse Code takes the key from that file; `torpor-muse suggest` and `torpor-muse say` typed by hand also take `META_API_KEY`. Without the file that run does not start: `torpor-muse doctor` shows a `check-writer off` line with the reason, and the first prompt in Muse Code says so once.
+
 `torpor-muse say <clip.wav>` first sends the audio file to Meta's Voice Transcribe API (model `muse-voice-transcribe-1.0`) and, unless `--no-keywords` is given, up to 24 words from the names of the project's code files and the URL paths in its code. The words that come back then go to the check-writer as typed words, so the two things above are sent as well.
 
 The Torpor engine sends nothing to Meta. Its own README (Privacy section) says it makes no AI model calls and uploads nothing of the project. The same section says its only download is `torpor runner install`, which runs after the user confirms.
@@ -86,7 +88,7 @@ In a new terminal, if `torpor-muse` is not found, add `~/.local/bin` to your `PA
 
 With the GitHub CLI you can also check that the binary was built by this repository's release workflow: `gh attestation verify ~/.local/bin/torpor-muse -R Kylne700/torpor-muse`.
 
-Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks them, and `torpor-muse uninstall` removes the hooks, the cache `init` wrote and every folder `init` made that is empty. It never deletes your data: the Torpor store (with your saved checks) and the spend ledger, results and logs in `~/.torpor/muse` stay, and uninstall says so when that folder still holds files; deleting it is your choice. The two programs in `~/.local/bin` stay too.
+Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks them (right after `init`, before one prompt has been sent in Muse Code and answered, it reports the gate as not proven live and exits 1, which is expected), and `torpor-muse uninstall` removes the hooks, the cache `init` wrote and every folder `init` made that is empty. It never deletes your data: the Torpor store (with your saved checks) and the spend ledger, results and logs in `~/.torpor/muse` stay, and uninstall says so when that folder still holds files; deleting it is your choice. The two programs in `~/.local/bin` stay too.
 <!-- INSTALL:end -->
 
 ## License

@@ -7,11 +7,23 @@ mod liveness;
 #[path = "../src/transcript.rs"]
 mod transcript;
 
-/// doctor.rs asks install.rs one thing, where Muse's settings file is; these tests hand doctor the path directly.
+/// doctor.rs asks install.rs where Muse's settings file is and why `init` would refuse it; these tests hand doctor the
+/// path directly and leave the refusal to tests/core_install.rs and the unit tests.
 #[allow(dead_code)]
 mod install {
     pub fn settings_path() -> std::path::PathBuf {
         std::path::PathBuf::from("settings.json")
+    }
+    pub fn refusal(_: &std::path::Path) -> Option<String> {
+        None
+    }
+}
+
+/// doctor.rs asks suggest.rs whether the check-writer has a key; here it always has.
+#[allow(dead_code)]
+mod suggest {
+    pub fn writer_off(_: bool) -> Option<String> {
+        None
     }
 }
 

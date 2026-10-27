@@ -6,7 +6,7 @@
 use serde_json::{Map, Value, json};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -69,8 +69,21 @@ struct Rig {
 }
 
 impl Rig {
-    /// Fake engine of the pinned version.
+    /// Fake engine of the pinned version. The one-time "check-writer is off" note (there is no key file here) is marked
+    /// as shown already, so it does not turn up in every test; `unseeded` is the rig that still gets it.
     fn new(name: &str) -> Rig {
+        let r = Rig::unseeded(name);
+        let muse = r.store().join("muse");
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&muse)
+            .unwrap();
+        fs::write(muse.join("seen-keys"), "UserPromptSubmit.writer-off\n").unwrap();
+        r
+    }
+
+    fn unseeded(name: &str) -> Rig {
         let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("core-hook-{name}"));
         let _ = fs::remove_dir_all(&dir);
         let (cwd, fake) = (dir.join("proj"), dir.join("fake"));
@@ -777,6 +790,214 @@ fn state_notes_carry_a_sequence_number_so_the_newest_replaces_the_older() {
             .out
             .contains("[Torpor note #1:")
     );
+}
+
+// ---------------------------------------------------------------- the check-writer's note, and text made safe
+
+fn note_parts(out: &str) -> (String, String) {
+    let v: Value = serde_json::from_str(out).expect("the user is told");
+    let text = |p: &str| {
+        v.pointer(p)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    };
+    (
+        text("/systemMessage"),
+        text("/hookSpecificOutput/additionalContext"),
+    )
+}
+
+#[test]
+fn the_first_prompt_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on() {
+    let r = Rig::unseeded("writer-note");
+    let first = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let (said, ctx) = note_parts(&first.out);
+    assert!(
+        said.contains("check-writer is off") && said.contains("key_file"),
+        "{said}"
+    );
+    assert!(said.contains("chmod 600"), "{said}");
+    assert!(
+        ctx.contains("Tell the user so") && ctx.contains("torpor-muse doctor"),
+        "{ctx}"
+    );
+    // once for this state folder: the same session, and another one, hear nothing more
+    let again = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    assert!(again.out.is_empty(), "{}", again.out);
+    let mut other = r.fixture("UserPromptSubmit");
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000aa");
+    assert!(r.hook_ok("UserPromptSubmit", &other).out.is_empty());
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn the_note_is_added_to_what_the_engine_printed() {
+    let r = Rig::unseeded("writer-note-merged");
+    r.set(
+        "out.UserPromptSubmit",
+        r#"{"systemMessage":"saved","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"engine says hello"}}"#,
+    );
+    let run = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let (said, ctx) = note_parts(&run.out);
+    assert!(
+        said.starts_with("saved\n") && said.contains("check-writer is off"),
+        "{said}"
+    );
+    assert!(
+        ctx.contains("engine says hello") && ctx.contains("Tell the user so"),
+        "{ctx}"
+    );
+}
+
+/// A config in the rig's HOME; the key file it names holds a fake key and is never sent anywhere (the prompt is too
+/// short for a run to start).
+fn key_setup(r: &Rig, config: &str, key_mode: u32) {
+    let home = r.dir.join("home");
+    fs::create_dir_all(home.join(".config/torpor-muse")).unwrap();
+    let cfg = home.join(".config/torpor-muse/config");
+    fs::write(&cfg, config).unwrap();
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o600)).unwrap();
+    let key = home.join("key.txt");
+    fs::write(&key, "LLM|0000000000000000|fake-key-for-tests\n").unwrap();
+    fs::set_permissions(&key, fs::Permissions::from_mode(key_mode)).unwrap();
+}
+
+fn short_prompt(r: &Rig) -> Value {
+    let mut p = r.fixture("UserPromptSubmit");
+    p["prompt"] = json!("ok");
+    p
+}
+
+#[test]
+fn no_note_when_a_private_key_file_is_configured_and_the_reason_is_named_when_it_is_not_usable() {
+    let r = Rig::unseeded("writer-note-keyfile");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let run = r.hook_ok("UserPromptSubmit", &short_prompt(&r));
+    assert!(
+        run.out.is_empty(),
+        "a usable key file needs no note: {}",
+        run.out
+    );
+
+    let r = Rig::unseeded("writer-note-open-file");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o644);
+    let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", &short_prompt(&r)).out);
+    assert!(said.contains("only you can read"), "{said}");
+
+    let r = Rig::unseeded("writer-note-typo");
+    key_setup(&r, "keyfile = ~/key.txt\n", 0o600);
+    let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", &short_prompt(&r)).out);
+    assert!(said.contains("unknown or empty setting"), "{said}");
+}
+
+#[test]
+fn what_the_engine_wrote_to_stderr_reaches_the_user_and_the_model_without_control_characters_or_keys()
+ {
+    let r = Rig::new("stderr-scrub");
+    r.set("code.UserPromptSubmit", "1");
+    r.set(
+        "err.UserPromptSubmit",
+        "boom \x1b[31mred\x1b[0m sk-FAKECANARY1234 done",
+    );
+    let run = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let (said, ctx) = note_parts(&run.out);
+    for text in [&said, &ctx] {
+        assert!(
+            text.contains("boom") && text.contains("[redacted]"),
+            "{text}"
+        );
+        assert!(!text.contains("FAKECANARY"), "{text}");
+        assert!(!text.chars().any(char::is_control), "{text:?}");
+    }
+    assert!(!run.out.contains("\\u001b"), "{}", run.out);
+}
+
+#[test]
+fn the_engines_text_says_muse_code() {
+    let r = Rig::new("muse-code");
+    r.set(
+        "out.SessionStart",
+        r#"{"systemMessage":"Start Claude Code inside a project folder","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"If Claude Code asked whether you trust this folder, say yes."}}"#,
+    );
+    let run = r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    let (said, ctx) = note_parts(&run.out);
+    assert_eq!(said, "Start Muse Code inside a project folder");
+    assert!(ctx.contains("If Muse Code asked whether"), "{ctx}");
+    assert!(!run.out.contains("Claude Code"), "{}", run.out);
+}
+
+#[test]
+fn a_command_in_the_text_for_the_model_runs_in_a_shell_that_has_no_engine_on_its_path() {
+    let r = Rig::new("runnable-command");
+    r.set(
+        "out.UserPromptSubmit",
+        r#"{"systemMessage":"see torpor log","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Before you finish, run `torpor version`; torpor is fast."}}"#,
+    );
+    let run = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let (said, ctx) = note_parts(&run.out);
+    assert_eq!(said, "see torpor log", "the user's line is left alone");
+    assert!(ctx.contains("torpor is fast"), "other words stay: {ctx}");
+    let cmd = ctx
+        .split('`')
+        .nth(1)
+        .expect("the command stays in backticks");
+    assert!(cmd.ends_with(" version") && cmd.starts_with('/'), "{cmd}");
+    // the model's shell: no TORPOR_BIN, and a PATH without the engine's folder
+    let out = Command::new("sh")
+        .args(["-c", cmd])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{cmd}: {:?}", out);
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        format!("torpor {}", pinned())
+    );
+}
+
+#[test]
+fn a_hook_without_a_usable_home_does_nothing_and_says_so() {
+    let r = Rig::new("no-home");
+    let run_with = |home: Option<&str>| {
+        let mut c = Command::new(EXE);
+        c.args(["hook", "Stop"])
+            .current_dir(&r.cwd)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("TORPOR_BIN", &r.engine);
+        if let Some(h) = home {
+            c.env("HOME", h);
+        }
+        let mut child = c
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let _ = child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(r.fixture("Stop").to_string().as_bytes());
+        child.wait_with_output().unwrap()
+    };
+    for home in [None, Some(""), Some("relative/home")] {
+        let o = run_with(home);
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.status.code(), Some(0), "{home:?}: {err}");
+        assert!(o.stdout.is_empty(), "{home:?}");
+        assert!(
+            err.contains("HOME is not a full path") && err.lines().count() == 1,
+            "{home:?}: {err}"
+        );
+        assert!(
+            !r.cwd.join(".torpor").exists() && r.cwd.read_dir().unwrap().next().is_none(),
+            "{home:?}: the project folder must stay empty"
+        );
+    }
+    assert!(r.got("Stop").is_empty(), "the engine is not run either");
 }
 
 // ---------------------------------------------------------------- the real engine

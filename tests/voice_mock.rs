@@ -417,9 +417,55 @@ fn the_help_says_where_the_audio_goes_and_a_wrong_use_is_exit_2() {
         "{}",
         r.out
     );
-    for args in [&[][..], &["a.wav", "b.wav"], &["--nope", "a.wav"]] {
+    assert!(
+        r.out.contains("`-` for standard input is not supported"),
+        "{}",
+        r.out
+    );
+    // an empty argument is a wrong use too, not a file named ""
+    for args in [&[][..], &[""], &["a.wav", "b.wav"], &["--nope", "a.wav"]] {
         let r = sb.say(None, args, &[]);
         assert_eq!(r.code, 2, "{args:?}: {}", r.err);
         assert!(r.err.contains("usage: torpor-muse say"), "{}", r.err);
     }
+}
+
+#[test]
+fn say_stops_at_the_same_local_checks_as_suggest_before_it_uploads_anything() {
+    let sb = Sandbox::new("say-no-start");
+    proven(&sb);
+    let m = mock(&sb, "ok", &[]);
+    // no start script, so no check can be made (the fixture app has both files)
+    fs::remove_file(sb.ws.join("package.json")).unwrap();
+    fs::remove_file(sb.ws.join("server.js")).unwrap();
+    let clip = sb.clip("claim.wav", 2580);
+    let r = sb.say(Some(&m.base()), &[clip.to_str().unwrap()], &[]);
+    let ctx = format!("out={:?} err={:?}", r.out, r.err);
+    assert_eq!(r.code, 3, "{ctx}");
+    assert!(
+        r.out
+            .starts_with("advisory: cannot make a check: package.json has no start"),
+        "{ctx}"
+    );
+    assert_eq!(m.requests().len(), 0, "nothing was uploaded: {ctx}");
+    // the typed form says the same
+    let t = sb.suggest(Some(&m.base()), HEARD, &[]);
+    assert_eq!((t.code, t.out.as_str()), (3, r.out.as_str()), "{}", t.err);
+    assert_eq!(m.requests().len(), 0);
+}
+
+#[test]
+fn suggest_help_prints_the_usage_and_asks_nobody() {
+    let sb = Sandbox::new("suggest-help");
+    let m = mock(&sb, "ok", &[]);
+    for flag in ["--help", "-h"] {
+        let r = sb.suggest(Some(&m.base()), flag, &[]);
+        assert_eq!(r.code, 0, "{flag}: {}", r.err);
+        assert!(
+            r.out.starts_with("usage: torpor-muse "),
+            "{flag}: {}",
+            r.out
+        );
+    }
+    assert_eq!(m.requests().len(), 0);
 }

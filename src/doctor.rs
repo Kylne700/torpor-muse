@@ -170,6 +170,9 @@ pub fn examine(c: &Ctx) -> Report {
     check_errors(&vault, c.now_ms, &mut r);
     check_problems(&vault, c.now_ms, &mut r);
     check_probe(c, &ours, &mut r);
+    if !ours.is_empty() {
+        check_writer(&mut r);
+    }
     check_xdg(c, &mut r);
     check_orphans(c, &vault, &mut r);
     r
@@ -345,14 +348,22 @@ pub fn probe_command(command: &str, vault: &Path, event: &str) -> Option<String>
 
 fn check_hooks(c: &Ctx, ours: &[&Hook], r: &mut Report) {
     if ours.is_empty() {
-        r.problem(
-            Level::Fix,
-            format!(
-                "no torpor-muse hook in {}: the gate is not installed",
-                c.settings.display()
+        // when `init` would refuse the file, the reason comes first: "run init" would only meet the same refusal
+        match crate::install::refusal(&c.settings) {
+            Some(why) => r.problem(
+                Level::Fix,
+                format!("no torpor-muse hook can be installed: {why}"),
+                "fix what is named above (init does not edit a symbolic link, and it leaves a file Muse Code would reject as it is), then run torpor-muse init",
             ),
-            "torpor-muse init",
-        );
+            None => r.problem(
+                Level::Fix,
+                format!(
+                    "no torpor-muse hook in {}: the gate is not installed",
+                    c.settings.display()
+                ),
+                "torpor-muse init",
+            ),
+        }
         return;
     }
     let events: BTreeSet<&str> = ours.iter().map(|h| h.event.as_str()).collect();
@@ -1188,6 +1199,18 @@ fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {
 }
 
 // ---------------------------------------------------------------- where the logs are
+
+/// The check-writer that starts after a prompt reads its key from a file the config names; without one it stays off
+/// and shows nothing. A warning: the gate itself works without it.
+fn check_writer(r: &mut Report) {
+    if let Some(why) = crate::suggest::writer_off(false) {
+        r.problem(
+            Level::Warn,
+            format!("check-writer off: {why}"),
+            "put your Meta API key alone on one line in a file only you can read (chmod 600), then add `key_file = ~/that/file` to ~/.config/torpor-muse/config (chmod 600); a META_API_KEY in your shell does not reach Muse Code's hooks",
+        );
+    }
+}
 
 fn check_xdg(c: &Ctx, r: &mut Report) {
     let Some(x) = &c.xdg_data else { return };

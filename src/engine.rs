@@ -12,6 +12,8 @@ use std::thread;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 pub struct Output {
+    /// The binary that ran (as `locate` found it).
+    pub bin: PathBuf,
     pub code: i32,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
@@ -218,6 +220,7 @@ fn exec(
         _ => -1,
     };
     Ok(Output {
+        bin: bin.to_path_buf(),
         code,
         stdout,
         stderr,

@@ -38,7 +38,8 @@ case $1 in
     [ -f "$file" ] || { echo "no such file: $file" >&2; exit 2; }
     got=$(sha256 "$file")
     hit=$(awk -v h="$got" -v p="$platform" '$1 == "asset" && $3 == h && (p == "" || $2 == p) { print $2; exit }' "$lock")
-    [ -n "$hit" ] || fail "sha256 $got of $file matches no locked asset${platform:+ for $platform}"
+    names=$(awk '$1 == "asset" { printf "%s%s", sep, $2; sep = " " }' "$lock")
+    [ -n "$hit" ] || fail "sha256 $got of $file matches no locked asset${platform:+ for $platform (locked platforms: $names)}"
     echo "ok: $file is the locked $hit binary (sha256 $got)"
     ;;
 esac

@@ -94,6 +94,7 @@ printf '%b' "\\0$(printf '%03o' $(((b + 1) % 256)))" | dd of="$tmp/changed" bs=1
 t "the changed copy differs from the asset in exactly one byte" ok "" test "$(cmp -l "$asset" "$tmp/changed" | wc -l | tr -d ' ')" = 1
 t "rejects a 1-byte change" fail "matches no locked asset" ve "$tmp/changed"
 t "rejects the right file under another platform" fail "matches no locked asset for darwin-arm64" ve "$asset" darwin-arm64
+t "an unknown platform name gets the list of locked ones" fail "locked platforms: darwin-arm64" ve "$asset" linux-amd64
 t "--tag: the remote tag resolves to the locked commit" ok "resolves to the locked commit" ve --tag
 sed "s/^commit .*/commit $(lockval base-commit)/" "$c/engine.lock" > "$tmp/l" && cp "$tmp/l" "$c/engine.lock"
 t "--tag fails when the lock pins another commit (a moved tag)" fail "now resolves to" ve --tag
