@@ -20,6 +20,7 @@ import { NO_HOME, clean, publish, publishFile } from './publish.mjs';
 import { appendOnly, build, dropSuperseded, fill } from './results.mjs';
 import { analyze, cellOf, compare, render, slotsOf, tapRows } from './tally.mjs';
 import * as LV from './live.mjs';
+import { scriptedSelftest } from './live-scripted-selftest.mjs';
 import { readTap } from '../oracles/tap.mjs';
 
 if (process.platform !== 'linux') {
@@ -681,6 +682,10 @@ if (argv.includes('--real')) {
   const led = LV.ledgerLines([{ label: 'x', rows }]);
   ok('live ledger: one row per call, cumulative hi, first row format', led.lines.length === 3 && /^\| 1 \| x \| model \| \d\d:\d\d:\d\dZ \| muse-spark-1\.3-contributor \| 30000 \| 0 \| 100 \| 50 \| 0\.0030 \| 0\.0030 \| 0\.0030 \|$/.test(led.lines[0]) && led.lines[2].endsWith('| 0.0066 |'), led.lines.join(' / '));
 }
+
+// ------------------------------------------------------------------ scripted live mode (live-scripted-lib.mjs, live-scripted-tap.mjs, live-scripted.mjs)
+
+scriptedSelftest({ ok, same, raises, skip, W });
 
 // ------------------------------------------------------------------ clean up and report
 
