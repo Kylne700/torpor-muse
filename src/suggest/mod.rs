@@ -328,7 +328,7 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
                 continue;
             }
         };
-        let answer = match schema::parse(&text) {
+        let mut answer = match schema::parse(&text) {
             Ok(a) => a,
             Err(e) if last => return Outcome::new(Kind::Rejected, e),
             Err(e) => {
@@ -354,7 +354,23 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             schema::Verdict::Check => {}
         }
         // what the steps cannot prove, in the model's words (for a `check` the reason is only that)
-        let gap = c.safe(&answer.reason, 200);
+        let mut gap = c.safe(&answer.reason, 200);
+        let gone = schema::drop_data_records(&mut answer, &p.excerpt);
+        if !gone.is_empty() {
+            let why = format!(
+                "{} left out: it needs a record already in your data, which the check did not create",
+                gone.join(", ")
+            );
+            let why = c.safe(&why, 300);
+            if answer.steps.is_empty() {
+                return Outcome::new(Kind::Advisory, format!("no check saved: {why}"));
+            }
+            gap = if gap.is_empty() {
+                why
+            } else {
+                format!("{gap}; {why}")
+            };
+        }
         let check = match schema::to_check(&answer, &p.starts) {
             Ok(v) => v,
             Err(e) if last => return Outcome::new(Kind::Rejected, e),
