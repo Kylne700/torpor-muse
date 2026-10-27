@@ -60,6 +60,7 @@ check "A2 the turn was answered" has '^echo: say hello' "$E/turns.txt"
 check "A2 the foreign hook ran too" test -s "$E/foreign.txt"
 hooks > "$E/hooks-ok.txt"
 check "A2 Muse logged our Stop hook completed and none failed" sh -c "grep -Eq '^Stop +completed' '$E/hooks-ok.txt' && ! grep -Eq ' (failed|timed_out|blocked|cancelled) ' '$E/hooks-ok.txt'"
+check "F4 Muse's own record of the first turn holds the start guide the model was given" grep -rq 'Torpor guide: stays valid' "$H/.local/share/muse/sessions"
 doctor
 rc=$?
 check "A2 doctor exits 0" test $rc -eq 0

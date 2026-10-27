@@ -25,16 +25,19 @@ fn pinned() -> &'static str {
 
 /// A stand-in engine (POSIX sh). Per event, files next to it steer it: `sleep.<E>` (seconds to hang), `err.<E>`
 /// (stderr), `out.<E>` (stdout), `code.<E>` (exit code). It keeps every payload as `in.<E>.<n>`, every `version` call
-/// as a line of `version.calls`, and the pids of what it started as `pid.<E>` and `child.<E>`. `status --json` and
-/// `show N --json` print `out.status` and `out.show.N` when those exist.
+/// as a line of `version.calls`, and the pids of what it started as `pid.<E>` and `child.<E>`. `status --json`,
+/// `show N --json` and `back --id P ...` print `out.status`, `out.show.N` and `out.back.P` when those exist; every
+/// call that is not `hook` or `version` is a line of `calls.log`.
 fn write_fake(dir: &Path, version: &str) -> PathBuf {
     let script = format!(
         r#"#!/bin/sh
 d=$(dirname "$0")
+case "$1" in hook|version) ;; *) echo "$*" >> "$d/calls.log" ;; esac
 case "$1" in
 version) echo x >> "$d/version.calls"; echo 'torpor {version}'; exit 0 ;;
 status) [ -f "$d/out.status" ] && cat "$d/out.status" && exit 0 ;;
 show) [ -f "$d/out.show.$2" ] && cat "$d/out.show.$2" && exit 0 ;;
+back) [ -f "$d/out.back.$3" ] && cat "$d/out.back.$3" && exit 0 ;;
 hook)
   c=$(cat "$d/count.$2" 2>/dev/null || echo 0); c=$((c + 1)); echo $c > "$d/count.$2"
   cat > "$d/in.$2.$c"
@@ -191,6 +194,15 @@ impl Rig {
 
     fn problems(&self) -> String {
         fs::read_to_string(self.store().join("muse/problems.log")).unwrap_or_default()
+    }
+
+    /// The engine calls the hook made besides `hook` and `version` (the arguments of each, one per entry).
+    fn calls(&self) -> Vec<String> {
+        fs::read_to_string(self.fake.join("calls.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
     }
 
     fn version_calls(&self) -> usize {
@@ -375,11 +387,16 @@ fn every_muse_event_is_taken_and_goes_to_the_engine_or_not_as_documented() {
             p["turn_id"] = json!(TURN);
         }
         let run = r.hook_ok(event, &p);
-        assert!(
-            run.out.is_empty(),
-            "{event}: a quiet engine means a quiet hook: {}",
-            run.out
-        );
+        if event == "SessionStart" {
+            // the one exception: the model is given the guide (F4) whatever the engine says
+            assert!(context_of(&run).starts_with("[Torpor guide"), "{}", run.out);
+        } else {
+            assert!(
+                run.out.is_empty(),
+                "{event}: a quiet engine means a quiet hook: {}",
+                run.out
+            );
+        }
         assert_eq!(r.got(event).len(), usize::from(called), "{event}");
     }
 }
@@ -1199,6 +1216,205 @@ fn database_turns_reach_the_model_after_an_exit_and_in_later_sessions() {
     );
 }
 
+/// A Stop after a turn that deleted `files` (database files) and began at save point `p`, with the fake engine's
+/// `status --json` and `show N --json` answers set to match: the turn is then kept for its folder (L3 N1).
+fn db_stop(r: &Rig, n: u32, p: u32, files: &[String]) -> String {
+    r.set(
+        "out.status",
+        &json!({"saving": true, "last_turn": {"n": n}}).to_string(),
+    );
+    let rows: Vec<Value> = files
+        .iter()
+        .map(|f| json!({"path": f, "class": "tracked", "change": "deleted"}))
+        .collect();
+    let show = json!({"turn": {"n": n, "start_point": p}, "files": rows});
+    r.set(&format!("out.show.{n}"), &show.to_string());
+    note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+}
+
+const FIVE_SOURCES: [&str; 5] = [
+    "SessionStart",
+    "SessionStart-clear",
+    "SessionStart-compact",
+    "SessionStart-fork",
+    "SessionStart-resume",
+];
+
+/// F4 item 1: every session start (startup, resume, clear, compact, fork) gives the model one short guide: the plain
+/// words a user says, the Torpor command for each (a dry run first), and the commands that are the user's own.
+#[test]
+fn the_model_gets_the_guide_at_every_session_start_and_nowhere_else() {
+    let r = Rig::new("guide");
+    let engine = r.engine.display().to_string();
+    for name in FIVE_SOURCES {
+        let run = r.hook_ok("SessionStart", &r.fixture(name));
+        let (said, ctx) = note_parts(&run.out);
+        assert_eq!(said, "", "{name}: nothing for the user");
+        assert!(
+            ctx.starts_with("[Torpor guide: stays valid] "),
+            "{name}: {ctx}"
+        );
+        assert_eq!(
+            ctx.matches(&engine).count(),
+            1,
+            "the engine's path, once: {ctx}"
+        );
+        assert!(
+            ctx.chars().count() - engine.len() <= 640,
+            "about 700 characters with a path of 60: {}",
+            ctx.chars().count()
+        );
+        for want in [
+            "torpor log -n 5, torpor undo N --dry-run, torpor undo N.",
+            "torpor back --turn K or --id P",
+            "torpor find-break --promise ID (or --check -)",
+            "the database note's command, app stopped first",
+            "Never run off, on, gate, retain, forget, promise ok/drop/block, runner install",
+        ] {
+            assert!(ctx.contains(want), "{name}: {want:?} missing: {ctx}");
+        }
+    }
+    // the engine's own startup line stays for the user, and its own context stays in front of the guide
+    r.set(
+        "out.SessionStart",
+        r#"{"systemMessage":"Torpor is saving this folder at the start and end of every turn.","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"engine words"}}"#,
+    );
+    let (said, ctx) = note_parts(&r.hook_ok("SessionStart", &r.fixture("SessionStart")).out);
+    assert_eq!(
+        said,
+        "Torpor is saving this folder at the start and end of every turn."
+    );
+    assert!(
+        ctx.starts_with("[Torpor note")
+            && ctx.contains("engine words\n\n[Torpor guide: stays valid]"),
+        "{ctx}"
+    );
+    // not at a prompt, not at a stop, not for a subagent's own session
+    for event in ["UserPromptSubmit", "Stop", "PreCompact"] {
+        let run = r.hook_ok(event, &r.fixture(event));
+        assert!(!run.out.contains("Torpor guide"), "{event}: {}", run.out);
+    }
+    let mut child = r.fixture("SessionStart");
+    child["turn_id"] = child["session_id"].clone();
+    assert!(r.hook_ok("SessionStart", &child).out.is_empty());
+}
+
+/// F4 item 1, the worst case: the engine's context is as long as Muse takes, a systemMessage is near its limit, five
+/// database turns have the longest file lists the note allows. Muse drops an answer of 12 KiB or more, so the engine's
+/// text is cut, never the database note (the user's data) and not the guide.
+#[test]
+fn guide_and_database_note_fit_with_the_longest_engine_text_by_cutting_the_engines() {
+    let r = Rig::new("guide-fit");
+    let files: Vec<String> = (0..30)
+        .map(|i| format!("data/a-very-long-database-file-name-{i}.sqlite3"))
+        .collect();
+    let turns = [(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)];
+    for (n, p) in turns {
+        db_stop(&r, n, p, &files);
+    }
+    // quotes, backslashes, tabs, newlines and multibyte text: the encoded text is longer than the raw one
+    let nasty = "\"quoted\" \\path\\ \t tab \u{e9}\u{20ac}\u{1f642} line\n";
+    let engine = |chars: usize| {
+        let context: String = nasty.chars().cycle().take(chars).collect();
+        json!({"systemMessage": "\u{e9}".repeat(990), "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}})
+            .to_string()
+    };
+    let mut chars = 3000;
+    while engine(chars + 50).len() < 11_800 {
+        chars += 50;
+    }
+    r.set("out.SessionStart", &engine(chars));
+    for name in FIVE_SOURCES {
+        let run = r.hook_ok("SessionStart", &r.fixture(name)); // under 12 KiB, closed keys
+        let (said, ctx) = note_parts(&run.out);
+        assert!(
+            said.starts_with("\u{e9}\u{e9}\u{e9}") && said.chars().count() > 900,
+            "{name}"
+        );
+        assert!(
+            ctx.contains("\n[cut]\n\n[Torpor guide: stays valid] "),
+            "{name}: the engine's text is cut"
+        );
+        for (_, p) in turns {
+            assert!(
+                ctx.contains(&format!("back --id {p} --with-data")),
+                "{name}: {p}"
+            );
+        }
+        assert!(
+            ctx.ends_with("back --id 2 --with-data"),
+            "{name}: the database note is last"
+        );
+        assert!(run.out.len() < 12 * 1024, "{name}: {} bytes", run.out.len());
+    }
+}
+
+/// F4 item 1, the commands that are the user's own: under Muse the shell does not carry the marker the engine's command
+/// line looks for, so what stops the model is the engine's PreToolUse answer, passed through. The commands the guide
+/// does name pass.
+#[test]
+fn real_engine_refuses_the_users_own_commands_to_the_model_and_passes_the_guides_commands() {
+    let r = Rig::real("only-you");
+    fs::write(r.cwd.join("base.txt"), "keep\n").unwrap();
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let engine = r.engine.display().to_string();
+    let ask = |command: &str| -> Value {
+        let mut p = r.fixture("PreToolUse-bash");
+        p["tool_input"]["command"] = json!(command);
+        let run = r.hook_ok("PreToolUse", &p);
+        if run.out.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&run.out).unwrap()
+        }
+    };
+    let users = [
+        "torpor gate on",
+        "torpor gate off",
+        "torpor off",
+        "torpor on",
+        "torpor retain 90",
+        "torpor forget",
+        "torpor promise ok 1",
+        "torpor promise drop 1",
+        "torpor promise block 1",
+        "torpor runner install",
+        "torpor undo 1 --force",
+        "cd /tmp && torpor gate on",
+        &format!("{engine} gate on"),
+    ];
+    for command in users {
+        let v = ask(command);
+        let h = &v["hookSpecificOutput"];
+        assert_eq!(h["permissionDecision"], "deny", "{command}: {v}");
+        let why = h["permissionDecisionReason"].as_str().unwrap();
+        assert!(
+            why.contains("only the user can do this"),
+            "{command}: {why}"
+        );
+    }
+    let guides = [
+        "torpor log -n 5",
+        "torpor undo 1 --dry-run",
+        "torpor undo 1",
+        "torpor back --turn 1 --dry-run",
+        "torpor back --id 2 --with-data --dry-run",
+        "torpor find-break --promise 1",
+        "torpor find-break --check -",
+        "torpor check 1",
+        "torpor promise dispute 1 \"the check is outdated\"",
+        &format!("{engine} undo 1 --dry-run"),
+    ];
+    for command in guides {
+        let v = ask(command);
+        assert!(
+            v["hookSpecificOutput"]["permissionDecision"].is_null(),
+            "{command}: {v}"
+        );
+    }
+}
+
 /// L3 N7: Muse shows `systemMessage` on one line and drops its newlines, so the engine's lines ran together. They are
 /// joined with " — " now; what the model reads keeps its newlines.
 #[test]
@@ -1371,6 +1587,216 @@ fn real_engine_a_turn_that_rewrote_a_database_names_the_command_that_puts_it_bac
     assert!(out.is_empty(), "{out}");
 }
 
+/// The drill's D07 setup: an app that holds a database open in WAL mode with 300 rows in its log (made with python's
+/// sqlite3 module). A line on its stdin closes it, which writes the log into the database file and removes the `-wal`
+/// and `-shm` files, as an app that stops cleanly does. Killed when the test ends or fails.
+struct BusyApp(std::process::Child);
+
+impl BusyApp {
+    fn start(db: &Path) -> BusyApp {
+        const SRC: &str = r#"
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1], isolation_level=None)
+con.execute("PRAGMA journal_mode=WAL")
+con.execute("PRAGMA wal_autocheckpoint=0")
+con.execute("create table t(id integer primary key, v text)")
+con.execute("begin")
+for i in range(300):
+    con.execute("insert into t(v) values (?)", ("row%d" % i,))
+con.execute("commit")
+print("ready", flush=True)
+sys.stdin.readline()
+con.close()
+"#;
+        let mut child = Command::new("python3")
+            .args(["-I", "-c", SRC])
+            .arg(db)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("python3 is needed for the database tests");
+        let mut said = String::new();
+        std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(child.stdout.as_mut().unwrap()),
+            &mut said,
+        )
+        .unwrap();
+        assert_eq!(said.trim(), "ready");
+        BusyApp(child)
+    }
+
+    fn stop(mut self) {
+        self.0.stdin.take().unwrap().write_all(b"\n").unwrap();
+        assert!(self.0.wait().unwrap().success());
+    }
+}
+
+impl Drop for BusyApp {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn rows_in(db: &Path) -> String {
+    let o = Command::new("python3")
+        .args(["-I", "-c", "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select count(*) from t').fetchone()[0])"])
+        .arg(db)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&o.stdout).trim().to_owned()
+}
+
+/// F4 item 4 (drill D07). The engine saves no database while its app holds a log that is not empty, and says nothing
+/// about it when a command deletes that database, so `torpor back --with-data` could not bring it back ("its database
+/// was busy"). The hook now denies such a command with a reason (Muse runs on); once the app has stopped the very same
+/// command goes through, the engine then saves the file, and `back --with-data` brings the 300 rows back.
+#[test]
+fn real_engine_a_command_that_would_delete_a_database_in_use_is_denied_until_its_app_stops() {
+    const RM: &str = "rm -f data/app.db data/app.db-wal data/app.db-shm";
+    let r = Rig::real("real-busy-db");
+    let db = r.cwd.join("data/app.db");
+    fs::create_dir(r.cwd.join("data")).unwrap();
+    fs::write(r.cwd.join("base.txt"), "keep\n").unwrap();
+    let app = BusyApp::start(&db);
+    let wal = r.cwd.join("data/app.db-wal");
+    assert!(
+        fs::metadata(&wal).unwrap().len() > 0,
+        "the app's log is not empty"
+    );
+
+    let turn2 = |mut p: Value| {
+        p["turn_id"] = json!("00000000-0000-7000-8000-000000000012");
+        p
+    };
+    let pre = |cmd: &str, id: &str| {
+        let mut p = turn2(r.fixture("PreToolUse-bash"));
+        p["tool_input"]["command"] = json!(cmd);
+        p["tool_use_id"] = json!(id);
+        p
+    };
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    r.hook_ok("Stop", &r.fixture("Stop"));
+    r.hook_ok("UserPromptSubmit", &turn2(r.fixture("UserPromptSubmit")));
+
+    // while the app runs: the delete is denied, by file names and by folder, with a reason the model can act on
+    for cmd in [RM, "rm -rf data"] {
+        let out = r.hook_ok("PreToolUse", &pre(cmd, "call_rm_busy")).out;
+        let v: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{cmd}: {e}: {out:?}"));
+        let (d, why) = (
+            v["hookSpecificOutput"]["permissionDecision"].as_str(),
+            v["hookSpecificOutput"]["permissionDecisionReason"]
+                .as_str()
+                .unwrap_or(""),
+        );
+        assert_eq!(d, Some("deny"), "{cmd}: {out}");
+        for w in [
+            "not run",
+            "data/app.db",
+            "in use",
+            "Stop the app",
+            "run the command again",
+            "ask the user",
+        ] {
+            assert!(why.contains(w), "{cmd}: {w:?} is missing from {why}");
+        }
+    }
+    // commands that name no busy database, and read-only uses of it, are not stopped
+    for cmd in [
+        "ls data",
+        "cat data/app.db > /dev/null",
+        "rm -f missing.txt",
+        "cp data/app.db /tmp/copy-of-app.db.bak",
+    ] {
+        let out = r.hook_ok("PreToolUse", &pre(cmd, "call_other")).out;
+        assert!(!out.contains("permissionDecision"), "{cmd}: {out}");
+    }
+    assert!(
+        db.exists() && wal.exists(),
+        "the hook never touches the files"
+    );
+
+    // the app stops (its log goes into the database file); the same command now goes through
+    app.stop();
+    assert!(db.exists() && !wal.exists());
+    assert_eq!(rows_in(&db), "300");
+    let out = r.hook_ok("PreToolUse", &pre(RM, "call_rm_free")).out;
+    assert!(!out.contains("permissionDecision"), "{out}");
+    for s in ["", "-wal", "-shm"] {
+        let _ = fs::remove_file(format!("{}{s}", db.display()));
+    }
+    let mut post = turn2(r.fixture("PostToolUse-bash"));
+    post["tool_input"]["command"] = json!(RM);
+    post["tool_use_id"] = json!("call_rm_free");
+    r.hook_ok("PostToolUse", &post);
+    let last_stop = r.hook_ok("Stop", &turn2(r.fixture("Stop"))).out;
+    assert!(!db.exists());
+
+    // `back --with-data` to the save point the engine took when the command went through brings the 300 rows back;
+    // the one it took while the app still ran (the denied call) had nothing to bring back: that is what the deny saves
+    let (code, shown) = engine_cli(&r, &["show", "2", "--json"]);
+    assert_eq!(code, 0, "{shown}");
+    let shown: Value = serde_json::from_str(&shown).unwrap();
+    let pres: Vec<u64> = shown["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["kind"].as_str().is_some_and(|k| k.starts_with("pre_")))
+        .filter_map(|p| p["id"].as_u64())
+        .collect();
+    assert!(pres.len() >= 2, "{shown}");
+    let (early, late) = (pres[0].to_string(), pres[pres.len() - 1].to_string());
+    // F4 item 3: that very Stop told the model (a block) and the user (the line) the save point that has the 300 rows, not
+    // the turn's start (where the app was running and the engine saved no database)
+    let told: Value = serde_json::from_str(&last_stop).unwrap_or(Value::Null);
+    let cmd = format!("back --id {late} --with-data");
+    let why = blocked(&told).unwrap_or_else(|| panic!("no block: {last_stop}"));
+    assert!(
+        why.contains("This turn changed or deleted data/app.db (database files).")
+            && why.contains(&format!("`{} {cmd}`", r.engine.display())),
+        "{why}"
+    );
+    assert!(
+        said(&told).starts_with(&format!(
+            "Torpor: turn 2 changed data/app.db. Get it back: stop the app, then torpor {cmd}"
+        )),
+        "{last_stop}"
+    );
+    let (_, text) = engine_cli(&r, &["back", "--id", &early, "--with-data", "--dry-run"]);
+    assert!(text.contains("its database was busy"), "{text}");
+    let (code, text) = engine_cli(&r, &["back", "--id", &late, "--with-data"]);
+    assert_eq!(code, 0, "{text}");
+    assert_eq!(rows_in(&db), "300", "{text}");
+
+    // the drill's own D07: the writer was killed (SIGKILL), no app runs, its log is still not empty. The engine saves
+    // such a database no more than a live one, so the delete stays denied and the reason says so; with saving off
+    // (nothing is saved anyway) nothing is denied
+    let stale = r.cwd.join("data/stale.db");
+    drop(BusyApp::start(&stale));
+    assert!(
+        fs::metadata(format!("{}-wal", stale.display()))
+            .unwrap()
+            .len()
+            > 0
+    );
+    let out = r
+        .hook_ok("PreToolUse", &pre("rm data/stale.db", "call_rm_stale"))
+        .out;
+    assert!(
+        out.contains("permissionDecision")
+            && out.contains("a crash left its files behind")
+            && out.contains("stays refused")
+            && out.contains("in their own terminal"),
+        "{out}"
+    );
+    assert_eq!(engine_cli(&r, &["off"]).0, 0);
+    let out = r
+        .hook_ok("PreToolUse", &pre("rm data/stale.db", "call_rm_stale_off"))
+        .out;
+    assert!(!out.contains("permissionDecision"), "{out}");
+}
+
 /// AD3 (research/60): a promise the AI adds through its bash tool must not count as the user's words. The engine knows
 /// who ran `torpor keep` only from the row PreToolUse(Bash) leaves (or CLAUDECODE, which Muse does not set), so the same
 /// promise made without that row is the control: it has to reach the stronger tier, or the test proves nothing.
@@ -1458,4 +1884,618 @@ fn real_engine_every_reply_in_a_session_is_valid_muse_output() {
         run.out
     );
     assert!(!run.out.contains("Approve only"), "{}", run.out);
+}
+
+// ---------------------------------------------------------------- F4 items 2 and 3: the one Stop block of a turn
+
+/// The engine's own Stop lines (gate.rs `fail_line`; the first is its save line), as it prints them: apart on lines.
+const SAVED: &str =
+    "Torpor: save point 31 · turn 5 changed 1 file (1 edit) · undo it: torpor undo 5";
+const SHADOW_FAIL: &str = "Torpor: promise #1 (proof page answers) failed after this turn (3 of 3 runs; it passed on the version from the end of turn 4). It would have stopped the AI, but it is in shadow mode. torpor promise show 1";
+const ADVISORY_FAIL: &str = "Torpor: promise #2 (login works) failed after this turn (3 of 3 runs; it passed before). The AI was not stopped. torpor promise show 2";
+
+fn engine_stop(r: &Rig, lines: &[&str]) {
+    r.set(
+        "out.Stop",
+        &json!({"systemMessage": lines.join("\n")}).to_string(),
+    );
+}
+
+/// The fake engine's `status --json` and `show N --json` for turn `n`: it began at save point `start`, took the save
+/// points `pre` before its commands and changed `rows` (path, class, change).
+fn engine_turn(r: &Rig, n: u32, start: u32, pre: &[u32], rows: &[(&str, &str, &str)]) {
+    r.set(
+        "out.status",
+        &json!({"saving": true, "last_turn": {"n": n}}).to_string(),
+    );
+    let files: Vec<Value> = rows
+        .iter()
+        .map(|(path, class, change)| json!({"path": path, "class": class, "change": change}))
+        .collect();
+    let mut points = vec![json!({"id": start, "kind": "start"})];
+    points.extend(pre.iter().map(|id| json!({"id": id, "kind": "pre_bash"})));
+    let show = json!({"turn": {"n": n, "start_point": start}, "files": files, "points": points});
+    r.set(&format!("out.show.{n}"), &show.to_string());
+}
+
+/// The Stop of the turn whose id ends in `t` (2 is the fixture's own): what the hook printed, Null when nothing.
+fn stop_of(r: &Rig, t: u32) -> Value {
+    let mut p = r.fixture("Stop");
+    p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
+    serde_json::from_str(&r.hook_ok("Stop", &p).out).unwrap_or(Value::Null)
+}
+
+/// The reason of a Stop block, None when the output is not one.
+fn blocked(v: &Value) -> Option<&str> {
+    (v["decision"] == "block").then(|| v["reason"].as_str().unwrap_or(""))
+}
+
+fn said(v: &Value) -> &str {
+    v["systemMessage"].as_str().unwrap_or("")
+}
+
+fn started(r: &Rig) {
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+}
+
+/// F4 item 2. A promise that failed after the turn (the engine's own fail line, shadow or advisory) is told to the model in
+/// ONE Stop block per turn: the promise, its words, the turn that broke it (or how to find it), and what to do.
+#[test]
+fn a_check_that_broke_is_told_to_the_model_in_one_stop_block_per_turn() {
+    let r = Rig::new("f4-broke");
+    let e = r.engine.display().to_string();
+    started(&r);
+    engine_turn(&r, 5, 30, &[], &[("app.js", "edit", "changed")]);
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let first = stop_of(&r, 2);
+    let why = blocked(&first).unwrap_or_else(|| panic!("no block: {first}"));
+    let has = |why: &str, text: &str| assert!(why.contains(text), "{text}: {why}");
+    for text in [
+        "[Torpor] Before you finish:",
+        "Promise #1 \"proof page answers\" (turn 5 broke it) failed after this turn.",
+        "Fix the app, not the check, and do not special-case test values.",
+        &format!("Run `{e} check 1` before you say it is fixed."),
+        &format!("run `{e} promise dispute 1 \"<why>\"` and tell the user."),
+    ] {
+        has(why, text);
+    }
+    assert!(
+        !why.contains("find-break") && !why.contains("deleted"),
+        "{why}"
+    );
+    // the user's line is the engine's own, with the failure in it
+    assert!(
+        said(&first).starts_with("Torpor: save point 31")
+            && said(&first).contains("promise #1 (proof page answers) failed after this turn"),
+        "{first}"
+    );
+    assert_eq!(
+        r.calls(),
+        ["status --json", "show 5 --json"],
+        "the two calls a Stop makes, no more"
+    );
+    // the next Stop of the same turn goes through, and the user's line still says it fails
+    let again = stop_of(&r, 2);
+    assert!(blocked(&again).is_none(), "{again}");
+    assert!(said(&again).contains("failed after this turn"), "{again}");
+    // the next turn is told again; this check passed before, so no one turn is named: the model is told how to find it
+    engine_turn(&r, 6, 40, &[], &[]);
+    engine_stop(&r, &[ADVISORY_FAIL]);
+    let next = stop_of(&r, 3);
+    let why = blocked(&next).unwrap_or_else(|| panic!("no block: {next}"));
+    has(
+        why,
+        &format!(
+            "Promise #2 \"login works\" (Torpor cannot name one turn that broke it: run `{e} find-break --promise 2`) failed after this turn."
+        ),
+    );
+    has(
+        why,
+        &format!("Run `{e} check 2` before you say it is fixed."),
+    );
+    assert!(said(&next).contains("The AI was not stopped."), "{next}");
+}
+
+#[test]
+fn several_broken_checks_are_one_block_and_a_turn_is_named_only_when_the_engines_record_says_so() {
+    let r = Rig::new("f4-several");
+    let e = r.engine.display().to_string();
+    started(&r);
+    engine_turn(&r, 5, 30, &[], &[]);
+    let kept_now = "Torpor: promise #3 (kept this turn) failed after this turn (3 of 3 runs; it passed on the kept version (save point 31)). The AI was not stopped. torpor promise show 3";
+    let kept_old = "Torpor: promise #4 (kept before) failed after this turn (3 of 3 runs; it passed on the kept version (save point 12)). The AI was not stopped. torpor promise show 4";
+    let start_5 = "Torpor: promise #5 (same turn) failed after this turn (3 of 3 runs; it passed on the version from the start of turn 5). The AI was not stopped. torpor promise show 5";
+    engine_stop(&r, &[SAVED, SHADOW_FAIL, kept_old, kept_now, start_5]);
+    let v = stop_of(&r, 2);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    let want = format!(
+        "Promises #1 \"proof page answers\" (turn 5 broke it), #4 \"kept before\" (Torpor cannot name one turn that broke it: run `{e} find-break --promise 4`), #3 \"kept this turn\" (turn 5 broke it) and 1 more failed after this turn."
+    );
+    assert!(why.contains(&want), "{why}");
+    assert!(
+        why.contains(&format!("Run `{e} check ID` before you say it is fixed."))
+            && why.contains("ID is the number after #"),
+        "{why}"
+    );
+    assert_eq!(why.matches("[Torpor] Before you finish").count(), 1);
+}
+
+/// What is not a broken check, a deleted file or a database: no block, and nothing but the two engine calls of every Stop.
+#[test]
+fn a_turn_that_broke_nothing_and_risked_nothing_gets_no_block() {
+    let r = Rig::new("f4-quiet");
+    started(&r);
+    // the engine's other promise lines (gate.rs): flaky, set aside, stopped for it already, checks cut short
+    let others = [
+        "Torpor: promise #2 (api answers) passed and failed on the same version, so it is flaky and advisory only. torpor promise show 2",
+        "Torpor: promise #2 (api answers) fails on the version that passed before, so its check cannot be trusted. It is set aside. torpor promise show 2",
+        "Torpor: promise #2 (api answers) still fails. The AI was stopped for it already and nothing changed since, so the turn is allowed to end. torpor promise show 2",
+        "Torpor: promise checks were cut short at the last 3 turn ends. torpor status",
+        "Torpor: promise #3 failed after turn 5. Run torpor check 3.",
+        "Torpor: new promise #4 \"proof page answers\" (shadow), from your words at turn 1. Drop it: torpor promise drop 4",
+    ];
+    engine_turn(&r, 5, 30, &[], &[]);
+    for (i, line) in others.iter().enumerate() {
+        engine_stop(&r, &[SAVED, line]);
+        let v = stop_of(&r, 10 + i as u32);
+        assert!(blocked(&v).is_none(), "{line}: {v}");
+        assert!(said(&v).starts_with("Torpor: save point 31"), "{v}");
+    }
+    assert_eq!(
+        r.calls().len(),
+        2 * others.len(),
+        "a turn that changed no file costs the two calls of every Stop"
+    );
+    // a turn that only added or edited files, or whose changes are not the AI's: nothing to say
+    engine_turn(
+        &r,
+        6,
+        40,
+        &[41],
+        &[
+            ("new.txt", "shell", "new"),
+            ("app.js", "edit", "changed"),
+            ("run.sh", "shell", "mode"),
+            ("theirs.txt", "outside", "deleted"),
+            ("shared.txt", "shared", "deleted"),
+            ("theirs.db", "outside", "changed"),
+            ("shared.db", "shared", "changed"),
+            ("fresh.db", "shell", "new"),
+        ],
+    );
+    engine_stop(&r, &[SAVED]);
+    let v = stop_of(&r, 20);
+    assert!(blocked(&v).is_none(), "{v}");
+    // the engine blocked this turn itself: its block goes out as it is, with no second one and no calls of ours
+    let before = r.calls().len();
+    let theirs = json!({"decision": "block", "reason": "Torpor: promise #1 \"x\" fails now. Fix the app, not the check.", "systemMessage": format!("{SAVED}\n{SHADOW_FAIL}")});
+    r.set("out.Stop", &theirs.to_string());
+    let v = stop_of(&r, 21);
+    let why = blocked(&v).unwrap_or_else(|| panic!("the engine's block is kept: {v}"));
+    assert!(
+        why.contains("fails now") && !why.contains("Before you finish"),
+        "{why}"
+    );
+    assert_eq!(r.calls().len(), before, "{:?}", r.calls());
+    // saving is off: the engine's last turn is an old one and nothing is said about it
+    r.set(
+        "out.status",
+        &json!({"saving": false, "last_turn": {"n": 5}}).to_string(),
+    );
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let v = stop_of(&r, 22);
+    assert!(blocked(&v).is_none(), "{v}");
+    assert_eq!(r.calls().last().map(String::as_str), Some("status --json"));
+    // a subagent's Stop (its turn id is its session id) never reaches the engine
+    let before = r.got("Stop").len();
+    let mut child = r.fixture("Stop");
+    child["turn_id"] = child["session_id"].clone();
+    assert_eq!(r.hook_ok("Stop", &child).out, "");
+    assert_eq!(r.got("Stop").len(), before);
+}
+
+/// F4 item 3. A turn that deleted a file that existed before it, or changed or deleted a database, gets the same one Stop
+/// block (merged with a broken check's): say it in one plain sentence, and a database names the command that brings it back.
+#[test]
+fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_block() {
+    let r = Rig::new("f4-risky");
+    let e = r.engine.display().to_string();
+    started(&r);
+    let has = |why: &str, text: &str| assert!(why.contains(text), "{text}: {why}");
+    // a file that existed before the turn is gone; the new and the edited ones are not named
+    engine_turn(
+        &r,
+        5,
+        30,
+        &[],
+        &[
+            ("old.txt", "shell", "deleted"),
+            ("new.txt", "shell", "new"),
+            ("app.js", "edit", "changed"),
+        ],
+    );
+    engine_stop(&r, &[SAVED]);
+    let v = stop_of(&r, 2);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    has(
+        why,
+        "This turn deleted old.txt (files that existed before this turn). Tell the user in one plain sentence what was deleted or changed and that they can get it back by asking you. Do not undo anything unless they ask.",
+    );
+    for not in ["new.txt", "app.js", "back --id", "Promise", "database"] {
+        assert!(!why.contains(not), "{not}: {why}");
+    }
+    assert!(said(&v).starts_with("Torpor: save point 31"), "{v}");
+    assert!(blocked(&stop_of(&r, 2)).is_none(), "once per turn");
+    // a broken check and a deleted file in one turn: one reason with both
+    engine_turn(&r, 6, 40, &[], &[("a.txt", "shell", "deleted")]);
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let v = stop_of(&r, 3);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    assert_eq!(
+        why.matches("[Torpor] Before you finish").count(),
+        1,
+        "{why}"
+    );
+    let (check, gone) = (why.find("Promise #1"), why.find("This turn deleted a.txt"));
+    assert!(check.is_some() && gone.is_some() && check < gone, "{why}");
+
+    // a database: the block gives the command with the turn's first save point; no dry run was needed for it
+    engine_turn(&r, 8, 50, &[51], &[("data/app.db", "shell", "changed")]);
+    engine_stop(&r, &[SAVED]);
+    let before = r.calls().len();
+    let v = stop_of(&r, 4);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    has(
+        why,
+        "This turn changed or deleted data/app.db (database files). Tell the user in one plain sentence",
+    );
+    has(
+        why,
+        &format!("stop the app that uses it first, then run `{e} back --id 50 --with-data`"),
+    );
+    has(why, "Run it only if the user asks.");
+    assert_eq!(r.calls().len() - before, 2, "{:?}", r.calls());
+    assert!(
+        said(&v).starts_with("Torpor: turn 8 changed data/app.db. Get it back: stop the app, then torpor back --id 50 --with-data — Torpor: save point 31"),
+        "L3's line stays first: {v}"
+    );
+
+    // a database that was in use when the turn began and is gone now has no copy at the start of the turn: the latest save
+    // point the turn took that has one is named (asked with a dry run, the latest first)
+    engine_turn(
+        &r,
+        9,
+        60,
+        &[61, 62],
+        &[("data/busy.db", "shell", "not saved")],
+    );
+    let busy = "Nothing needed changing.\nNot touched: data/busy.db (nothing to bring back, its database was busy).";
+    r.set(
+        "out.back.62",
+        &format!("Would go back to save point 62 (before rm).\n{busy}"),
+    );
+    r.set("out.back.61", "Would go back to save point 61 (before rm).\nWould change 1 file: 1 brought back (data/busy.db).\nNothing was changed (dry run).");
+    let v = stop_of(&r, 5);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    has(why, &format!("run `{e} back --id 61 --with-data`"));
+    assert!(!why.contains("could not save"), "{why}");
+    assert!(
+        said(&v).starts_with("Torpor: turn 9 changed data/busy.db. Get it back: stop the app, then torpor back --id 61 --with-data — "),
+        "{v}"
+    );
+    let calls = r.calls();
+    assert_eq!(
+        calls[calls.len() - 2..],
+        [
+            "back --id 62 --with-data --dry-run",
+            "back --id 61 --with-data --dry-run"
+        ]
+    );
+    // none of its save points has it: no command is promised, the model is told to say so, and the line is honest
+    engine_turn(&r, 10, 70, &[71], &[("data/busy.db", "shell", "not saved")]);
+    let v = stop_of(&r, 6);
+    let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
+    has(
+        why,
+        "Torpor could not save data/busy.db (it was in use), so it may not be able to bring it back: tell the user so.",
+    );
+    assert!(!why.contains("back --id"), "{why}");
+    assert!(
+        said(&v).starts_with(
+            "Torpor: turn 10 changed data/busy.db. Torpor has no copy: it was in use. — "
+        ),
+        "{v}"
+    );
+    // only the turn with a command is kept for the folder's later sessions (L3 N1)
+    let mut other = r.fixture("SessionStart");
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000dd");
+    let ctx = context_of(&r.hook_ok("SessionStart", &other));
+    assert!(
+        ctx.contains("Turn 9 changed data/busy.db") && ctx.contains("back --id 61 --with-data"),
+        "{ctx}"
+    );
+    assert!(!ctx.contains("Turn 10 changed"), "{ctx}");
+    // a database that is still there and was in use at both ends: the line (L3) stays, the block has nothing to say
+    fs::create_dir_all(r.cwd.join("data")).unwrap();
+    fs::write(r.cwd.join("data/use.db"), b"x").unwrap();
+    engine_turn(&r, 11, 80, &[], &[("data/use.db", "shell", "not saved")]);
+    let v = stop_of(&r, 7);
+    assert!(blocked(&v).is_none(), "{v}");
+    assert!(
+        said(&v).starts_with("Torpor: turn 11 changed data/use.db. Get it back: "),
+        "{v}"
+    );
+}
+
+/// Our block and the engine's share the two blocks Muse gets per turn (`allow_block`).
+#[test]
+fn our_block_counts_against_the_same_two_blocks_per_turn_as_the_engines() {
+    let r = Rig::new("f4-cap");
+    started(&r);
+    engine_turn(&r, 5, 30, &[], &[]);
+    let theirs = r#"{"decision":"block","reason":"prove X first"}"#;
+    r.set("out.Stop", theirs);
+    assert_eq!(blocked(&stop_of(&r, 2)), Some("prove X first"));
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let second = stop_of(&r, 2);
+    assert!(
+        blocked(&second).is_some_and(|w| w.contains("[Torpor] Before you finish")),
+        "{second}"
+    );
+    assert!(
+        blocked(&stop_of(&r, 2)).is_none(),
+        "the third is let through"
+    );
+    // two engine blocks use the turn's share up: ours is dropped, and the turn ends
+    r.set("out.Stop", theirs);
+    assert!(blocked(&stop_of(&r, 3)).is_some() && blocked(&stop_of(&r, 3)).is_some());
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let v = stop_of(&r, 3);
+    assert!(blocked(&v).is_none(), "{v}");
+    assert!(said(&v).contains("failed after this turn"), "{v}");
+}
+
+/// One real-engine turn, the way Muse runs it: the prompt, one bash command (the hook sees it before it runs; `effect`
+/// is what the command does to the files) and the Stop, whose output comes back (Null when it printed nothing).
+fn real_turn(r: &Rig, t: u32, cmd: &str, effect: impl FnOnce()) -> Value {
+    let at = |mut p: Value| {
+        p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
+        p
+    };
+    r.hook_ok("UserPromptSubmit", &at(r.fixture("UserPromptSubmit")));
+    let (mut pre, mut post) = (
+        at(r.fixture("PreToolUse-bash")),
+        at(r.fixture("PostToolUse-bash")),
+    );
+    for p in [&mut pre, &mut post] {
+        p["tool_input"]["command"] = json!(cmd);
+        p["tool_use_id"] = json!(format!("call_{t}"));
+    }
+    r.hook_ok("PreToolUse", &pre);
+    effect();
+    r.hook_ok("PostToolUse", &post);
+    stop_of(r, t)
+}
+
+const PROOF_WORDS: &str = "the proof page must answer";
+const PROOF_SPEC: &str = r#"{"v":1,"name":"proof page answers","why":"the proof page must answer","start":{"cmd":"python3 -m http.server {port} --bind 127.0.0.1","ready":"/","timeout_s":90},"env":{},"steps":[{"http":{"method":"GET","path":"/proof.html"},"expect":{"status":200,"body_contains":"proof"},"why":"the proof page answers"}],"unverifiable":false}"#;
+
+/// The first turn of a real-engine rig (it leaves the save point without the page), then the page made by hand.
+fn proof_rig(name: &str) -> Rig {
+    let r = Rig::real(name);
+    fs::write(r.cwd.join("base.txt"), "keep\n").unwrap();
+    started(&r);
+    r.hook_ok("Stop", &r.fixture("Stop"));
+    fs::write(r.cwd.join("proof.html"), "<p>proof</p>\n").unwrap();
+    r
+}
+
+fn set_page(r: &Rig, text: &str) -> impl FnOnce() {
+    let (page, text) = (r.cwd.join("proof.html"), format!("<p>{text}</p>\n"));
+    move || fs::write(page, text).unwrap()
+}
+
+/// F4 item 2 with the real engine: a check of the user's that passed, then fails after a turn. The block names the promise
+/// and the turn the engine's own record says broke it (`find-break` agrees) and goes out once per turn. With the gate
+/// switched off the engine does not stop the AI and this block is all the AI hears; with it on the engine blocks by itself
+/// and there is no second block. The gate is the user's switch in both: nothing here touches it.
+#[test]
+fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_block_is_not_doubled() {
+    let r = proof_rig("real-broke");
+    let e = r.engine.display().to_string();
+    let (code, text) = engine_cli_stdin(&r, &["keep", PROOF_WORDS, "--check", "-"], PROOF_SPEC);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("In shadow for now"), "{text}");
+
+    // turn 2 edits the page and it still answers: nothing to say
+    let ok = real_turn(&r, 3, "echo v2 > proof.html", set_page(&r, "proof v2"));
+    assert!(
+        blocked(&ok).is_none() && said(&ok).starts_with("Torpor: save point"),
+        "{ok}"
+    );
+    // turn 3 breaks it
+    let bad = real_turn(&r, 4, "echo nope > proof.html", set_page(&r, "nope"));
+    let why = blocked(&bad).unwrap_or_else(|| panic!("no block: {bad}"));
+    for text in [
+        "Promise #1 \"proof page answers\" (turn 3 broke it) failed after this turn.",
+        "Fix the app, not the check, and do not special-case test values.",
+        &format!("Run `{e} check 1` before you say it is fixed."),
+        &format!("run `{e} promise dispute 1 \"<why>\"` and tell the user."),
+    ] {
+        assert!(why.contains(text), "{text}: {why}");
+    }
+    assert!(
+        said(&bad).contains("It would have stopped the AI, but it is in shadow mode."),
+        "the user's line keeps the engine's words: {bad}"
+    );
+    let (_, found) = engine_cli(&r, &["find-break", "--promise", "1"]);
+    assert!(
+        found.contains("Turn 3 broke it"),
+        "the engine agrees: {found}"
+    );
+    let again = stop_of(&r, 4);
+    assert!(
+        blocked(&again).is_none() && said(&again).contains("failed after this turn"),
+        "{again}"
+    );
+
+    // turn 4 fixes it; the engine now stops the AI for this promise by itself
+    let fixed = real_turn(
+        &r,
+        5,
+        "echo fixed > proof.html",
+        set_page(&r, "proof fixed"),
+    );
+    assert!(blocked(&fixed).is_none(), "{fixed}");
+    assert!(
+        said(&fixed).contains("it stops the AI from now on"),
+        "{fixed}"
+    );
+    // the user switched the gate off: the engine says it did not stop the AI, so the one block of ours is what the AI hears
+    assert_eq!(engine_cli(&r, &["gate", "off"]).0, 0);
+    let off = real_turn(&r, 6, "echo nope > proof.html", set_page(&r, "nope"));
+    let why = blocked(&off).unwrap_or_else(|| panic!("no block: {off}"));
+    assert!(
+        why.contains("Promise #1 \"proof page answers\" (turn 5 broke it) failed after this turn."),
+        "{why}"
+    );
+    assert!(said(&off).contains("The AI was not stopped."), "{off}");
+    assert!(blocked(&stop_of(&r, 6)).is_none());
+    // fixed again, gate on, broken again: the engine's own block goes out as it is; ours is not added, and the next Stop
+    // of the turn (the engine lets it end) is not blocked either
+    let fixed = real_turn(
+        &r,
+        7,
+        "echo fixed > proof.html",
+        set_page(&r, "proof again"),
+    );
+    assert!(blocked(&fixed).is_none(), "{fixed}");
+    assert_eq!(engine_cli(&r, &["gate", "on"]).0, 0);
+    let gated = real_turn(&r, 8, "echo nope > proof.html", set_page(&r, "nope"));
+    let why = blocked(&gated).unwrap_or_else(|| panic!("no block: {gated}"));
+    assert!(
+        why.contains("fails now") && !why.contains("Before you finish"),
+        "{why}"
+    );
+    let after = stop_of(&r, 8);
+    assert!(blocked(&after).is_none(), "{after}");
+    assert!(
+        said(&after).contains("The AI was stopped for it already"),
+        "{after}"
+    );
+}
+
+/// A check the AI itself added stays advisory; its failure is told in the same way, and the engine's line says it did not
+/// stop the AI.
+#[test]
+fn real_engine_a_check_the_ai_added_is_told_too() {
+    let r = proof_rig("real-broke-ai");
+    let in_turn = |t: u32, mut p: Value| {
+        p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
+        p
+    };
+    r.hook_ok(
+        "UserPromptSubmit",
+        &in_turn(3, r.fixture("UserPromptSubmit")),
+    );
+    let mut pre = in_turn(3, r.fixture("PreToolUse-bash"));
+    pre["tool_input"]["command"] = json!(format!(
+        "torpor keep \"{PROOF_WORDS}\" --check - < spec.json"
+    ));
+    r.hook_ok("PreToolUse", &pre);
+    let (code, text) = engine_cli_stdin(&r, &["keep", PROOF_WORDS, "--check", "-"], PROOF_SPEC);
+    assert_eq!(code, 0, "{text}");
+    let first = stop_of(&r, 3);
+    assert!(said(&first).contains("proposed by the AI"), "{first}");
+    assert!(blocked(&first).is_none(), "{first}");
+
+    let bad = real_turn(&r, 4, "echo nope > proof.html", set_page(&r, "nope"));
+    let why = blocked(&bad).unwrap_or_else(|| panic!("no block: {bad}"));
+    assert!(
+        why.contains("Promise #1 \"proof page answers\" (")
+            && why.contains("failed after this turn."),
+        "{why}"
+    );
+    assert!(said(&bad).contains("The AI was not stopped."), "{bad}");
+    // told once for the turn
+    assert!(blocked(&stop_of(&r, 4)).is_none());
+}
+
+/// How many files the engine's record of turn `n` lists.
+fn files_in(r: &Rig, n: u32) -> usize {
+    let (code, text) = engine_cli(r, &["show", &n.to_string(), "--json"]);
+    assert_eq!(code, 0, "{text}");
+    serde_json::from_str::<Value>(&text).unwrap()["files"]
+        .as_array()
+        .map_or(usize::MAX, Vec::len)
+}
+
+/// F4 item 3 with the real engine: a file that existed before the turn and was deleted in it is told in a block; adding
+/// or editing files is not; neither is a turn whose only changes are the AI's own `undo` or `back` of it.
+#[test]
+fn real_engine_a_deleted_file_is_told_but_the_ais_own_undo_or_back_is_not() {
+    let r = Rig::real("real-risky");
+    let e = r.engine.display().to_string();
+    fs::write(r.cwd.join("old.txt"), "old\n").unwrap();
+    fs::write(r.cwd.join("other.txt"), "other\n").unwrap();
+    started(&r);
+    r.hook_ok("Stop", &r.fixture("Stop"));
+
+    let gone = real_turn(&r, 3, "rm old.txt", || {
+        fs::remove_file(r.cwd.join("old.txt")).unwrap()
+    });
+    let why = blocked(&gone).unwrap_or_else(|| panic!("no block: {gone}"));
+    assert!(
+        why.contains("This turn deleted old.txt (files that existed before this turn). Tell the user in one plain sentence what was deleted or changed and that they can get it back by asking you. Do not undo anything unless they ask."),
+        "{why}"
+    );
+    assert!(
+        !why.contains("back --id") && !why.contains("Promise"),
+        "{why}"
+    );
+    assert!(said(&gone).starts_with("Torpor: save point"), "{gone}");
+    assert!(blocked(&stop_of(&r, 3)).is_none(), "once per turn");
+
+    // the AI gets it back with `undo`: the turn's record has no changed file of its own
+    let undone = real_turn(&r, 4, &format!("{e} undo 2"), || {
+        let (code, text) = engine_cli(&r, &["undo", "2"]);
+        assert_eq!(code, 0, "{text}");
+    });
+    assert!(r.cwd.join("old.txt").exists());
+    assert!(blocked(&undone).is_none(), "{undone}");
+    assert_eq!(
+        files_in(&r, 3),
+        0,
+        "the engine's record of the turn that undid it"
+    );
+
+    // deleted again, and put back with `back` to the save point the turn began at
+    let gone = real_turn(&r, 5, "rm old.txt", || {
+        fs::remove_file(r.cwd.join("old.txt")).unwrap()
+    });
+    assert!(blocked(&gone).is_some(), "{gone}");
+    let (_, shown) = engine_cli(&r, &["show", "4", "--json"]);
+    let start = serde_json::from_str::<Value>(&shown).unwrap()["turn"]["start_point"].to_string();
+    let back = real_turn(&r, 6, &format!("{e} back --id {start}"), || {
+        let (code, text) = engine_cli(&r, &["back", "--id", &start]);
+        assert_eq!(code, 0, "{text}");
+    });
+    assert!(r.cwd.join("old.txt").exists());
+    assert!(blocked(&back).is_none(), "{back}");
+    assert_eq!(
+        files_in(&r, 5),
+        0,
+        "the engine's record of the turn that went back"
+    );
+
+    // a turn that only adds and edits files
+    let added = real_turn(&r, 7, "echo more > other.txt; echo new > new.txt", || {
+        fs::write(r.cwd.join("other.txt"), "more\n").unwrap();
+        fs::write(r.cwd.join("new.txt"), "new\n").unwrap();
+    });
+    assert!(
+        blocked(&added).is_none() && said(&added).starts_with("Torpor: save point"),
+        "{added}"
+    );
 }
