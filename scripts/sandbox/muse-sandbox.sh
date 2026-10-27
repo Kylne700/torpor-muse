@@ -114,6 +114,7 @@ fi
 # --- the environment inside: cleared (never through argv, so the key stays out of ps), then a fixed set
 KEEP_KEY=''
 [ "$NET" = meta ] && [ -n "${META_API_KEY:-}" ] && KEEP_KEY=1
+# shellcheck disable=SC2163 # $v holds the name of the variable to un-export
 for v in $(compgen -e); do
   case $v in
     TORPOR_*) ;;
