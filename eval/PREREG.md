@@ -148,6 +148,6 @@ Values the lead fills in before the tag: `<N from the pilot>`, `<N_B from the pi
 
 Amendment log:
 
-- 2026-10-27, draft edits before the tag `eval-prereg-v1` (the lead tags it). No scored run has happened. Source: the lead's plan line "S4a-run-2 DONE" and the unscored writer-on episode s4a-d-writer-1. What changed and why:
+- 2026-10-27, draft edits before the tag `eval-prereg-v1` (the lead tags it). No scored run has happened. Source: open points found while building the runner, and the unscored writer-on episode s4a-d-writer-1; earlier draft edits are in the git history. What changed and why:
   - Section 2: arm C is stated as the runner wires it (`env TORPOR_HOME=...`, `TORPOR_KEY_FILE=...`), because the text left both out. The writer cap is per episode, not daily; the 0.05 the runner used refused every writer trigger after the first (one call's worst case is about $0.043), so the runner default is now 0.35 (derivation in `eval/run/RUN.md`). The writer's drain, the `still_running` rule and the new row field `writer_results` are stated, because RUN.md already had the drain and the rows now record what the writer decided.
   - Section 6: `held_out_violation` is listed as invalid and not re-run, and `egress.other` is ruled to be reported per arm without invalidating an episode; the runner already treated both that way, and the analysis now reports `egress.other` per arm. The exclusion rule and its report label now also cover a unit whose only attempt is not re-run (the analysis labelled all excluded units "after 3 failed attempts").
