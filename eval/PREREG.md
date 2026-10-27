@@ -1,4 +1,4 @@
-# Eval: the pre-registration (draft for v1)
+# Eval: the pre-registration (v1)
 
 Written on 2026-10-26, before any run. It fixes how the eval in `eval/DESIGN.md` is run, scored, analysed and published, so that nobody can say the rules were bent after the results were in. The values in angle brackets are filled in by the lead after the pilot. The lead then reads this file, `eval/run/RUN.md` and `eval/analysis/analyze.mjs` and, if they are good, tags the commit `eval-prereg-v1`. After the tag, these files change only through the amendment rule in section 11.
 
@@ -44,11 +44,11 @@ The arms differ in these installs only. Everything else is the same: the Muse Co
 
 ## 4. Sample size, pairing and randomisation
 
-- n per arm (planned episodes before exclusions): A, C and D: `<N from the pilot>`; B: `<N_B from the pilot>`. n is fixed at the tag and never topped up. The planning figures were 40 for A, C and D and 20 for B; with 21 tasks that is 2 repetitions per task (42 episodes) and 1 repetition (21 episodes). The lead decides after the pilot.
+- n per arm (planned episodes before exclusions): 42 in every arm, A, B, C and D alike (2 repetitions of each of the 21 tasks). n is fixed at the tag and never topped up. The planning figures were 40 for A, C and D and 20 for B; with 21 tasks that is 2 repetitions per task (42 episodes) and 1 repetition (21 episodes). The lead set n after the pilot from its dollars and minutes only; B has 42 too because the runner takes one `--reps` for all arms (amendment log).
 - Power: for two independent groups of 40, an exact test (Fisher, two-sided, alpha 0.05) has power 0.947 for 0.8 against 0.4 and 0.725 for 0.7 against 0.4 (exact enumeration, computed for this file). This is a rough guide only: the analysis here is paired, the repetitions of one task are not independent, and the verdict rule needs the whole cluster-bootstrap interval above 0, so the real power is lower than these figures. The power of the full rule was not simulated.
 - A pilot (planned: 12 episodes, 3 tasks x 4 arms) is run before the tag to measure dollars, minutes, the rate-limit rate and the share of valid runs. It is not a scored run, it may inform n, and its rows are not part of the main analysis (draft default).
-- Pairing: every (task, repetition) is played in every arm of the main run. A pair is the same task and the same repetition number in two arms. Arm B has fewer repetitions; its pairs with arm A are the repetitions the two share.
-- Randomisation: the order of the arms inside every (task, repetition) group is drawn from a seeded generator. The run seed is `<run seed>`; every row records `seed` and `order_index`. The runner plays one group at a time, all arms of it, so that a forced stop leaves complete pairs (`eval/run/RUN.md` must say so; the lead checks). Every episode has its own fresh workspace, home folder and Torpor store; nothing carries over from one episode to the next.
+- Pairing: every (task, repetition) is played in every arm of the main run. A pair is the same task and the same repetition number in two arms. Arm B has the same repetitions as the other arms (n above).
+- Randomisation: the order of the arms inside every (task, repetition) group is drawn from a seeded generator. The run seed is `20261027`, the date of the tag; every row records `seed` and `order_index`. The runner plays one group at a time, all arms of it, so that a forced stop leaves complete pairs (`eval/run/RUN.md` must say so; the lead checks). Every episode has its own fresh workspace, home folder and Torpor store; nothing carries over from one episode to the next.
 
 ## 5. Outcomes
 
@@ -115,7 +115,7 @@ D against C (primary), D against A ("engine + new work") and B against A, each o
 
 ## 9. The standard-model confirmation subset
 
-The main run uses the contributor id `muse-spark-1.3-contributor`; whether it has the same weights as the shipped model is NV. To see whether the direction holds on the standard id, a subset runs on `muse-spark-1.3`: arms A and D only, `<subset episodes per arm>` episodes per arm, on the tasks `<subset tasks>`, at most $40 in total (enforced by the runner's spend cap). The lead fixes the tasks and the size from the pilot's measured cost before the tag.
+The main run uses the contributor id `muse-spark-1.3-contributor`; whether it has the same weights as the shipped model is NV. To see whether the direction holds on the standard id, a subset runs on `muse-spark-1.3`: arms A and D only, 9 episodes per arm (1 repetition), on the tasks notes-ctrl, notes-dup, notes-logout, shop-clear, shop-coupon, shop-merge, todo-ctrl, todo-persist and todo-tags, at most $45 in total (enforced by the runner's spend cap). The lead fixed the size from the pilot's measured cost and drew the tasks before the tag: in each of the three apps, the 3 task ids with the smallest sha256 of `20261027:<task id>`.
 
 - It is directional only, with no significance claim. It goes through the same script into its own folder (one model id per folder). What is quoted is the pass counts of A and D, the effect and its interval, labelled "standard model, directional"; the script prints no verdict word for it (D against C is not in that folder, and D against A never has one).
 - It is never pooled with the main run. If it points the other way, the report says so next to the main result.
@@ -144,10 +144,15 @@ Limits, stated in advance:
 - After the first scored main-run episode, nothing in sections 1 to 8 changes. A defect in the runner, an oracle or the analysis may be fixed, but the fix is logged here with the reason, every affected episode is repeated or the analysis re-run, and both results are published.
 - The lead tags the approved version `eval-prereg-v1`.
 
-Values the lead fills in before the tag: `<N from the pilot>`, `<N_B from the pilot>`, `<run seed>`, `<subset episodes per arm>`, `<subset tasks>`.
+The values (n, the run seed, the subset's size and tasks) were filled in before the tag; see the second 2026-10-27 entry below.
 
 Amendment log:
 
 - 2026-10-27, draft edits before the tag `eval-prereg-v1` (the lead tags it). No scored run has happened. Source: open points found while building the runner, and the unscored writer-on episode s4a-d-writer-1; earlier draft edits are in the git history. What changed and why:
   - Section 2: arm C is stated as the runner wires it (`env TORPOR_HOME=...`, `TORPOR_KEY_FILE=...`), because the text left both out. The writer cap is per episode, not daily; the 0.05 the runner used refused every writer trigger after the first (one call's worst case is about $0.043), so the runner default is now 0.35 (derivation in `eval/run/RUN.md`). The writer's drain, the `still_running` rule and the new row field `writer_results` are stated, because RUN.md already had the drain and the rows now record what the writer decided.
   - Section 6: `held_out_violation` is listed as invalid and not re-run, and `egress.other` is ruled to be reported per arm without invalidating an episode; the runner already treated both that way, and the analysis now reports `egress.other` per arm. The exclusion rule and its report label now also cover a unit whose only attempt is not re-run (the analysis labelled all excluded units "after 3 failed attempts").
+- 2026-10-27, the values, before the tag `eval-prereg-v1`. No scored run has happened. Source: the pilot (run id `pilot-1`: 12 episodes, 3 tasks x 4 arms, run 03:55-04:10 UTC). The lead read only its operational figures: all 12 episodes valid; no timeouts, hook failures or re-runs; the runner counted 0 rate-limited of 447 model calls; 14 min 52 s; $2.16 in total; mean usd_hi per episode A 0.156, B 0.155, C 0.157, D 0.144, plus 0.110 for D's writer. No per-arm `final_pass`, `later_kept` or `break_found` figure of the pilot was read. What changed and why:
+  - Section 4: n = 42 in every arm. For A, C and D that is the planning figure (2 repetitions of the 21 tasks). B gets 42 instead of 21 because the runner has one `--reps` for all arms; at the pilot's mean the 21 extra episodes cost about $3. The pairing sentence for B says so now. At the pilot's means the 168 episodes cost about $30 (usd_hi with the writer; $33 at the pilot's per-arm maxima) and take about 3.5 hours (one group about 5 minutes); the main run's `--cap-usd` is 40.
+  - Section 4: the run seed is 20261027, the date of the tag.
+  - Section 9: the subset is 1 repetition of 9 tasks, drawn as written there (3 per app, so the three apps weigh the same), and its cap is $45 instead of $40. Repriced at the standard id's list prices (`eval/run/lib.mjs` PRICES), the pilot's tokens give per episode about $2.14 for A and $1.98 for D, plus $0.11 for D's writer (usd_hi, an upper bound), so 9 pairs are about $38 ($41 at the pilot's maxima). If the cap is reached, the run stops early and section 9's rule for a stopped subset applies.
+  - The title no longer says draft. `eval/run/RUN.md` was checked against section 2 (the notes text, arm C's settings, the engine lock, arm D's init, the writer, Muse Code's flags, the sandbox, the spend cap): no difference found.
