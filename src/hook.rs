@@ -6,13 +6,15 @@
 //! is told once per session that Torpor is not saving. The only way a hook stops a turn is a Stop block in the JSON
 //! form with a reason (never exit 2).
 
+mod busy;
 mod normalise;
 mod state;
+mod stop;
 
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -326,9 +328,25 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
             done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
-            let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
-            done.stdout = db_note(dir, event, &sid, &cwd, &out.bin, left, done.stdout.take());
+            done.stdout = if event == "Stop" {
+                let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
+                let end = Ended {
+                    dir,
+                    sid: &sid,
+                    turn: &turn,
+                    cwd: &cwd,
+                    bin: &out.bin,
+                    left,
+                };
+                stop_note(&end, &out.stdout, done.stdout.take())
+            } else {
+                db_note(dir, event, &sid, &cwd, &out.bin, done.stdout.take())
+            };
         }
+    }
+    if event == "PreToolUse" {
+        let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
+        done.stdout = busy_guard(&payload, &cwd, left, done.stdout.take());
     }
     if main && !cwd.is_empty() && turn_ended(event, done.stdout.as_deref()) {
         state::open_clear(dir, &cwd, &sid);
@@ -503,105 +521,123 @@ fn gap_note(dir: &Path, event: &str, sid: &str, cwd: &str, body: Option<String>)
     }
 }
 
-/// `torpor undo N` and a plain `torpor back` leave database content as it is, and the engine's own lines name only those
-/// (dogfood1 M1). So when a turn's own commands changed or deleted a database file, its Stop line starts with the
-/// command that does put the data back (L3 N2: Muse shows the line once, on one line cut at the terminal's width), and
-/// the turn is kept for its folder past SessionEnd (L3 N1, `state::db_add`). The model of every session in that folder
-/// gets all kept turns, each with its command (with the engine's path, see `engine_cmd`), once: at the start of the
-/// session (startup, resume, clear, compact) or at the next prompt after a newer one. Costs two engine calls at Stop,
-/// within `left` of the event's engine time; skipped when that is short.
+/// What the model is told at the start of every session (F4): the plain words a user says, the Torpor command for each
+/// (a dry run first), and the commands that are the user's own. At most about 700 characters with the engine's path,
+/// which stands once for the word `torpor` in it. It goes in front of the database note (`db_note`).
+fn guide(bin: &Path) -> String {
+    let at = engine_cmd(bin);
+    let means = if at == "torpor" {
+        String::new()
+    } else {
+        format!("torpor = {at}. ")
+    };
+    format!(
+        "[Torpor guide: stays valid] {means}Only if the user asks: --dry-run first, tell them in one sentence what it \
+         changes, then run it. Ask first if it also undoes later work, a database or unnamed files.\n\
+         undo that / last change: torpor log -n 5, torpor undo N --dry-run, torpor undo N.\n\
+         go back to before ...: torpor back --turn K or --id P; tell them in one sentence the printed torpor back --id N \
+         undoes it.\n\
+         what broke ...: torpor find-break --promise ID (or --check -).\n\
+         lost database data: the database note's command, app stopped first.\n\
+         Never run off, on, gate, retain, forget, promise ok/drop/block, runner install: the user's own."
+    )
+}
+
+/// The database note for `turns` (newest first): one command per turn, see `db_note`.
+fn db_text(bin: &Path, turns: &[state::DbTurn]) -> String {
+    let mut note = String::from(
+        "[Torpor database note: later Torpor notes do not replace this one] `torpor undo` and a plain `torpor \
+         back` leave existing database files as they are. Each command below brings a database's old data back, \
+         even if the app made a fresh database since. Run one only when the user asks for it.",
+    );
+    for t in turns {
+        let (n, p) = (t.n, t.p);
+        let s = if t.files.len() > 1 { "s" } else { "" };
+        note.push_str(&format!(
+            "\nTurn {n} changed {} (database file{s}). To get it back as it was before turn {n}, stop the app first, \
+             then run the command below; it also puts every other file back to the start of turn {n}, so later \
+             changes are undone too. The command: {} back --id {p} --with-data",
+            suggest::scrub(&t.files.join(", "), 300), // the note must fit Muse's 12 KiB stdout limit
+            engine_cmd(bin)
+        ));
+    }
+    note
+}
+
+/// What the model is told about the database turns kept for its folder (`stop_note` keeps them, `state::db_add`): all of
+/// them, each with its command (with the engine's path, see `engine_cmd`), once: at the start of the session (startup,
+/// resume, clear, compact) or at the next prompt after a newer one; at the start the `guide` comes first. Both are added
+/// to the engine's text even when that must be cut to make them fit (`with_note_fit`).
 fn db_note(
     dir: &Path,
     event: &str,
     sid: &str,
     cwd: &str,
     bin: &Path,
-    left: Duration,
     body: Option<String>,
 ) -> Option<String> {
-    if matches!(event, "SessionStart" | "UserPromptSubmit") {
-        let turns = if cwd.is_empty() {
-            Vec::new()
-        } else {
-            state::db_turns(dir, cwd)
-        };
-        let Some(newest) = turns.first().map(|t| t.n) else {
-            return body;
-        };
-        let told = state::with_session(dir, sid, |s| s.db_told).unwrap_or(0);
-        if event == "UserPromptSubmit" && newest <= told {
-            return body;
-        }
-        let mut note = String::from(
-            "[Torpor database note: later Torpor notes do not replace this one] `torpor undo` and a plain `torpor \
-             back` leave existing database files as they are. Each command below brings a database's old data back, \
-             even if the app made a fresh database since. Run one only when the user asks for it.",
-        );
-        for t in &turns {
-            let (n, p) = (t.n, t.p);
-            let s = if t.files.len() > 1 { "s" } else { "" };
-            note.push_str(&format!(
-                "\nTurn {n} changed {} (database file{s}). To get it back as it was before turn {n}, stop the app first, \
-                 then run the command below; it also puts every other file back to the start of turn {n}, so later \
-                 changes are undone too. The command: {} back --id {p} --with-data",
-                suggest::scrub(&t.files.join(", "), 300), // the note must fit Muse's 12 KiB stdout limit
-                engine_cmd(bin)
-            ));
-        }
-        return match schema::with_note(event, body.as_deref(), "", &note, false) {
-            Some(m) => {
-                state::with_session(dir, sid, |s| s.db_told = newest);
-                Some(m)
+    if !matches!(event, "SessionStart" | "UserPromptSubmit") {
+        return body;
+    }
+    let turns = if cwd.is_empty() {
+        Vec::new()
+    } else {
+        state::db_turns(dir, cwd)
+    };
+    let told = state::with_session(dir, sid, |s| s.db_told).unwrap_or(0);
+    let newest = turns.first().map(|t| t.n);
+    let due = newest.is_some_and(|n| event == "SessionStart" || n > told);
+    if !due && event != "SessionStart" {
+        return body;
+    }
+    let note = if due {
+        db_text(bin, &turns)
+    } else {
+        String::new()
+    };
+    // the guide first, the database note last; if they do not fit with the engine's text, that is what is cut
+    let guide = if event == "SessionStart" {
+        guide(bin)
+    } else {
+        String::new()
+    };
+    let context = match (guide.is_empty(), note.is_empty()) {
+        (false, false) => format!("{guide}\n\n{note}"),
+        (true, _) => note,
+        _ => guide,
+    };
+    if context.is_empty() {
+        return body;
+    }
+    match schema::with_note_fit(event, body.as_deref(), "", &context, false) {
+        Some(m) => {
+            if due {
+                state::with_session(dir, sid, |s| s.db_told = newest.unwrap_or(0));
             }
-            None => body,
-        };
+            Some(m)
+        }
+        None => body,
     }
-    let t = left.min(Duration::from_secs(4)) / 2;
-    if event != "Stop"
-        || cwd.is_empty()
-        || t < Duration::from_millis(250)
-        || !turn_ended(event, body.as_deref())
-    {
-        return body;
-    }
-    let json = |args: &[&str]| -> Option<Value> {
-        let o = engine::exec(bin, args, None, Some(Path::new(cwd)), t).ok()?;
-        serde_json::from_slice(&o.stdout)
-            .ok()
-            .filter(|_| o.code == 0)
-    };
-    // not saving (`torpor off`): the last turn is an old one, already told
-    let status = json(&["status", "--json"]).filter(|s| s["saving"] == true);
-    let Some(n) = status.and_then(|s| s["last_turn"]["n"].as_u64()) else {
-        return body;
-    };
-    let Some(show) = json(&["show", &n.to_string(), "--json"]) else {
-        return body;
-    };
-    // the engine's own test for a database file (its scan.rs): .db, .sqlite, .sqlite3, any case
-    let dbs: Vec<String> = show["files"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|f| f["class"] != "outside" && f["change"] != "new")
-        .filter_map(|f| f["path"].as_str())
-        .filter(|p| {
-            [".db", ".sqlite", ".sqlite3"]
-                .iter()
-                .any(|x| p.to_lowercase().ends_with(x))
-        })
-        .map(String::from)
-        .collect();
-    let (Some(p), false) = (show["turn"]["start_point"].as_u64(), dbs.is_empty()) else {
-        return body;
-    };
-    // the user's line: the command within its first 100 characters; long names are cut, never the command
-    let (head, mut tail) = (
-        format!("Torpor: turn {n} changed "),
-        format!(". Get it back: stop the app, then torpor back --id {p} --with-data"),
-    );
+}
+
+/// The Stop that just ended, as `stop_note` needs it.
+struct Ended<'a> {
+    dir: &'a Path,
+    sid: &'a str,
+    turn: &'a str,
+    cwd: &'a str,
+    bin: &'a Path,
+    /// What is left of the event's engine time.
+    left: Duration,
+}
+
+/// The user's line for a database turn (L3 N2): at most 100 characters, the command at its end is never cut, long names
+/// are.
+fn db_line(n: u64, names: &[String], tail: &str) -> String {
+    let head = format!("Torpor: turn {n} changed ");
+    let mut tail = tail.to_string();
     let room = 100usize.saturating_sub(head.chars().count() + tail.chars().count());
-    let mut names = dbs.join(", ");
+    let mut names = names.join(", ");
     if names.chars().count() > room {
         names = names
             .chars()
@@ -610,15 +646,190 @@ fn db_note(
             + "...";
         tail.remove(0); // the "..." ends the sentence
     }
-    state::db_add(dir, cwd, state::DbTurn { n, p, files: dbs });
-    schema::with_note(
-        event,
-        body.as_deref(),
-        &format!("{head}{names}{tail}"),
-        "",
-        true,
-    )
-    .or(body)
+    format!("{head}{names}{tail}")
+}
+
+/// The engine's own project folder (store.rs `resolve_root`): CLAUDE_PROJECT_DIR, else the payload's cwd.
+fn project_root(cwd: &str) -> PathBuf {
+    std::env::var_os("CLAUDE_PROJECT_DIR")
+        .filter(|p| !p.is_empty())
+        .map_or_else(|| PathBuf::from(cwd), PathBuf::from)
+}
+
+/// What the turn that just ended did, from the engine's own records, told to the user and to the model. Only when the
+/// engine did not block the turn itself (its reason says the same), and not after `torpor off`.
+/// - The user's line (L3 N2), when the turn's own commands changed or deleted a database file: it starts with the command
+///   that does put the data back, for `torpor undo N` and a plain `torpor back` leave database content as it is (dogfood1
+///   M1). The turn is kept for its folder past SessionEnd (L3 N1, `state::db_add`) and `db_note` gives it to the model.
+/// - ONE Stop block per turn (F4 items 2 and 3; `Session::allow_note_block`, inside the cap of `allow_block`): Muse runs
+///   the turn on with the reason (`stop::reason`), which makes the model say to the user in its reply what is broken or
+///   what was deleted, and what to run. For a promise that failed after this turn (the engine's own fail line in its Stop
+///   text, `stop::fails`: advisory or shadow; the engine has no other form of it) and for a turn that deleted a file that
+///   existed before it or changed or deleted a database (`stop::rows`).
+///
+/// Costs the `status` and `show` calls of L3, plus up to 3 dry runs of `back` to find a save point that has a database
+/// that was in use when the turn began and is gone now (`stop::restoring_point`): all within 4 s and `left`. A call that
+/// is cut short leaves out what it would have told: the fail-line block still goes out, with `find-break` for the turn.
+fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<String> {
+    if e.cwd.is_empty() || !turn_ended("Stop", body.as_deref()) {
+        return body;
+    }
+    let fails = serde_json::from_slice::<Value>(engine_out)
+        .ok()
+        .and_then(|v| v["systemMessage"].as_str().map(stop::fails))
+        .unwrap_or_default();
+    let end = Instant::now() + e.left.min(Duration::from_secs(4));
+    let ask = |args: &[&str]| {
+        let t = end
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_secs(2));
+        if t < Duration::from_millis(250) {
+            return None;
+        }
+        engine::exec(e.bin, args, None, Some(Path::new(e.cwd)), t)
+            .ok()
+            .filter(|o| o.code == 0)
+    };
+    let json =
+        |args: &[&str]| ask(args).and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok());
+    let status = json(&["status", "--json"]);
+    // not saving (`torpor off`): the last turn is an old one, already told
+    if status.as_ref().is_some_and(|s| s["saving"] != true) {
+        return body;
+    }
+    let n = status.and_then(|s| s["last_turn"]["n"].as_u64());
+    let show = n.and_then(|n| json(&["show", &n.to_string(), "--json"]));
+    let root = project_root(e.cwd);
+    let rows = show.as_ref().map_or_else(stop::Rows::default, |s| {
+        stop::rows(s, |p| root.join(p).symlink_metadata().is_err())
+    });
+    let start = show
+        .as_ref()
+        .and_then(|s| s["turn"]["start_point"].as_u64());
+    // The save point to name. A database that was in use when the turn began has no copy at its start; the save point a
+    // command of the turn took after the app stopped may have one (the busy-database stop, drill D07).
+    let (mut point, mut lost) = (start, rows.lost.clone());
+    if let (false, Some(s)) = (lost.is_empty(), show.as_ref()) {
+        let dry = |p: u64| {
+            let id = p.to_string();
+            ask(&["back", "--id", &id, "--with-data", "--dry-run"])
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        };
+        if let Some(p) = stop::restoring_point(&stop::pre_points(s), &lost, dry) {
+            (point, lost) = (Some(p), Vec::new());
+        }
+    }
+    let kept: Vec<String> = rows
+        .dbs
+        .iter()
+        .filter(|d| !lost.contains(d))
+        .cloned()
+        .collect();
+    let line = match (n, point) {
+        (Some(n), Some(p)) if !kept.is_empty() => {
+            state::db_add(
+                e.dir,
+                e.cwd,
+                state::DbTurn {
+                    n,
+                    p,
+                    files: kept.clone(),
+                },
+            );
+            let tail =
+                format!(". Get it back: stop the app, then torpor back --id {p} --with-data");
+            Some(db_line(n, &kept, &tail))
+        }
+        (Some(n), _) if !lost.is_empty() => {
+            Some(db_line(n, &lost, ". Torpor has no copy: it was in use."))
+        }
+        _ => None,
+    };
+    let body = match line {
+        Some(l) => schema::with_note("Stop", body.as_deref(), &l, "", true).or(body),
+        None => body,
+    };
+    let broke: Vec<stop::Broke> = fails
+        .into_iter()
+        .map(|f| stop::Broke {
+            turn: n.filter(|&n| stop::broke_in(&f.passed_on, n, start)),
+            id: f.id,
+            name: f.name,
+        })
+        .collect();
+    let risk = stop::Risk {
+        back: point.filter(|_| rows.risky.iter().any(|d| !lost.contains(d))),
+        deleted: rows.deleted,
+        dbs: rows.risky,
+        lost,
+    };
+    let Some(reason) = stop::reason(&engine_cmd(e.bin), &broke, &risk) else {
+        return body;
+    };
+    // a state file that cannot be locked cannot tell whether this turn was told already: no block
+    if !state::with_session(e.dir, e.sid, |s| s.allow_note_block(e.turn)).unwrap_or(false) {
+        return body;
+    }
+    schema::block(body.as_deref(), &reason).or(body)
+}
+
+/// F4 item 4 (drill D07): a Bash command that would delete, move or overwrite a database that is in use is denied (Muse
+/// runs on, the model gets the reason). The engine saves no database whose `-wal` file holds data or whose `-journal`
+/// file exists, and its own PreToolUse answer for such a command is empty, so after the command `torpor back
+/// --with-data` would print "Not touched ... its database was busy" and the data would be gone. What counts as a
+/// command that does that, and the commands this cannot see, is in `busy`. The engine's own deny stays as it is.
+/// Not when `torpor off` was typed (nothing is saved then). The engine's answer is read from the same call as the hook's,
+/// so a slow or missing engine does not lift the guard: only the `status --json` look is skipped.
+fn busy_guard(payload: &Value, cwd: &str, left: Duration, body: Option<String>) -> Option<String> {
+    let denied = body
+        .as_deref()
+        .and_then(|b| serde_json::from_str::<Value>(b).ok())
+        .is_some_and(|v| v["hookSpecificOutput"]["permissionDecision"].is_string());
+    let Some(cmd) = payload["tool_input"]["command"].as_str() else {
+        return body;
+    };
+    if payload["tool_name"] != "Bash" || cwd.is_empty() || denied {
+        return body;
+    }
+    let root = project_root(cwd);
+    let workdir = payload["tool_input"]["workdir"].as_str().unwrap_or("");
+    let names = busy::targets(cmd, &Path::new(cwd).join(workdir), &root);
+    if names.is_empty() {
+        return body;
+    }
+    let t = left.min(Duration::from_secs(1));
+    if let (Ok(bin), true) = (engine::locate(), t >= Duration::from_millis(250)) {
+        let off = engine::exec(&bin, &["status", "--json"], None, Some(Path::new(cwd)), t)
+            .ok()
+            .filter(|o| o.code == 0)
+            .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
+            .is_some_and(|s| s["saving"] == false);
+        if off {
+            return body;
+        }
+    }
+    let shown: Vec<String> = names
+        .iter()
+        .take(3)
+        .map(|n| suggest::scrub(n, 80))
+        .collect();
+    let more = names.len().saturating_sub(3);
+    let list = format!(
+        "{}{}",
+        shown.join(", "),
+        if more > 0 {
+            format!(" and {more} more")
+        } else {
+            String::new()
+        }
+    );
+    let why = format!(
+        "Torpor: this command was not run. A database is in use: {list}. Torpor cannot save a database while it is in \
+         use, so it could not bring it back after this command. Stop the app that uses it first (or ask the user to), \
+         then run the command again. If no app is running (a crash left its files behind), the command stays refused: \
+         tell the user. They can run it in their own terminal, but Torpor cannot bring the database back."
+    );
+    schema::deny("PreToolUse", body.as_deref(), &why).or(body)
 }
 
 /// Engine stdout -> what Muse accepts (None = print nothing). `torpor`: see `engine_cmd`.
@@ -739,5 +950,31 @@ mod tests {
         // a file with another name is not known as a Torpor call; a bare name has no folder to give
         assert_eq!(cmd("/opt/engine/torpor-2.3.1"), "torpor");
         assert_eq!(cmd("torpor"), "torpor");
+    }
+
+    #[test]
+    fn the_guide_names_each_plain_word_command_and_the_ones_that_are_the_users() {
+        // 62 characters of path: the guide stays within about 700 characters, and the path is said once
+        let long = "/data/someone/with/a/rather/long/folder/name/for/engine/torpor";
+        assert_eq!(long.len(), 62);
+        let g = guide(Path::new(long));
+        assert!(g.chars().count() <= 700, "{} characters", g.chars().count());
+        assert_eq!(g.matches(long).count(), 1, "{g}");
+        for want in [
+            "torpor log -n 5",
+            "torpor undo N --dry-run",
+            "torpor undo N.",
+            "torpor back --turn K or --id P",
+            "torpor find-break --promise ID (or --check -)",
+            "the database note's command, app stopped first",
+            "--dry-run first, tell them in one sentence",
+            "Ask first if it also undoes later work, a database or unnamed files",
+            "Never run off, on, gate, retain, forget, promise ok/drop/block, runner install",
+        ] {
+            assert!(g.contains(want), "{want:?} missing from {g}");
+        }
+        // an engine the model can only call by the bare name says nothing about a path
+        let bare = guide(Path::new("torpor"));
+        assert!(!bare.contains("torpor = "), "{bare}");
     }
 }

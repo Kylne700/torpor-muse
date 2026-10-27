@@ -33,6 +33,9 @@ pub struct Session {
     /// The newest promise whose not-covered text the model of this session was given (`hook::gap_note`).
     #[serde(default)]
     pub gap_told: u32,
+    /// The turn whose end Torpor blocked once for a broken check or a risky turn (`hook::stop_note`).
+    #[serde(default)]
+    pub noted: String,
 }
 
 /// A turn whose own commands changed or deleted a database file: its number, its start save point, the files.
@@ -71,6 +74,16 @@ impl Session {
         let n = &mut self.blocks[at].1;
         *n += 1;
         *n <= STOP_CAP
+    }
+
+    /// True once per `turn`: the one block of `hook::stop_note` may go out. It counts against the same cap as the
+    /// engine's blocks; a turn without an id cannot be told apart from another, so it gets none.
+    pub fn allow_note_block(&mut self, turn: &str) -> bool {
+        if turn.is_empty() || self.noted == turn || !self.allow_block(turn) {
+            return false;
+        }
+        self.noted = turn.to_string();
+        true
     }
 }
 
@@ -321,6 +334,30 @@ mod tests {
         }
         assert_eq!(s.blocks.len(), 8);
         assert!(s.allow_block("t1"), "t1 was forgotten");
+    }
+
+    #[test]
+    fn our_own_stop_block_goes_out_once_per_turn_inside_the_same_cap() {
+        let mut s = Session::default();
+        assert!(!s.allow_note_block(""), "no turn id, no block");
+        assert!(s.allow_note_block("t1"));
+        assert!(!s.allow_note_block("t1"), "once per turn");
+        assert_eq!(
+            s.blocks,
+            [("t1".to_string(), 1)],
+            "the refusal counts nothing"
+        );
+        // the engine blocked once before ours in t2: ours is its second, the last the cap lets through
+        assert!(s.allow_block("t2"));
+        assert!(s.allow_note_block("t2"));
+        assert!(!s.allow_block("t2"));
+        // the engine used up the cap of t3 first: ours is dropped, and the turn is not marked as told
+        assert!(s.allow_block("t3") && s.allow_block("t3"));
+        assert!(!s.allow_note_block("t3"));
+        assert_ne!(s.noted, "t3");
+        // an old state file without the field still loads
+        let old: Session = serde_json::from_str(r#"{"seq":1,"told":false,"blocks":[]}"#).unwrap();
+        assert_eq!(old.noted, "");
     }
 
     #[test]
