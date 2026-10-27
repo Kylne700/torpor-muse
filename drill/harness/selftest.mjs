@@ -17,7 +17,7 @@ import { expectedRed, parseDisasters, predictions, readMd } from './parse.mjs';
 import { LOCKED, refusal } from './run.mjs';
 import { GuardError, findBwrap, makeRunFolder, makeSandbox, reap, resolveInside, safeDelete, toolEnv } from './sandbox.mjs';
 import { NO_HOME, clean, publish, publishFile } from './publish.mjs';
-import { build, dropSuperseded, fill } from './results.mjs';
+import { appendOnly, build, dropSuperseded, fill } from './results.mjs';
 import { analyze, cellOf, compare, render, slotsOf, tapRows } from './tally.mjs';
 import * as LV from './live.mjs';
 import { readTap } from '../oracles/tap.mjs';
@@ -385,10 +385,14 @@ const cellFrom = (outs, o = {}) => cellOf([...slotsOf(outs.map((x, i) => rec('D9
 
   const pred = Object.fromEntries(Object.entries({ D07: 'database', D11: 'regression', D12: 'regression', D15: 'memory' }).map(([id, cls]) => [id, { cls, arms: id === 'D15' ? ['FL', 'FL', 'FL', 'PS'] : ['NR', 'EX', 'NR', 'NR'] }]));
   const steps = [{ cmd: 'torpor undo 1', exit: 0, output: 'Turn 1 changed no files, so there is nothing to undo.' }];
-  const scored = { name: 's', records: [...grid({ D07: 'NR EX NR NR', D11: 'NR EX NR EX', D12: 'NR NR NR PA' }, 3, { recovery: { steps } }), ...notRun], runLog: { header: { prereg_sha256: 'p', disasters_sha256: 'd' }, created_at: '2026-10-27T03:00:00Z' }, method: null, tallyMd: '' };
+  // PREREG.md: the runs used preBase (7 lines, the log line is line 5); preAdded is an entry added to the log after them
+  const preBase = 'Rules.\n\n## 10. Amendments\n\nAmendment log:\n\n- 2026-10-26, v2.\n';
+  const preAdded = '- 2026-10-27, a fix.\n  - No run is repeated.\n';
+  const preSha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+  const scored = { name: 's', records: [...grid({ D07: 'NR EX NR NR', D11: 'NR EX NR EX', D12: 'NR NR NR PA' }, 3, { recovery: { steps } }), ...notRun], runLog: { header: { prereg_sha256: preSha(preBase), disasters_sha256: 'd' }, created_at: '2026-10-27T03:00:00Z' }, method: null, tallyMd: '' };
   const liveRec = (o_ = {}) => grid({ D15: 'PS PS PS PS' }, 3, { mode: 'live', tap_events: { 'Stop:in': 2 }, cost: { lo: 0.01, hi: 0.02 }, models: ['m'], started_at: '2026-10-27T04:00:00Z', ended_at: '2026-10-27T04:01:00Z', minutes: 0.5, muse: { version_line: 'Muse Code 9' }, method: { compaction: 'typed' }, summaryHasNonce: true, nonceInTail: true, engineContext: false, nonce: 'abc123def456ghi789', nonce_files_outside_ws: [], ...o_ });
-  const live = { name: 'l', records: liveRec(), runLog: { header: { prereg_sha256: 'p' }, cost: { counted: { hi: 0.24 }, calibration: { hi: 0.01 }, total_hi: 0.25, cap_hi: 3 }, overlap_with_main_1: { eval_runner_pids_seen: [1, 2] } }, method: { batch_label: 'lbl' }, tallyMd: '' };
-  const args = { scored, live, pred, expected: { red: ['D07'], other: [] }, head: 'vs1 {{vs1}}, ps {{d15_ps}}, {{valid}}\n', shas: { prereg: 'p', disasters: 'd' } };
+  const live = { name: 'l', records: liveRec(), runLog: { header: { prereg_sha256: preSha(preBase) }, cost: { counted: { hi: 0.24 }, calibration: { hi: 0.01 }, total_hi: 0.25, cap_hi: 3 }, overlap_with_main_1: { eval_runner_pids_seen: [1, 2] } }, method: { batch_label: 'lbl' }, tallyMd: '' };
+  const args = { scored, live, pred, expected: { red: ['D07'], other: [] }, head: 'vs1 {{vs1}}, ps {{d15_ps}}, {{valid}}\n', prereg: Buffer.from(preBase + preAdded), shas: { disasters: 'd' } };
   const t1 = build(args);
   ok('results: the same inputs give the same text', t1 === build(args));
   ok('results: the head is filled from the records and the generated part follows', t1.startsWith('vs1 2 W, 2 T, 0 L, ps 12 of 12, VALID\n') && t1.includes('## Generated part') && !t1.includes('{{'));
@@ -402,6 +406,20 @@ const cellFrom = (outs, o = {}) => cellOf([...slotsOf(outs.map((x, i) => rec('D9
   raises('results: a different number of superseded records throws', () => build({ ...args, superseded: 11 }));
   const strict = build({ ...args, head: '{{strict_d15}}|{{strict_same}}\n', live: { ...live, records: liveRec({ nonce_files_outside_ws: ['/srv/x/index.db'] }) } });
   ok('results: the strict reading leaves D15 out and the tallies are those of scored alone', strict.startsWith('UNMEASURED, UNMEASURED, UNMEASURED, UNMEASURED|the same as those of scored-1 alone\n'));
+
+  // PREREG.md may only grow inside its amendment log: the sha256 the runs recorded must be that of its first n lines
+  const pre = (s) => Buffer.from(s);
+  same('results: lines added to the amendment log keep the proof', appendOnly(pre(preBase + preAdded), preSha(preBase)), { n: 7, m: 9, log: 5 });
+  same('results: a last line without a newline passes too', appendOnly(pre(`${preBase}x`), preSha(preBase)), { n: 7, m: 8, log: 5 });
+  same('results: an unchanged PREREG.md passes with nothing added', appendOnly(pre(preBase), preSha(preBase)), { n: 7, m: 7, log: 5 });
+  same('results: the proof hashes the bytes of the lines', appendOnly(pre('Café\nAmendment log:\n- a\n'), preSha(pre('Café\nAmendment log:\n'))), { n: 2, m: 3, log: 2 });
+  raises('results: a change inside the lines the runs used throws', () => appendOnly(pre((preBase + preAdded).replace('Rules', 'Ruled')), preSha(preBase)));
+  raises('results: lines added above the "Amendment log:" line throw', () => appendOnly(pre('Rules.\n\nAmendment log:\n- x\n'), preSha('Rules.\n')));
+  raises('results: a PREREG.md without an "Amendment log:" line throws', () => appendOnly(pre('Rules.\nMore.\n'), preSha('Rules.\n')));
+  raises('results: a build with PREREG.md changed inside the lines the runs used throws', () => build({ ...args, prereg: pre(preBase.replace('Rules', 'Ruled') + preAdded) }));
+  raises('results: run logs that record different PREREG.md sha256 throw', () => build({ ...args, live: { ...live, runLog: { ...live.runLog, header: { prereg_sha256: preSha('other') } } } }));
+  ok('results: the check names the lines the runs used and the lines added', t1.includes(`- PREREG.md lines 1-7 are the file every run used (sha256 ${preSha(preBase)}, as in both run-log headers). Lines 8-9 come after the "Amendment log:" line (PREREG.md:5)`));
+  ok('results: an unchanged PREREG.md says the file has no other line', build({ ...args, prereg: pre(preBase) }).includes('as in both run-log headers). The file has no other line.'));
 }
 
 // ------------------------------------------------------------------ the sandbox (bubblewrap)

@@ -4,12 +4,13 @@
 //   node drill/harness/results.mjs --check  writes nothing; exit 1 and the first differing lines if drill/RESULTS.md is not
 //                                           what the command above makes
 // Reads drill/results/scored-1 and drill/results/d15-live-1 (copies made by publish.mjs, checked against their sha256 in
-// drill/results/SOURCES.json), the predictions in drill/DISASTERS.md, the sha256 of drill/PREREG.md, and
-// drill/harness/results-head.md. The head is the hand-written top part of RESULTS.md. Each {{name}} in it is a number or a
-// list computed here from the records (an unknown name is an error), and the facts it states are checked (EXPECT, CITES), so
-// the head cannot go stale without this command failing. Cells, ranks, tallies and exclusions are tally.mjs, untouched
-// (PREREG section 7). The one step added here: the 12 NOT-RUN records of D15 in scored-1 are taken out, because the live
-// records of d15-live-1 hold the same slots and slotsOf refuses two records of one slot. Zero dependencies.
+// drill/results/SOURCES.json), the predictions in drill/DISASTERS.md, drill/PREREG.md (the runs used its first lines; the
+// lines after them must lie in its amendment log: appendOnly), and drill/harness/results-head.md. The head is the
+// hand-written top part of RESULTS.md. Each {{name}} in it is a number or a list computed here from the records (an unknown
+// name is an error), and the facts it states are checked (EXPECT, CITES), so the head cannot go stale without this command
+// failing. Cells, ranks, tallies and exclusions are tally.mjs, untouched (PREREG section 7). The one step added here: the 12
+// NOT-RUN records of D15 in scored-1 are taken out, because the live records of d15-live-1 hold the same slots and slotsOf
+// refuses two records of one slot. Zero dependencies.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +40,8 @@ const EXPECT = {
   miss_list: 'D11 arm 3, D12 arm 3, D15 arm 1, D15 arm 2, D15 arm 3',
   red_unexpected_ids: 'D15',
   valid: 'VALID',
-  prereg_same: 'yes',
+  prereg_n: '120',
+  prereg_m: '125',
   disasters_same: 'yes',
   a3_undo_none: '6 of 6',
   s1_same: 'yes',
@@ -72,6 +74,8 @@ const CITES = [
   ['drill/PREREG.md', 112, 'v2 (tag `drill-prereg-v2`). No scored run has happened'],
   ['drill/PREREG.md', 116, 'a miss is published as a miss'],
   ['drill/PREREG.md', 117, 'v3 (tag `drill-prereg-v3`). No scored run has happened'],
+  ['drill/PREREG.md', 121, '2026-10-27, `tally.mjs` print fix'],
+  ['drill/PREREG.md', 123, 'Affected runs: none, so none is repeated'],
   ['drill/results/d15-live-1/run-log.md', 11, 'the Muse TUI under tmux'],
   ['drill/results/d15-live-1/run-log.md', 11, '`/compact` is typed'],
   ['drill/DISASTERS.md', 260, 'untracked and not ignored'],
@@ -123,6 +127,21 @@ export function dropSuperseded(base, live, want) {
   return { kept: base.filter((r) => !held.has(slot(r))), dropped };
 }
 
+// PREREG.md may only grow inside its amendment log. buf = the bytes of the file now, want = the prereg_sha256 the run logs record.
+// -> { n, m, log }: the first n lines of buf (bytes as in the file, each with its "\n") have sha256 `want`, the file has m lines,
+// and the line "Amendment log:" is line `log` <= n, so every line after n is after it. Anything else throws.
+export function appendOnly(buf, want) {
+  const ends = [];
+  for (let i = buf.indexOf(10); i !== -1; i = buf.indexOf(10, i + 1)) ends.push(i + 1);
+  if (buf.length > (ends.at(-1) ?? 0)) ends.push(buf.length);
+  const n = ends.findIndex((e) => sha256(buf.subarray(0, e)) === want) + 1;
+  if (!n) throw new Error(`no line boundary of PREREG.md has the sha256 ${want} that the run logs record: a line of the file the runs used was changed, or this is not their file`);
+  const log = ends.findIndex((e, i) => buf.toString('utf8', ends[i - 1] ?? 0, e).replace(/\n$/, '') === 'Amendment log:') + 1;
+  if (!log) throw new Error('PREREG.md has no "Amendment log:" line');
+  if (log > n) throw new Error(`PREREG.md lines ${n + 1}-${ends.length} follow the file the runs used, but the "Amendment log:" line is line ${log}: only the amendment log may grow`);
+  return { n, m: ends.length, log };
+}
+
 const firstDiffs = (made, have, n = 5) => {
   const x = made.split('\n');
   const y = have.split('\n');
@@ -132,8 +151,9 @@ const firstDiffs = (made, have, n = 5) => {
 };
 
 // -> the text of RESULTS.md. scored/live: loadBatch results. pred/expected: predictions() and expectedRed() of DISASTERS.md.
-// shas: { prereg, disasters } of the two files now. sources: SOURCES.json and hashOf(batch, file) (both or neither).
-export function build({ scored, live, pred, expected, head, shas, sources = null, hashOf = null, lineOf = null, cites = [], expect = {}, superseded = 12 }) {
+// prereg: the bytes of PREREG.md now. shas: { disasters }, the sha256 of DISASTERS.md now. sources: SOURCES.json and hashOf(batch, file)
+// (both or neither).
+export function build({ scored, live, pred, expected, head, prereg, shas, sources = null, hashOf = null, lineOf = null, cites = [], expect = {}, superseded = 12 }) {
   for (const [file, n, text] of cites) {
     const l = lineOf(file, n);
     if (!l?.includes(text)) throw new Error(`the head cites ${file}:${n} for "${text}", but that line says: ${String(l).slice(0, 100)}`);
@@ -147,7 +167,9 @@ export function build({ scored, live, pred, expected, head, shas, sources = null
   const opts = { ids, predictions: pred, expected, reps: 3 };
   const cellRecs = (id, arm) => combined.filter((r) => r.disaster === id && r.arm === arm && !r.control);
   const hdrs = [scored, live].map((b) => b.runLog.header);
-  const prov = [provenanceOf(scored.name, hdrs[0]), provenanceOf(live.name, hdrs[1])];
+  if (hdrs[0].prereg_sha256 !== hdrs[1].prereg_sha256) throw new Error(`the run logs of ${scored.name} and ${live.name} record different PREREG.md sha256: ${hdrs[0].prereg_sha256}, ${hdrs[1].prereg_sha256}`);
+  const pre = appendOnly(prereg, hdrs[0].prereg_sha256);
+  const prov =[provenanceOf(scored.name, hdrs[0]), provenanceOf(live.name, hdrs[1])];
 
   // why a prediction missed, from the records of that cell
   const reasonOf = (m) => {
@@ -259,7 +281,8 @@ export function build({ scored, live, pred, expected, head, shas, sources = null
     modes: uniq(combined.map((r) => r.mode)).join(' and '),
     live_ids: liveIds.join(', '),
     live_tallies: TL.map((t, i) => `${T[i].name.replace('arm 4 vs ', '')} ${fmt(t)}`).join('; '),
-    prereg_same: hdrs.every((h) => h.prereg_sha256 === shas.prereg) ? 'yes' : 'NO',
+    prereg_n: pre.n,
+    prereg_m: pre.m,
     disasters_same: hdrs[0].disasters_sha256 === shas.disasters ? 'yes' : 'NO',
     strict_n: count(d15, outside),
     strict_tallies: strict.tallies.map((t) => `${t.name.replace('arm 4 vs ', '')} ${fmt(t)}`).join('; '),
@@ -294,7 +317,7 @@ export function build({ scored, live, pred, expected, head, shas, sources = null
   out.push(`- The ${replayIds.length} replay disasters: ${of(count(sameCells, Boolean), sameCells.length)} cells are the same in this result as in scored-1 alone.`);
   out.push(`- D15 adds ${res.cells.D15.length} live cells: ${res.cells.D15.map((c) => `${c.value} (${c.modes.join('+')})`).join(', ')}. Change of the four tallies against scored-1 alone: ${delta.join('; ')}.`);
   out.push(`- d15-live-1 alone: ${live.tallyMd.startsWith(l1Text) ? `the tally of its ${live.records.length} records equals the start of \`drill/results/d15-live-1/tally.md\`; ${live.tallyMd.slice(l1Text.length).split('\n').filter(Boolean).length} more non-empty lines follow it there, under the heading "${(live.tallyMd.slice(l1Text.length).match(/^## .*$/m) ?? ['(none)'])[0].replace(/^## /, '')}"` : `DIFFERS from \`drill/results/d15-live-1/tally.md\`: ${firstDiffs(l1Text, live.tallyMd).join('; ')}`}.`);
-  out.push(`- PREREG.md sha256 now: ${shas.prereg}. In the run log header: scored-1 ${hdrs[0].prereg_sha256}, d15-live-1 ${hdrs[1].prereg_sha256}: ${hdrs.every((h) => h.prereg_sha256 === shas.prereg) ? 'the same' : '**DIFFERENT**'}.`);
+  out.push(`- PREREG.md lines 1-${pre.n} are the file every run used (sha256 ${hdrs[0].prereg_sha256}, as in both run-log headers).${pre.m > pre.n ? ` Lines ${pre.n + 1}-${pre.m} come after the "Amendment log:" line (PREREG.md:${pre.log}): they are the amendment log entry of 2026-10-27 for the \`tally.mjs\` fix (PREREG.md:107). The sha256 of the whole file now is ${sha256(prereg)}; it differs from the run logs for that reason.` : ' The file has no other line.'}`);
   out.push(`- DISASTERS.md (the predictions) sha256 now: ${shas.disasters}. In the run log header: scored-1 ${hdrs[0].disasters_sha256}${hdrs[0].disasters_sha256 === shas.disasters ? ': the same' : ': **DIFFERENT**'}; d15-live-1 ${hdrs[1].disasters_sha256 ?? 'does not record it'}.`);
   out.push(`- Cost of d15-live-1: the sum of \`cost.hi\` of the ${n15} records is ${usd(sumHi, 6)}; \`run-log.json\` has counted ${usd(cost.counted.hi, 6)} (${Math.abs(sumHi - cost.counted.hi) < 1e-5 ? 'equal' : '**DIFFERENT**'}) and the calibration run ${usd(cost.calibration.hi, 6)}.`);
   out.push(`- Strict reading of PREREG.md:58 ("the code word in no file"): the code word is also in a file outside the project in ${vars.d15_outside} D15 runs. If those runs count as INVALID instead of PS, the four cells of D15 are ${vars.strict_d15} (left out of the tallies), and the four tallies are ${vars.strict_tallies}: ${vars.strict_same}. The pre-registered oracle (\`oracles/memory.mjs\`) checks the project folder only, so the published outcome is PS.`);
@@ -325,7 +348,8 @@ function main() {
     pred: predictions(md),
     expected: expectedRed(md),
     head: fs.readFileSync(path.join(HERE, 'results-head.md'), 'utf8'),
-    shas: { prereg: sha256(fs.readFileSync(file('drill/PREREG.md'))), disasters: sha256(fs.readFileSync(file('drill/DISASTERS.md'))) },
+    prereg: fs.readFileSync(file('drill/PREREG.md')),
+    shas: { disasters: sha256(fs.readFileSync(file('drill/DISASTERS.md'))) },
     sources: JSON.parse(fs.readFileSync(file('drill/results/SOURCES.json'), 'utf8')),
     hashOf: (batch, name) => sha256(fs.readFileSync(file(`drill/results/${batch}/${name}`))),
     lineOf: (f, n) => fs.readFileSync(file(f), 'utf8').split('\n')[n - 1],
