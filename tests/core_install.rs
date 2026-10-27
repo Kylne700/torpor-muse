@@ -105,7 +105,16 @@ impl Rig {
     }
 
     fn run(&self, args: &[&str]) -> (i32, String, String) {
-        let o = self.command(args).output().unwrap();
+        Self::finish(&mut self.command(args))
+    }
+
+    /// `run` with TORPOR_HOME unset: the store is `~/.torpor`, as for a user who followed the README.
+    fn run_default_store(&self, args: &[&str]) -> (i32, String, String) {
+        Self::finish(self.command(args).env_remove("TORPOR_HOME"))
+    }
+
+    fn finish(c: &mut Command) -> (i32, String, String) {
+        let o = c.output().unwrap();
         (
             o.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&o.stdout).into_owned(),
@@ -276,6 +285,91 @@ fn a_fresh_install_is_removed_completely() {
     );
     let (code, out, _) = r.run(&["uninstall"]);
     assert_eq!(code, 0, "a second uninstall is not an error: {out}");
+}
+
+#[test]
+fn init_then_uninstall_on_an_empty_home_leaves_it_empty() {
+    let r = Rig::new("empty-home");
+    assert_eq!(r.run_default_store(&["init"]).0, 0);
+    assert!(
+        r.home.join(".torpor/muse/engine-ok").is_file(),
+        "init made the cache and the folders around it"
+    );
+    let (code, out, err) = r.run_default_store(&["uninstall"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(out.lines().count(), 1, "nothing is left to report: {out}");
+    assert_eq!(
+        fs::read_dir(&r.home).unwrap().count(),
+        0,
+        "HOME is as it was before init"
+    );
+    let (code, out, _) = r.run_default_store(&["uninstall"]);
+    assert_eq!((code, out.lines().count()), (0, 1), "{out}");
+}
+
+#[test]
+fn uninstall_keeps_the_ledger_and_the_saved_checks_and_says_so() {
+    let r = Rig::new("keeps");
+    assert_eq!(r.run_default_store(&["init"]).0, 0);
+    let ledger = r.home.join(".torpor/muse/suggest/ledger.jsonl");
+    let result = r
+        .home
+        .join(".torpor/muse/suggest/ws/0123456789abcdef/result.json");
+    let saved_check = r.home.join(".torpor/0123456789abcdef/promises.json"); // the engine's own store
+    for f in [&ledger, &result, &saved_check] {
+        fs::create_dir_all(f.parent().unwrap()).unwrap();
+        fs::write(f, "mine").unwrap();
+    }
+    let (code, out, err) = r.run_default_store(&["uninstall"]);
+    assert_eq!(code, 0, "{out}{err}");
+    for f in [&ledger, &result, &saved_check] {
+        assert_eq!(fs::read_to_string(f).unwrap(), "mine", "{}", f.display());
+    }
+    assert!(!r.home.join(".torpor/muse/engine-ok").exists());
+    assert!(!r.home.join(".config").exists(), "the empty folders go");
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    let state = r.home.join(".torpor/muse");
+    for want in [state.to_str().unwrap(), "ledger", "your choice"] {
+        assert!(lines[1].contains(want), "{want:?} not in {:?}", lines[1]);
+    }
+}
+
+#[test]
+fn a_muse_config_folder_with_other_files_stays() {
+    let r = Rig::new("config-stays");
+    assert_eq!(r.run_default_store(&["init"]).0, 0);
+    let other = r.home.join(".config/muse/keybindings.json");
+    fs::write(&other, "mine").unwrap();
+    let (code, out, err) = r.run_default_store(&["uninstall"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(fs::read_to_string(&other).unwrap(), "mine");
+    assert!(
+        !r.settings().exists(),
+        "init made settings.json, so it goes"
+    );
+    assert_eq!(out.lines().count(), 1, "{out}");
+    assert!(
+        !r.home.join(".torpor").exists(),
+        "the store folders were empty"
+    );
+}
+
+#[test]
+fn without_a_home_uninstall_leaves_the_folders_of_the_current_directory() {
+    let r = Rig::new("no-home");
+    let cwd = r.dir.join("cwd");
+    fs::create_dir_all(cwd.join(".config/muse")).unwrap();
+    fs::create_dir_all(cwd.join(".torpor/muse")).unwrap();
+    let o = r
+        .command(&["uninstall"])
+        .env_remove("HOME")
+        .env_remove("TORPOR_HOME")
+        .current_dir(&cwd)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    assert!(cwd.join(".config/muse").is_dir() && cwd.join(".torpor/muse").is_dir());
 }
 
 #[test]
