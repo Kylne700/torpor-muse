@@ -1,6 +1,6 @@
 # End-to-end acceptance against a real Muse Code (stage S3a-accept)
 
-Muse Code 1.4.13 (1.4.13-R6996.1), engine torpor 2.3.1 (the pinned binary), adapter torpor-muse 0.1.0. All runs on 2026-10-26 (UTC); first keyed call 21:35Z, last 23:22Z. Facts only from what ran; anything else says NOT VERIFIED.
+Muse Code 1.4.13 (1.4.13-R6996.1), engine torpor 2.3.1 (the pinned binary), adapter torpor-muse 0.1.0. The S3a-accept runs were on 2026-10-26 (UTC), first keyed call 21:35Z, last 23:22Z; the S3a-finish ECHO re-run (last section) was on 2026-10-27 (UTC). Facts only from what ran; anything else says NOT VERIFIED.
 
 Models: every keyed Muse turn used `muse-spark-1.3-contributor` (contributor-priced id, `--contributor-mode off`, `--reasoning-effort low`, always `--max-model-steps`, `exec` only, never a keyed TUI). The two detached writer calls of A10 used `muse-spark-1.3` (the writer's default). ECHO runs (`--provider echo`) call no model. Spend: 84 Muse responses plus 2 writer calls = $0.1187 (lo) .. $0.2644 (hi) of the $3.00 cap. The per-response ledger (model id, tokens, price) is kept outside the repo.
 
@@ -20,7 +20,7 @@ Builds: **B1** = adapter built from a9458a6 (the last source change; the later m
 | A7 `/rewind` between turns, and mid-run | PASS, with a finding (below) | between turns B0, mid-run B1 | v2.1 |
 | A8 rejected hook reported by doctor; engine removed gives exit 1 | PASS | B0 by hand; B1 via e2e/run.sh | v1; v3 |
 | A9 Stop check sleeping 30 s is cut at the engine deadline, nothing orphaned | PASS (harder variant not run) | B0 | v2.1 |
-| A10 praise turn starts the detached writer, engine records a proven check, ledger row written | PASS twice. Hook start to result file: 14.77 s, then 12.95 s. Prompt sent to the poll that saw the file: 15.84 s, then 14.49 s | run 1 before the state fix; re-run B1 | v2 and v2.1; v2.1 |
+| A10 praise turn starts the detached writer, engine records a proven check, ledger row written | PASS twice. Hook start to result file: 14.77 s, then 12.95 s. Prompt sent to the poll that saw the file: 15.84 s, then 14.48 s | run 1 before the state fix; re-run B1 | v2 and v2.1; v2.1 |
 
 Defects found and fixed on the way are listed after the checks (four, each with a regression test). One engine property (A4) is not changed: the lead ruled it a documented limit, with no guard in the adapter.
 
@@ -65,7 +65,7 @@ muse exec --provider echo --trust-workspace --contributor-mode off --approval-ju
   echo: say hello                           # 21:31:45Z; the foreign hook fired too (two UserPromptSubmit hooks completed in Muse's log)
 torpor-muse doctor                          # after one turn
   ok   Muse Code 1.4.13 (the version these hooks were tested with)
-  ok   gate live: Stop ran 0s ago in session s1 (1 finished turn(s))
+  ok   gate live: Stop ran 0s ago in session s2 (1 finished turn(s))
   doctor: nothing to fix
 ```
 
@@ -99,7 +99,7 @@ The vault of workspace a10 held the check of promise #1 "Login works now" (saved
 - Cause (engine files at the pinned tag pre-event-final): a bash command gets the store verdict only when a writer (`rm`, `mv`, `cp`, `sqlite3`, `truncate`, `chmod`; engine `src/destructive.rs:18`) or a redirect is combined with a store path as an argument, or with a `cd` into the store (engine `src/destructive.rs:785-786`); the verdict becomes the deny at engine `src/hook.rs:973`. `protected_edit` (engine `src/hook.rs:982`) covers edit tools only. A plain read of a store path passes. The engine's own README says (line 219): "The AI that wrote a check knows what is in it. Torpor hides the stored check from the AI. In this version your own coding agent writes the checks, so the agent that wrote a check knows its source for that session, and hiding it protects only later sessions." In a later session the Muse model can still read it.
 - This repo's README.md, NEW-VS-OLD.md, src/ and tests/ make no "hidden check" claim (searched on the merged tree, before the sentence in the next bullet was added to README.md).
 - **Lead ruling: documented as a limit, no guard.** The adapter gets no read guard (a check on the path text is easy to get around and would invite a claim it cannot keep). README.md now says: "Muse's model can read Torpor's stored checks; the engine refuses only changes to its store." The result stays FAIL.
-- `drill/PREREG.md:42` plans a live check before the first scored run: "a model-run `cat` of a hidden check file that the adapter denies at PreToolUse. If the call runs anyway, every scored batch uses `strict`". This A4 run is that call, and it ran anyway; the `rm` control, a change to the store, was refused and Muse logged it as `blocked`. Which of the two decides the drill's deny contract is the lead's call.
+- `drill/PREREG.md:42` plans a live check before the first scored run: "a model-run `cat` of a hidden check file that the adapter denies at PreToolUse. If the call runs anyway, every scored batch uses `strict`". A4 made the same kind of call (a model-run `cat` of a stored check), but the adapter did not deny it (the hook completed with exit 0 and empty output), so it is not a denied call that ran anyway. The `rm` control, a change to the store, was denied and Muse logged it as `blocked`. Whether that settles the drill's deny contract, or the PREREG check still has to be run with a `cat` that the adapter denies, is the lead's call.
 - A4c (a real subagent) found defect E1 below.
 
 ## A5: whose words (B0, v2.1)
@@ -162,7 +162,7 @@ META_API_KEY="$(cat <KEYFILE>)" NET=on KEYFILE=on <T>/bin/bw.sh <T>/bin/a10-t2.s
   then poll <T>/store/muse/suggest/ws/*/result.json every 1 s (the writer dies with the sandbox, so the wait is inside it)
 ```
 - **Run 1** (before the state fix): Muse's UserPromptSubmit hook started 22:03:34.662Z (Muse log), `result.json` was written 22:03:49.433Z (file time) = **14.77 s** hook start to result file; from the script's send to the poll that saw the file it was 15.84 s. Outcome proven; promise `#1 Login works now · shadow`; proof 5 of 5 on the start of turn 2, failed 2 of 2 on the start of turn 1; ledger row model `muse-spark-1.3`, 3295 tokens in, 691 out, $0.007056, file mode 600.
-- **Re-run on B1** (ws a10b): the script sent the prompt at 23:01:37.33Z and the 1 s poll saw `result.json` 14.49 s later; by Muse's log and the file time the hook started 23:01:38.27Z and the file was written 23:01:51.23Z = **12.95 s** hook start to result file (its `ms` field says 12 946). `result.json`: outcome `proven`, promise 1, saved, 1 call, model `muse-spark-1.3`, 12 946 ms, $0.007033, message "Promise #1 "Login works with session cookie" saved. Proof: passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the start of turn 1. In shadow for now ...". `promise show 1`: step 1 "http: proves login works for demo account alice", step 2 "http: proves login session persists across requests", "Broken copies: the check failed on 1 of 1 copies", "Shadow: 0 of 3 clean days". Writer ledger `<T>/store/muse/suggest/ledger.jsonl` (file mode 600, folder 700): 23:01:38Z, `muse-spark-1.3`, input 3287, cached 0, output 688, $0.007033, status completed, "attempt 1, 3.6s". The writer's state is now under the Torpor home (defect F1). Engine log: turn 1 "edits: auth.js", turn 2 "login works now, thanks". Doctor afterwards (exit 0): NOT VERIFIED, no doctor output of this run was kept. Only the sandbox's own processes were left afterwards.
+- **Re-run on B1** (ws a10b): the script sent the prompt at 23:01:37.333Z and the 1 s poll saw `result.json` 14.48 s later; by Muse's log and the file time the hook started 23:01:38.273Z and the file was written 23:01:51.226Z = **12.95 s** hook start to result file (its `ms` field says 12 946). `result.json`: outcome `proven`, promise 1, saved, 1 call, model `muse-spark-1.3`, 12 946 ms, $0.007033, message "Promise #1 "Login works with session cookie" saved. Proof: passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the start of turn 1. In shadow for now ...". `promise show 1`: step 1 "http: proves login works for demo account alice", step 2 "http: proves login session persists across requests", "Broken copies: the check failed on 1 of 1 copies", "Shadow: 0 of 3 clean days". Writer ledger `<T>/store/muse/suggest/ledger.jsonl` (file mode 600, folder 700): 23:01:38Z, `muse-spark-1.3`, input 3287, cached 0, output 688, $0.007033, status completed, "attempt 1, 3.6s". The writer's state is now under the Torpor home (defect F1). Engine log: turn 1 "edits: auth.js", turn 2 "login works now, thanks". Doctor afterwards (exit 0): NOT VERIFIED, no doctor output of this run was kept. Only the sandbox's own processes were left afterwards.
 
 ## Defects found and fixed (each with a regression test)
 
