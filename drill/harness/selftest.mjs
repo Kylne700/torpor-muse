@@ -187,6 +187,8 @@ ok('interpret: over the output cap failed', I('Stop', { stdout: `{"systemMessage
 ok('interpret: closed schema (unknown top key)', I('Stop', { stdout: '{"x":1}' }).failed);
 ok('interpret: the poison answer is rejected', I('PreToolUse', { stdout: '{"torpor_drill_poison":1}' }).failed);
 ok('interpret: PreToolUse deny with a reason is honoured', I('PreToolUse', { stdout: denyJson('no') }).action.kind === 'deny');
+ok('interpret: a LIVE rule (pre-deny) is not listed unverified', I('PreToolUse', { stdout: denyJson('no') }).unverified.length === 0);
+ok('interpret: a BIN rule that shaped the result is listed unverified', I('PreToolUse', { stdout: '{"decision":"block","reason":"no"}' }).unverified.includes('pre-legacy'));
 ok('interpret: deny without a reason failed', I('PreToolUse', { stdout: denyJson() }).failed);
 ok('interpret: deny with an empty reason failed', I('PreToolUse', { stdout: denyJson('  ') }).failed);
 ok('interpret: strict contract never honours a deny', I('PreToolUse', { stdout: denyJson('no') }, 'strict').action.kind === 'none');

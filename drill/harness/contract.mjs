@@ -38,7 +38,7 @@ export const RULES = [
   ['timeout', 'G0', 'timeout is an integer in seconds; at the timeout the process group is killed and the session goes on without an answer'],
   ['input-size', 'SHIM', 'a payload over 256 KiB IS delivered (1.5 MB seen); replay has no input size cap'],
   ['settings', 'G0', 'a malformed settings file, or schema_version other than 1, makes Muse refuse to start; a bad timeout drops the whole hooks source; other per-hook mistakes skip that hook'],
-  ['pre-deny', 'BIN', 'PreToolUse hookSpecificOutput.permissionDecision "deny" with a non-empty permissionDecisionReason stops the call from running (strict contract: never honoured)'],
+  ['pre-deny', 'LIVE', 'PreToolUse hookSpecificOutput.permissionDecision "deny" with a non-empty permissionDecisionReason stops the call from running (strict contract: never honoured)'],
   ['pre-legacy', 'BIN', 'PreToolUse top-level decision "block" is an "unsupported legacy output": failed, fail open, the call runs'],
   ['pre-exit2', 'DOCS', 'PreToolUse exit 2 with a stderr text is documented as blocking; NOT honoured (call runs), recorded'],
   ['pre-values', 'BIN', 'PreToolUse: "allow" without updatedInput, an unknown permissionDecision, or a reason without a decision is failed'],
@@ -228,12 +228,12 @@ const BLOCK_OK = ['Stop', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure
 
 // interpret(event, { exit, stdout, stderr, timedOut }, { contract: 'binary' | 'strict' })
 // -> { status, failed, why, json, action: { kind: none|deny|block|stop, reason }, context, systemMessage, rules: [ids used],
-//      unverified: [rule ids whose non-G0 status shaped the result] }
+//      unverified: [rule ids whose status, neither G0 nor LIVE, shaped the result] }
 export function interpret(event, run, { contract = 'binary' } = {}) {
   const r = { status: 'completed', failed: false, why: null, json: null, action: { kind: 'none' }, context: null, systemMessage: null, rules: [], unverified: [] };
   const used = (id, shaped = false) => {
     if (!r.rules.includes(id)) r.rules.push(id);
-    if (shaped && ruleStatus(id) !== 'G0' && !r.unverified.includes(id)) r.unverified.push(id);
+    if (shaped && !['G0', 'LIVE'].includes(ruleStatus(id)) && !r.unverified.includes(id)) r.unverified.push(id);
   };
   const fail = (why, rule, shaped = true) => {
     r.status = 'failed';

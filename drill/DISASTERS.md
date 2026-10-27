@@ -684,7 +684,7 @@ Nothing in this stage was run, by rule, so every prediction rests on reading. Th
 
 - The gate setup of section 5 reaching blocking in a drill run: the spec lint, the proof, the cold start under 10 seconds, and the check failing on the copy with part of the fix undone.
 - The adapter: its name, its mapping of tool names and permission mode, and the transcript that gives a human origin (A3).
-- Whether the engine accepts Muse's payloads unchanged in arm 3, whether Muse accepts the adapter's answers in arm 4 (A6), and the arm 4 deny path of D06 and D09.
+- Whether the engine accepts Muse's payloads unchanged in arm 3, whether Muse accepts the adapter's answers in arm 4 (A6), and the arm 4 deny path of D06 and D09 (v3: that Muse honours the adapter's PreToolUse deny was seen live, `e2e/RESULTS.md` A4 and E1; whether the engine denies these two calls, A3 b and A5, is still NV).
 - Whether Muse's bash tool sets CLAUDECODE (A4), which decides D13, D14 and D16 in arm 3.
 - Whether the engine's saves still happen when its answers are rejected (NC1).
 - Whether Stop fires once per turn in the harness.
