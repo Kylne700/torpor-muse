@@ -29,6 +29,48 @@ Muse's model can read Torpor's stored checks; the engine refuses only changes to
 
 AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo. Muse Code is planned to build the demo app, and that is not done yet.
 
+<!-- INSTALL:start -->
+## Install
+
+Linux (x64, arm64) and macOS (Apple silicon, Intel). It needs `curl` and `ca-certificates`; on a bare Debian or Ubuntu the first lines install them (as root, or with sudo). The block downloads torpor-muse v0.1.0 and the pinned Torpor engine (the commit and sha256 in `engine.lock`), checks the sha256 of both, and puts them in `~/.local/bin`.
+
+```sh
+if ! command -v curl >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  s=; [ "$(id -u)" -eq 0 ] || s=sudo
+  $s apt-get update -qq && $s apt-get install -y -qq curl ca-certificates
+fi
+sh -eu <<'EOF' && export PATH="$HOME/.local/bin:$PATH"
+rel=https://github.com/Kylne700/torpor-muse/releases/download/v0.1.0
+eng=https://raw.githubusercontent.com/Kylne700/torpor/a2289f4c3cdc7779f18cda56f95c607bb01a88cc/dist
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) p=linux-x64 e=0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f ;;
+  Linux-aarch64 | Linux-arm64) p=linux-arm64 e=0e6e61341e735319b8a5d857031324c192ea675b8d9b4fb29e96672dc6039c7d ;;
+  Darwin-x86_64) p=darwin-x64 e=8b4bbf292026537b0b84db69f3c0c0463650ca76e3d21dd93863d51c40c184dc ;;
+  Darwin-arm64) p=darwin-arm64 e=0ffd3a1c05f8ddefef4ffe8c04da6c4118625cb3a5465af94a359624650a948b ;;
+  *) echo "no torpor-muse build for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+check() { if command -v sha256sum >/dev/null 2>&1; then sha256sum -c "$1"; else shasum -a 256 -c "$1"; fi; }
+d=$(mktemp -d)
+trap 'rm -rf "$d"' EXIT
+cd "$d"
+curl -fsSL -o torpor "$eng/$p/torpor"
+echo "$e  torpor" > torpor.sha256
+check torpor.sha256
+curl -fsSL -o "torpor-muse-$p" "$rel/torpor-muse-$p"
+curl -fsSL -o SHA256SUMS "$rel/SHA256SUMS"
+grep " torpor-muse-$p\$" SHA256SUMS > torpor-muse.sha256
+check torpor-muse.sha256
+mkdir -p "$HOME/.local/bin"
+install -m 755 torpor "$HOME/.local/bin/torpor"
+install -m 755 "torpor-muse-$p" "$HOME/.local/bin/torpor-muse"
+EOF
+```
+
+With the GitHub CLI you can also check that the binary was built by this repository's release workflow: `gh attestation verify ~/.local/bin/torpor-muse -R Kylne700/torpor-muse`.
+
+Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks them, and `torpor-muse uninstall` removes them.
+<!-- INSTALL:end -->
+
 ## License
 
 MIT OR Apache-2.0, the same as Torpor.
