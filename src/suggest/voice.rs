@@ -642,7 +642,7 @@ mod tests {
                 .write_all(text.as_bytes())
                 .unwrap();
         }
-        d
+        fs::canonicalize(&d).unwrap() // the root a run gets is canonical; macOS temp dirs sit behind a symlink
     }
 
     #[test]
@@ -832,8 +832,8 @@ mod tests {
                 } else {
                     Vec::new()
                 };
-                // a call that fails (network, 5xx, rate limit) is made again 10 s later, up to 3 tries; a transcript that
-                // came back is never asked for twice
+                // a call that fails, whatever the error, is made again 10 s later, up to 3 tries in all and then the run
+                // stops; a transcript that came back is never asked for twice
                 let mut tries = 0;
                 let (text, ms) = loop {
                     tries += 1;

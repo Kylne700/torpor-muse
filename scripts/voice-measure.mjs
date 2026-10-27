@@ -188,7 +188,7 @@ function table(rowsFile) {
   const tried = rows.filter((r) => r.tries > 1);
   out.push('', `Hits: ${h.hitsWithout} of ${n} without keywords, ${h.hitsWith} of ${n} with.`);
   out.push(`Artifacts (a word said twice, or two known words stuck together): ${h.artifactsWithout} without, ${h.artifactsWith} with.`);
-  out.push(`Calls that had to be repeated after a network error or a 5xx (up to 3 tries each): ${tried.length}.`);
+  out.push(`Calls that took more than one try (any failed call is made again after 10 s, up to 3 tries in all; a third failure stops the run): ${tried.length}.`);
   out.push('', `Rule (fixed before the run): keywords are on by default only if hits with > hits without and artifacts with <= artifacts without.`);
   out.push(`Result: keywords are ${decide(h) ? 'ON' : 'OFF'} by default.`);
   console.log(out.join('\n'));

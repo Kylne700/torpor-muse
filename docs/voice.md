@@ -95,7 +95,7 @@ The keywords sent in the "with" arm (the output of the shipped derivation for ea
 
 Hits: 6 of 18 without keywords, 11 of 18 with.
 Artifacts (a word said twice, or two known words stuck together): 6 without, 2 with.
-Calls that had to be repeated after a network error or a 5xx (up to 3 tries each): 0.
+Calls that took more than one try (any failed call is made again after 10 s, up to 3 tries in all; a third failure stops the run): 0.
 
 Rule (fixed before the run): keywords are on by default only if hits with > hits without and artifacts with <= artifacts without.
 Result: keywords are ON by default.

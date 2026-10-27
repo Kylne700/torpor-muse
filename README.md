@@ -31,9 +31,11 @@ A live run, 2026-10-27 05:26 UTC: a synthetic voice (flite) says "login works no
 
 It cost USD 0.00015 for the transcription and USD 0.005265 for the check-writer.
 
-## What is sent to Meta (planned)
+## What is sent to Meta
 
-Planned, not built. The check-writer would send two things to Muse Spark through the Meta Model API (planned model id `muse-spark-1.3`). The first is the words the user typed. The second is a capped excerpt of the project, taken only from allowlisted files and redacted before it is sent. It would run in the background after a prompt in Muse Code, or when the user runs `torpor-muse suggest` by hand.
+The check-writer sends two things to Muse Spark through the Meta Model API (model id `muse-spark-1.3`). The first is the words the user typed, whether or not they say that something works (the model decides that); anything that looks like a key is masked, and a prompt over 1500 characters is cut in the middle. The second is a capped excerpt of the project, taken only from allowlisted files and redacted before it is sent. It runs in the background after a prompt in Muse Code, or when the user runs `torpor-muse suggest` by hand.
+
+`torpor-muse say <clip.wav>` first sends the audio file to Meta's Voice Transcribe API (model `muse-voice-transcribe-1.0`) and, unless `--no-keywords` is given, up to 24 words from the names of the project's code files and the URL paths in its code. The words that come back then go to the check-writer as typed words, so the two things above are sent as well.
 
 The Torpor engine sends nothing to Meta. Its own README (Privacy section) says it makes no AI model calls and uploads nothing of the project. The same section says its only download is `torpor runner install`, which runs after the user confirms.
 
