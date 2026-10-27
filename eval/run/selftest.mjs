@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { armCList, armCSettings, armCShape, armCText, AGENTS_MD, ENGINE_EVENTS } from './arms.mjs';
 import { rmEp, runEpisode } from './episode.mjs';
+import { parseArgs } from './run.mjs';
 import * as L from './lib.mjs';
 import { egressRead, sandbox } from './sandbox.mjs';
 
@@ -52,7 +53,9 @@ ev({ kind: 'model_completed', model: cost.model, usage: { input_tokens: cost.inp
 if (prompt === '@@steps') { console.error('muse: model did not reach a terminal state within 40 step(s)'); process.exit(1); }
 console.log('done');
 `;
-const WRITER = `setTimeout(() => { const d = process.argv[2]; require('fs').mkdirSync(d, { recursive: true }); require('fs').appendFileSync(d + '/ledger.jsonl', '{"usd":0.01}\\n'); }, 1500);\n`;
+const WRITER_MSG = 'x'.repeat(145) + 'selftest-not-a-key' + ' tail ' + 'y'.repeat(40); // the fake key straddles char 160, where the note is cut
+const WRITER = `setTimeout(() => { const fs = require('fs'), d = process.argv[2]; fs.mkdirSync(d + '/ws/abc', { recursive: true }); fs.appendFileSync(d + '/ledger.jsonl', '{"usd":0.01}\\n');
+  fs.writeFileSync(d + '/ws/abc/result.json', JSON.stringify({ v: 1, at: '2026-10-27T00:00:01Z', outcome: 'rejected', saved: false, usd: 0.01, message: ${JSON.stringify(WRITER_MSG)} })); }, 1500);\n`;
 let fakeN = 0;
 function fakeMuse(costObj = { model: 'muse-spark-1.3-contributor', input: 1000, output: 500 }) {
   const d = mk(`fake-muse-${++fakeN}`);
@@ -98,6 +101,10 @@ await test('prices: contributor and standard ids, lo below hi', () => {
   assert.ok(Math.abs(c.hi - (1 * 0.1 + 0.4 * 0.002 + 0.16 * 0.2)) < 1e-9);
   assert.ok(Math.abs(s.lo - (0.6 * 1.25 + 0.4 * 0.15 + 0.1 * 4.25)) < 1e-9);
   assert.ok(c.lo < c.hi && s.lo < s.hi && c.hi < s.lo);
+});
+
+await test('runner default: the writer cap lets all 6 triggers pass (6 x the dearest first-try worst case, $0.0502)', () => {
+  assert.ok(parseArgs([]).writerDayCap >= 6 * 0.0502, 'a lower cap refuses every writer trigger after the first');
 });
 
 await test('spend: refuses a turn that could pass the cap, on synthetic ledgers, and counts running turns and past attempts', () => {
@@ -265,6 +272,7 @@ await test('episode (arm A, control): six turns, valid row, nothing injected, or
   assert.ok(!fs.existsSync(path.join(epDirs(cx)[0], 'turn.prompt')));
   assert.ok(fs.existsSync(path.join(cx.outDir, 'episodes', 'notes-ctrl__A__r1__a1', 'session-1.jsonl.gz')));
   assert.equal(row.manifest.install.startsWith('nothing'), true);
+  assert.deepEqual(row.writer_results, [], 'a row without a writer carries an empty list');
   assert.equal(fs.existsSync(path.join(epDirs(cx)[0], 'home', '.config', 'muse', 'settings.json')), false, 'arm A has not even a settings.json');
   clean(cx);
 });
@@ -331,6 +339,9 @@ await test('episode (arm D, keyed, writer on): the launcher waits for the detach
   assert.equal(row.turn_log[1].writer_usd, 0.01); assert.equal(row.turn_log[0].drain_ms < 600, true);
   assert.ok(row.writer_wait.waited_ms >= 200 && row.writer_wait.waited_ms === row.turn_log.reduce((n, t) => n + t.drain_ms, 0), JSON.stringify(row.writer_wait));
   assert.equal(row.writer_wait.still_running, 0);
+  assert.deepEqual(row.writer_results, [{ turn: 2, at: '2026-10-27T00:00:01Z', outcome: 'rejected', saved: false, usd: 0.01, note: 'x'.repeat(145) + '[key] tail yyyy' }],
+    'one new verdict (read after turn 2, not repeated after the later turns), the key scrubbed before the note is cut at 160');
+  assert.ok(!JSON.stringify(row).includes('selftest-not'), 'no part of the key is left in the row');
   assert.deepEqual(row.egress, { allowed: 0, denied: 0, via_fwd: 0, other: [] });
   assert.ok(fs.existsSync(path.join(cx.outDir, 'episodes', 'notes-ctrl__D__r1__a1', 'proxy.log')), 'the proxy log is kept beside the session logs');
   clean(cx);

@@ -22,7 +22,8 @@ const usage = `usage: node eval/run/run.mjs --tasks all|id,id --arms A,B,C,D --r
   a keyed run reads the key from the META_API_KEY environment variable (never from a flag).`;
 
 export function parseArgs(argv) {
-  const a = { arms: 'A,B,C,D', reps: 1, seed: 1, effort: 'medium', maxSteps: 40, turnTimeoutS: 420, episodeCapS: 900, concurrency: 3, writerDayCap: 0.05 };
+  // writerDayCap: per episode (a fresh ledger each). 0.35 = 6 triggers x the dearest first-try worst case ($0.0502) + 16% margin, see RUN.md "The writer in arm D".
+  const a = { arms: 'A,B,C,D', reps: 1, seed: 1, effort: 'medium', maxSteps: 40, turnTimeoutS: 420, episodeCapS: 900, concurrency: 3, writerDayCap: 0.35 };
   const flags = { echo: 'echo', 'keep-ep': 'keepEp', 'dry-run': 'dryRun', 'allow-visible': 'allowVisible' };
   const names = { tasks: 'tasks', arms: 'arms', reps: 'reps', seed: 'seed', model: 'model', 'cap-usd': 'capUsd', out: 'out', muse: 'muse', engine: 'engine', adapter: 'adapter',
     'writer-key-file': 'writerKeyFile', 'writer-day-cap': 'writerDayCap', effort: 'effort', 'max-steps': 'maxSteps', 'turn-timeout-s': 'turnTimeoutS', 'episode-cap-s': 'episodeCapS',

@@ -101,6 +101,7 @@ export async function runEpisode(job, attempt, cx) {
   };
   const turnLog = [];
   let bit = null, bitFailed = null, injectApplied = null, held = [], arm = null, leftover = 0, writerWait = null, rateHits = 0, egress = null;
+  const wres = [], seenW = new Set(); // the check-writer's verdicts, one per new result.json `at` (writer-on turns only)
   let invalid = null, retryable = true, stopRun = false, timedOut = false;
   const fail = (reason, retry = true) => { if (!invalid) { invalid = L.scrub(reason, cx.key); retryable = retry; } };
   let spentSoFar = { hi: 0, lo: 0, w: 0 }, paused = 0;
@@ -147,6 +148,7 @@ export async function runEpisode(job, attempt, cx) {
         leftover += killEp(ep, keepTorpor).length;
         t = L.tally(home, row.model);
         w = L.writerLedger(ep);
+        if (writerWait) wres.push(...L.writerResults(ep, n, seenW, cx.key));
         const d = { steps: t.steps - (turnLog.at(-1)?.cum_steps || 0), hi: t.hi - spentSoFar.hi, lo: t.lo - spentSoFar.lo, w: w.usd - spentSoFar.w };
         spentSoFar = { hi: t.hi, lo: t.lo, w: w.usd };
         endSpend({ usd_hi: d.hi, usd_lo: d.lo, writer_usd_hi: d.w });
@@ -224,6 +226,7 @@ export async function runEpisode(job, attempt, cx) {
   row.bit_failed = bitFailed;
   row.leftover_killed = leftover;
   row.writer_wait = writerWait;
+  row.writer_results = wres;
   row.egress = egress;
   row.valid = !invalid;
   row.invalid_reason = invalid;

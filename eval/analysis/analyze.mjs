@@ -223,6 +223,8 @@ function armReport(units) {
     for (const r of rs) m[r.invalid_reason] = (m[r.invalid_reason] ?? 0) + 1;
     return m;
   };
+  const stray = {}; // egress.other: lines the proxy refused; reported, never a reason to exclude (PREREG section 6)
+  for (const l of atts.flatMap((r) => (Array.isArray(r.egress?.other) ? r.egress.other : []))) stray[String(l)] = (stray[String(l)] ?? 0) + 1;
   const num = (v) => (typeof v === 'boolean' ? +v : v);
   const stat = (f) => ({ median: median(rows.map(f)), total: sum(rows.map(f)) });
   const count = (f) => ({ total: sum(rows.map((r) => num(r[f]))), episodes: wilson(rows.filter((r) => num(r[f]) > 0).length, n) });
@@ -235,6 +237,7 @@ function armReport(units) {
     invalid_attempts: bad.length,
     invalid_attempt_reasons: tally(bad),
     excluded_unit_reasons: tally(units.filter((u) => !u.row).flatMap((u) => u.attempts)),
+    egress_other_lines: stray,
     final_pass: wilson(rows.filter(OUTCOMES.final_pass).length, n),
     later_kept: wilson(rows.filter(OUTCOMES.later_kept).length, n),
     break_found: wilson(risk.filter((r) => r.break_found).length, risk.length),
@@ -384,7 +387,7 @@ function armTable(reps) {
   const ms = (s, fmt) => `${fmt(s.median)} / ${fmt(s.total)}`;
   return table(['metric', ...arms], [
     row('valid units (of units seen)', (r) => `${r.valid} of ${r.units}`),
-    row('excluded: 3 attempts failed / pending', (r) => `${r.exhausted} / ${r.pending}`),
+    row('excluded: no valid attempt (3 failed, or one not re-run) / pending', (r) => `${r.exhausted} / ${r.pending}`),
     row('attempts (invalid)', (r) => `${r.attempts} (${r.invalid_attempts})`),
     row('final_pass', (r) => prop(r.final_pass)),
     row('later_kept', (r) => prop(r.later_kept)),
@@ -410,7 +413,7 @@ export function render(res) {
   const out = [];
   out.push('# Eval results', '');
   out.push(src(source.models, source.run_ids), '');
-  out.push(`Rows read: ${source.rows}. Units (task x arm x rep): ${units.total}; valid ${units.valid}, excluded after ${an.max_attempts} failed attempts ${units.exhausted}, pending ${units.pending}.`);
+  out.push(`Rows read: ${source.rows}. Units (task x arm x rep): ${units.total}; valid ${units.valid}, excluded, no valid attempt (${an.max_attempts} failed attempts, or one not re-run) ${units.exhausted}, pending ${units.pending}.`);
   out.push(`Analysis: \`eval/analysis/analyze.mjs\`, sha256 \`${an.script_sha256}\`; bootstrap seed ${an.seed}, ${an.boot} resamples; Wilson z = ${an.wilson_z.toFixed(6)}.`, '');
   if (warnings.length) out.push('Warnings:', ...warnings.map((w) => `- ${w}`), '');
 
@@ -438,7 +441,7 @@ export function render(res) {
   out.push('', '## 5. Attempts and exclusions, per arm', '');
   for (const [a, r] of Object.entries(res.by_arm)) {
     const list = (m) => Object.entries(m).map(([k, v]) => `"${k.slice(0, 100)}" x${v}`).join('; ') || 'none';
-    out.push(`- ${a}: ${r.units} units, ${r.valid} valid, ${r.exhausted} excluded after ${an.max_attempts} attempts, ${r.pending} pending; ${r.invalid_attempts} of ${r.attempts} attempts invalid. Invalid attempts: ${list(r.invalid_attempt_reasons)}. Excluded units' attempts: ${list(r.excluded_unit_reasons)}.`);
+    out.push(`- ${a}: ${r.units} units, ${r.valid} valid, ${r.exhausted} excluded, no valid attempt (${an.max_attempts} failed attempts, or one not re-run), ${r.pending} pending; ${r.invalid_attempts} of ${r.attempts} attempts invalid. Invalid attempts: ${list(r.invalid_attempt_reasons)}. Excluded units' attempts: ${list(r.excluded_unit_reasons)}. Network lines outside api.meta.ai:443 (egress.other; recorded, never a reason to exclude): ${list(r.egress_other_lines)}.`);
   }
 
   out.push('', '## 6. Per task (pairs only)');

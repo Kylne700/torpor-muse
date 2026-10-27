@@ -132,6 +132,28 @@ export function writerLedger(ep) {
   return out;
 }
 
+// The check-writer's verdicts. Each trigger overwrites one result.json per workspace, so the runner reads it after every turn and keeps one entry per new
+// `at` ({turn, at, outcome, saved, usd, note}). The file sits in the episode folder, which the model can write, so it is parsed as untrusted text;
+// the note is scrubbed first and cut after, so a key can never survive as a prefix at the cut.
+export function writerResults(ep, turn, seen, key) {
+  const out = [];
+  for (const base of [path.join(ep, 'torpor-home', 'muse', 'suggest', 'ws'), path.join(ep, 'home', '.local', 'state', 'torpor-muse', 'ws')]) {
+    let dirs = [];
+    try { dirs = fs.readdirSync(base).sort(); } catch { continue; }
+    for (const d of dirs) {
+      let r;
+      try { r = JSON.parse(fs.readFileSync(path.join(base, d, 'result.json'), 'utf8')); } catch { continue; }
+      if (!r || typeof r.at !== 'string' || seen.has(`${d}|${r.at}`)) continue;
+      seen.add(`${d}|${r.at}`);
+      out.push({
+        turn, at: r.at.slice(0, 40), outcome: typeof r.outcome === 'string' ? r.outcome.slice(0, 20) : null, saved: r.saved === true,
+        usd: Number.isFinite(r.usd) ? round6(r.usd) : null, note: scrub(r.message ?? '', key).replace(/\s+/g, ' ').trim().slice(0, 160),
+      });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- one muse exec, classified
 export function classifyTurn({ code, signal, timedOut, stderr = '' }) {
   if (timedOut) return { kind: 'timeout', reason: 'turn_timeout' };
