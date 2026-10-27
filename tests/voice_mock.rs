@@ -305,7 +305,7 @@ fn the_voice_call_counts_against_the_same_day_cap_as_the_writer() {
 }
 
 #[test]
-fn keywords_go_along_only_when_asked_and_are_the_projects_own_words() {
+fn keywords_are_on_by_default_can_be_turned_off_and_are_the_projects_own_words() {
     let sb = Sandbox::new("kw");
     // a key in a path of the code must not be sent as a "word" nor leave one behind
     sb.write(
@@ -321,14 +321,18 @@ fn keywords_go_along_only_when_asked_and_are_the_projects_own_words() {
 
     let with = sb.say(Some(&m.base()), &[c, "--keywords"], &[]);
     assert_eq!(with.code, 0, "out={:?} err={:?}", with.out, with.err);
+    let default = sb.say(Some(&m.base()), &[c], &[]);
+    assert_eq!(
+        default.code, 0,
+        "out={:?} err={:?}",
+        default.out, default.err
+    );
     let without = sb.say(Some(&m.base()), &[c, "--no-keywords"], &[]);
     assert_eq!(
         without.code, 0,
         "out={:?} err={:?}",
         without.out, without.err
     );
-    let again = sb.say(Some(&m.base()), &[c, "--keywords"], &[]);
-    assert_eq!(again.code, 0, "out={:?} err={:?}", again.out, again.err);
 
     let asr = m.asr();
     assert_eq!(asr.len(), 3);
@@ -338,8 +342,12 @@ fn keywords_go_along_only_when_asked_and_are_the_projects_own_words() {
         json!(["api", "login", "logout", "notes", "routes", "server"]),
         "file names and URL paths of the code, the most repeated first"
     );
-    assert_eq!(words(1), Value::Null, "--no-keywords sends no list at all");
-    assert_eq!(words(2), words(0), "the same project gives the same list");
+    assert_eq!(
+        words(1),
+        words(0),
+        "no flag: the default is on, the same list"
+    );
+    assert_eq!(words(2), Value::Null, "--no-keywords sends no list at all");
     let notes: Vec<String> = sb
         .ledger()
         .iter()
@@ -347,10 +355,12 @@ fn keywords_go_along_only_when_asked_and_are_the_projects_own_words() {
         .map(|r| r["note"].as_str().unwrap().to_string())
         .collect();
     assert!(
-        notes[0].contains("keywords 6") && notes[1].contains("keywords off"),
+        notes[0].contains("keywords 6")
+            && notes[1].contains("keywords 6")
+            && notes[2].contains("keywords off"),
         "{notes:?}"
     );
-    for r in [&with, &without, &again] {
+    for r in [&with, &default, &without] {
         no_key(&sb, &m, r);
     }
 }

@@ -13,8 +13,9 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// Whether the project's words go along when neither flag is given. Set by the measurement in docs/voice.md.
-const KEYWORDS_DEFAULT: bool = false;
+/// Whether the project's words go along when neither flag is given. Set by the measurement in docs/voice.md: the rule
+/// (more hits, no more artifacts) held, 11 of 18 clips with the words against 6 without, 2 artifacts against 6.
+const KEYWORDS_DEFAULT: bool = true;
 const KEYWORDS_MAX: usize = 24;
 /// Limits of the API: more bytes get a 413, more audio a 400.
 const MAX_FILE: u64 = 32_000_000;
@@ -36,16 +37,16 @@ fn help() -> String {
          printed as heard: \"...\", and that text goes to `torpor-muse suggest` exactly as if you had typed it\n\
          (same exit codes).\n\n\
          Privacy: {PRIVACY}\n\
-         With --keywords, up to {KEYWORDS_MAX} words from the names of your code files and the URL paths in your code\n\
+         Keywords ({}): up to {KEYWORDS_MAX} words from the names of your code files and the URL paths in your code\n\
          are sent along with the audio, so that the transcription favours your own words. --no-keywords sends\n\
-         none. Without either flag: {}.\n\n\
+         none, --keywords sends them.\n\n\
          The clip: a WAV file, PCM, mono, 16-bit, 16000 or 24000 Hz, at most 10 minutes and 32 MB. To convert one:\n\
          \x20 {FFMPEG}\n\
          Cost: USD 0.18 per audio hour, counted in the same ledger and day cap as `suggest`; the same API key.",
         if KEYWORDS_DEFAULT {
-            "keywords are sent"
+            "on by default"
         } else {
-            "no keywords are sent"
+            "off by default"
         }
     )
 }
