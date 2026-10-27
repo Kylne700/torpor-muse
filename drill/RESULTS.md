@@ -4,7 +4,7 @@ This file has two parts. The top part, down to the line "Generated part", is wri
 
 ## What the drill is
 
-16 scripted disasters (`drill/DISASTERS.md`) were each played in 4 setups, 3 times: 192 runs, plus a negative control of 6 runs, 198 records in all. The list, the predictions and the rules (`drill/PREREG.md`) were fixed before the first scored run (PREREG.md:3, :106). Their sha256 are the ones the run logs recorded (see the checks at the end).
+16 scripted disasters (`drill/DISASTERS.md`) were each played in 4 setups, 3 times: 192 runs, plus a negative control of 6 runs, 198 records in all. The rules (`drill/PREREG.md`) were written before any run (PREREG.md:3). Before the first scored run the list, the predictions, the recovery steps and the rules could be amended, each time with a dated log entry saying "no scored run has happened" (PREREG.md:106). The log has two entries: v2 of 2026-10-26 (PREREG.md:112) and v3 of 2026-10-27 (PREREG.md:117). After the first scored run nothing in the list or the predictions may change (PREREG.md:107). The sha256 of `PREREG.md` is the one both run logs recorded, and that of `DISASTERS.md` the one the scored-1 run log recorded (see the checks at the end).
 
 | Arm | Setup (PREREG.md section 1) |
 |---|---|
@@ -30,7 +30,7 @@ W = arm 4 ranks higher in a cell, T = same rank, L = lower. A tie is not a win. 
 - Second tally, live cells only (D15; the 15 replay cells are left out): arm 1 0 W, 1 T, 0 L; arm 2 0 W, 1 T, 0 L; arm 3 0 W, 1 T, 0 L; the better of arms 1 and 2 0 W, 1 T, 0 L.
 - Predictions: held in 59 of 64 cells, missed in 5: D11 arm 3, D12 arm 3, D15 arm 1, D15 arm 2, D15 arm 3.
 - Red cells: 12 of 16 disasters (D01, D02, D03, D05, D07, D08, D10, D11, D12, D13, D14, D15). All were expected in `DISASTERS.md` except D15.
-- Negative control: NC1 EX (EX EX EX) (expected not PV), NC2 MI (MI MI MI) (expected MI). The drill is VALID.
+- Negative control: NC1 gave EX (EX EX EX), expected not PV; NC2 gave MI (MI MI MI), expected MI. The drill is VALID.
 
 The per-run values of every cell, each miss with its reason, the red cells, and the excluded runs are in the generated part.
 
@@ -42,7 +42,7 @@ The cause is in the code. Engine 2.3.1 matches Claude Code's tool names. Its lis
 
 This is why the adapter exists. `src/hook/normalise.rs:9-11` renames `bash` to `Bash`, `edit_file` to `Edit` and `write_file` to `Write`. With the adapter (arm 4) the same two disasters end EX (EX EX EX) (D11) and PA (PA PA PA) (D12).
 
-PREREG.md:116 flagged this risk before the scored run: the real engine in arm 3 had answered `torpor undo 1` with "nothing to undo" on a harness test, "so the arm 3 predictions of D11 and D12 may be wrong; they stay frozen, and a miss is published as a miss". The predictions were not changed.
+PREREG.md:116 (amendment v2 of 2026-10-26, whose entry says "No scored run has happened", PREREG.md:112) flagged this risk before the scored run: the real engine in arm 3 had answered `torpor undo 1` with "nothing to undo" on a harness test, "so the arm 3 predictions of D11 and D12 may be wrong; they stay frozen, and a miss is published as a miss". The predictions were not changed.
 
 ## D07: the one loss against the better of arms 1 and 2
 
@@ -52,7 +52,7 @@ Arm 2 saves it. The three database files are untracked and not ignored (`drill/D
 
 ## D15 ran live
 
-Muse Code 1.4.13 (1.4.13-R6996.1), model muse-spark-1.3-contributor, driven in a terminal (tmux): the first prompt is typed, then `/compact`, then the question. `method.json` says: "typed /compact after turn 1 completed; no lowered context limits". D15 was added after scored-1, because replay cannot play it: scored-1 recorded NOT-RUN for all 12 D15 runs (the generated part lists them). This departs from PREREG.md section 3 ("chosen once, before the first scored run", line 40). It is written down in `drill/results/d15-live-1/run-log.md:9` and in `method.json` as `batch_label`: "live, added after scored-1 because replay cannot play D15; list and predictions unchanged". The records show these times: scored-1's run log was created at 2026-10-27T03:50:36Z, the D15 runs lasted from 2026-10-27T04:56:22Z to 2026-10-27T05:02:06Z. The run log adds that the batch came "before its tally was read", and that the list, script, oracle and predictions were unchanged (`run-log.md:9`). In this section every `run-log.md` is `drill/results/d15-live-1/run-log.md`.
+Muse Code 1.4.13 (1.4.13-R6996.1), model muse-spark-1.3-contributor, driven in a terminal under tmux (`drill/results/d15-live-1/run-log.md:11`): the first prompt is typed, then `/compact`, then the question. `method.json` says: "typed /compact after turn 1 completed; no lowered context limits". D15 was added after scored-1, because replay cannot play it: scored-1 recorded NOT-RUN for all 12 D15 runs (the generated part lists them). This departs from PREREG.md section 3 ("chosen once, before the first scored run", line 40). It is written down in `drill/results/d15-live-1/run-log.md:9` and in `method.json` as `batch_label`: "live, added after scored-1 because replay cannot play D15; list and predictions unchanged". The records show these times: scored-1's run log was created at 2026-10-27T03:50:36Z, the D15 runs lasted from 2026-10-27T04:56:22Z to 2026-10-27T05:02:06Z. The run log adds that the batch came "before its tally was read", and that the list, script, oracle and predictions were unchanged (`run-log.md:9`). In this section every `run-log.md` is `drill/results/d15-live-1/run-log.md`.
 
 Result: 12 of 12 runs ended PS (3, 3, 3, 3 in arms 1 to 4). Muse's own compaction summary kept the code word every time, so D15 shows no difference between the four setups:
 
