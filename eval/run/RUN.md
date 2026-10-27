@@ -50,16 +50,17 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
       - Before you tell the user that a task is done, go through NOTES.md and check every entry again. If one of them no longer works, fix it first, or say so plainly.
       - Keep NOTES.md short and current: remove entries for behaviour that was removed on purpose.
 
-* **C engine hand-wired, no adapter.** The file `$HOME/.config/muse/settings.json` of the episode (`{"schema_version": 1, "hooks": {...}}`) holds
-  the engine's ten documented events and nothing else. Each event is one group `{"matcher"?, "hooks": [{"type": "command", "command":
-  "<engine> hook <Event>", "timeout": N}]}`, with the engine's own tool matcher on the three tool events and its documented timeouts
-  (the selftest keeps this list equal to the code):
+* **C engine hand-wired, no adapter.** The file `$HOME/.config/muse/settings.json` of the episode (`{"hooks": {...}, "schema_version": 1}`)
+  holds the engine's ten events and nothing else: no matcher and no translation, exactly arm 3 of the disaster drill (PREREG line 21: "the
+  same wiring"; `drill/harness/arms.mjs` writes the same file, and the selftest compares the two byte for byte). Each event is one group
+  `{"hooks": [{"command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_KEY_FILE=<episode HOME>/.config/torpor/key <engine> hook <Event>",
+  "timeout": N, "type": "command"}]}`, with the timeouts of the engine's own `hooks/hooks.json` (the selftest keeps this list equal to the code):
 
       SessionStart         timeout 10
       UserPromptSubmit     timeout 10
-      PreToolUse           timeout  5  matcher Bash|Edit|Write|MultiEdit|NotebookEdit
-      PostToolUse          timeout  5  matcher Bash|Edit|Write|MultiEdit|NotebookEdit
-      PostToolUseFailure   timeout  5  matcher Bash|Edit|Write|MultiEdit|NotebookEdit
+      PreToolUse           timeout  5
+      PostToolUse          timeout  5
+      PostToolUseFailure   timeout  5
       Stop                 timeout 45
       StopFailure          timeout 10
       SubagentStop         timeout  5
@@ -67,10 +68,12 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
       SessionEnd           timeout  2
 
   Muse uses the same event names, so the mapping is the identity; it lives in ONE place, `ENGINE_EVENTS` and `armCSettings` in `arms.mjs`.
-  The drill's arm 3 must produce the same file: `node eval/run/arms.mjs --print-arm-c` prints it with the engine path as the placeholder
-  `ENGINE_BIN`, and its sha256 (`shape_sha256` in the manifest). The command has no `TORPOR_HOME`: the engine's state is `$HOME/.torpor` of
-  the episode. The engine binary is the one `engine.lock` pins (linux-x64 asset, `torpor 2.3.1`): every C and D row records
-  `engine_sha256` and `engine_lock_match`.
+  The engine's own `hooks.json` also has the matcher `Bash|Edit|Write|MultiEdit|NotebookEdit` on the three tool events; the drill leaves it
+  out, so C does too: the tool events fire for every tool call of Muse, reads and searches included (with the matcher, the first
+  measurements below fired for `bash`, `edit_file` and `write_file` only). `node eval/run/arms.mjs --print-arm-c` prints the file with the
+  placeholders `ENGINE_BIN`, `EPISODE/torpor-home` and, for the key, `EPISODE/` plus the episode's HOME and `.config/torpor/key`, and its
+  sha256 (`shape_sha256` in the manifest). The engine binary is the one `engine.lock` pins (linux-x64 asset, `torpor 2.3.1`): every C and D row
+  records `engine_sha256` and `engine_lock_match`.
 * **D adapter + engine.** `torpor-muse init` run inside the episode HOME, built from this checkout (`adapter_commit`, `adapter_sha256`,
   `adapter_version` in the manifest), engine state in `<episode>/torpor-home`. What `init` wrote (13 groups, measured; the exact file is
   `manifest.settings` of every D row, `settings_sha256` its hash); each command is `env TORPOR_HOME=<episode>/torpor-home
@@ -96,8 +99,14 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
   sandbox (so a model that looks can read it; saved session logs are scrubbed of the key). The writer uses the adapter's default model
   (standard prices, not the contributor id). Without `--writer-key-file`, and always in ECHO runs, the writer is OFF. Every D row says which
   (`manifest.writer` on/off, `writer_day_cap_usd`, `writer_model`) and records the writer's own calls and dollars apart in `writer_calls` and
-  `writer_usd_hi`, read from the writer's ledger. The writer's dollars count against `--cap-usd`. **NOT VERIFIED:** that the writer fires
-  through Muse's hooks (the A10 fix is not on main); no episode with the writer on has been run.
+  `writer_usd_hi`, read from the writer's ledger (`<episode>/torpor-home/muse/suggest/ledger.jsonl` since the writer state fix 1b01d36;
+  an older adapter keeps it under `$HOME/.local/state/torpor-muse`, and both places are read). The writer's dollars count against `--cap-usd`.
+  **The writer is detached and nothing outlives a sandbox, so with the writer on the launcher waits for it after every turn** (`--drain`, up
+  to 60 s, `manifest.writer_drain_s`): the writer of turn n has finished before turn n+1 starts, which a live session would not guarantee.
+  That wait is not the model's time: the turn limit is extended by it and the 15 minutes do not count it. A writer still running when the
+  wait ends is stopped and counted. Per turn: `turn_log[].drain_ms` and `drain_cut_off`; per episode: `writer_wait` (`waited_ms`,
+  `still_running`). Keyed runs with the writer off use `--drain 0`; `--net none` calls take no `--drain` (nothing outlives them). **NOT VERIFIED** until the exploratory episode below has run: that the writer
+  fires through Muse's hooks in this setup.
 
 ## Every Muse Code call
 
@@ -126,8 +135,8 @@ runs `META_API_KEY` (nothing else is passed in). The flags are also in every row
 4. Injected tasks: after turn 3 the host applies `inject.patch` (`git apply --recount -C1 --whitespace=nowarn`), runs the oracle once and
    records `bit`: a `risk.checks` check failed. A patch that does not apply is `inject_failed` (invalid, not re-run). A patch that applied
    but did not bite stays a valid row with `bit: false` (PREREG section 6).
-5. Score: wait up to 60 s for detached writers (arm D), then run `node eval/oracles/<app>.mjs --task <id> --dir <ws>` in a sandbox with no
-   network. Caps: 6 turns, 15 minutes wall clock (a timeout counts as a fail: `final_pass` and `later_kept` false, the oracle still recorded).
+5. Score: run `node eval/oracles/<app>.mjs --task <id> --dir <ws>` in a sandbox with no network (a writer-on turn has already waited for its
+   writer, see above). Caps: 6 turns, 15 minutes wall clock (a timeout counts as a fail: `final_pass` and `later_kept` false, the oracle still recorded).
    A failure of Torpor itself (a hook that exits non-zero or times out) is a result: the row stays valid and `hook_failures` counts it.
 6. Infra failures (sandbox error, Muse crash, oracle exit 2, 429 after the global backoff, an adapter `init` that fails) make the row
    invalid with a reason; the episode is re-run in a fresh workspace up to 2 more times (3 attempts in all), every attempt keeps its row.
@@ -148,24 +157,23 @@ runs `META_API_KEY` (nothing else is passed in). The flags are also in every row
   `sandbox_refused`, `adapter_init_...`, `held_out_violation`, `inject_failed`, `spend_cap`, `fatal`. Every invalid row is one attempt: the
   runner writes at most 3 rows per episode (the analysis refuses more).
 * **Rows that must not be re-run** have the field `retryable: false` (`held_out_violation`, `inject_failed`, and every valid row). The
-  runner never re-runs them. NOTE for the analysis: it does not read `retryable` yet, so a unit with such a row and fewer than 3 attempts
-  shows as "pending". The one-line change is in `buildUnits` of `eval/analysis/analyze.mjs`: treat `rs.some((r) => r.retryable === false)` like
-  3 attempts (status `exhausted`).
-* **PREREG section 6 differs on one point:** it lists "an injection could not be applied" among the infra failures that are re-run; this runner
-  does not re-run `inject_failed` (decision of the lead's brief), because after turn 3 the files differ per arm and a patch that no longer
-  applies may be the arm's own doing.
+  runner never re-runs them, and the analysis reads the field: a unit with such a row and no valid attempt is `exhausted` at once (excluded,
+  counted), not pending. PREREG section 6 lists `inject_failed` as invalid, not re-run, counted and listed with its reason, because after
+  turn 3 the files differ per arm and a patch that no longer applies is the arm's own doing.
 
 ## Sandbox
 
-`sandbox.mjs` runs everything the model touches (and the oracle, patch and init runs) behind one function with the CLI of
-`scripts/sandbox/muse-sandbox.sh` (`--run-dir`, `--ro`, `--net none|meta`, `--allow`, `--chdir`). That script is used when it exists;
-until then the bwrap flags of the confinement rule (v2.1) are used: `--ro-bind / /`, `--dev /dev`, `--proc /proc`, `--tmpfs /tmp`, an empty
-tmpfs over the real home folder and `/run/user`, `--ro-bind` of the Muse install folder (and the engine, adapter and writer key file where an
-arm needs them), `--bind` of the episode folder (the only writable place, with its `muse-share` mounted where Muse keeps its sessions),
-`--new-session --die-with-parent`, `--unshare-net` unless the run is keyed. `EVAL_SANDBOX=v2.1|v3` forces one.
-**Gap under v2.1:** keyed runs share the host network, so keyed runs are limited to concurrency 1.
-Model sandboxes never use a private pid namespace (an arm D writer must outlive Muse); oracle, patch and init sandboxes do.
-The row's `manifest.sandbox` says which backend ran.
+Everything the model touches (and the oracle, patch and init runs) goes through `scripts/sandbox/muse-sandbox.sh` (v3; its README has the
+details). `sandbox.mjs` only builds the argument list (`--run-dir`, `--ro`, `--net none|meta`, `--allow`, `--chdir`, `--drain`) and never
+runs bwrap itself. The launcher clears the environment (only `TORPOR_*` and, with `--net meta`, `META_API_KEY` pass in), puts HOME, TMPDIR
+and `XDG_*` inside the episode folder, hides the real home, always has a private pid namespace, and gives no network under `--net none`.
+Keyed runs use `--net meta`: only `api.meta.ai:443`, through a host proxy that logs every connection. That makes keyed runs safe at any
+`--concurrency`. Nothing outlives a sandbox call except the wait for the writer described above.
+The proxy's log of an episode is `<episode>/net/proxy.log` (hidden from the model). The runner reads it at the end of the episode into the
+row's `egress` (`allowed`, `denied`, `via_fwd`, and `other`: up to 8 distinct lines that are not an allowed `api.meta.ai:443`) and copies it
+to `<out>/episodes/<key>/proxy.log`. **It records and does not stop**: a non-empty `other` is for the operator to read. `via=fwd` lines come
+from hooks and the writer, `via=proxy` from Muse, so `via_fwd > 0` in a writer-on row is a second sign, next to the writer's ledger, that the
+writer reached the API. The row's `manifest.sandbox` has the launcher's commit, whether it was modified, and the sha256 of its two files.
 
 ## Spend
 
@@ -174,7 +182,7 @@ prices (contributor ids: cached 0.002, input 0.10, output 0.20 USD per 1M tokens
 once at the cached price; **`usd_hi` also counts them at the input price and adds reasoning tokens to output**, so `usd_hi` is the bound the cap
 uses (`writer_usd_hi` is the writer's own ledger, summed on top for the cap). Before each turn the runner refuses to start if spent plus the
 dearest turn so far (once per running turn) would pass `--cap-usd`. `spend.jsonl` in the out folder has one line per turn and per late
-writer charge. Rate limits: a 429 or Retry-After from Muse pauses every worker (the pause is not counted in the 15 minutes).
+writer charge. Rate limits: a 429 or Retry-After from Muse pauses every worker (the pause is not counted in the 15 minutes, nor is the writer's wait).
 
 ## Row (schema 1; fields are added, never renamed)
 
@@ -187,18 +195,24 @@ gate_blocks oracle{exit,line} final_pass later_kept break_found valid invalid_re
 * `steps_total` counts `model_completed` events, `calls` counts `model_response_created`; `gate_blocks` counts blocked Stop hooks;
   `hook_failures` counts hook runs that failed or timed out; `rate_limited` counts 429 evidence in the session logs.
 * Extra fields: `retryable`, `hooks_ok`, `hooks_total`, `hook_events` (completed runs per event), `sessions`, `engine_state_files`,
-  `turn_log` (per turn: exit, ms, kind, steps, usd), `inject_applied`, `bit`, `bit_failed`, `leftover_killed`, `writer_wait`.
+  `turn_log` (per turn: exit, ms, kind, steps, usd, and for a writer-on turn `drain_ms`, `drain_cut_off`), `inject_applied`, `bit`,
+  `bit_failed`, `leftover_killed`, `writer_wait` (null unless the writer is on), `egress` (null in ECHO runs).
   `manifest` has the arm's install (with `settings` for C and D), `flags`, `sandbox`, `mode`, `max_steps`, the caps, the versions, and for
   C and D `engine_sha256` and `engine_lock_match`.
 * Scrubbed, gzipped session logs of every attempt are saved in `<out>/episodes/<task>__<arm>__r<rep>__a<attempt>/`.
 
 ## Measured with Muse Code 1.4.13 (keyed, contributor id, task notes-ctrl)
 
+The first three bullets were measured with the first arm C wiring (the engine's matcher on the three tool events, no `TORPOR_HOME` in the
+command) under the old sandbox (v2.1), before arm C was changed to the drill's arm 3 above.
+
 * The engine's matcher `Bash|Edit|Write|MultiEdit|NotebookEdit` fires PreToolUse for exactly the `bash`, `edit_file` and `write_file` calls
   (arm C: 16 + 5 + 5 = 26 hooks) and not for `read_file` (12); the adapter's matcher `bash|edit_file|write_file` fires the same way
   (arm D: 11 + 7 = 18, `search` and `read_file` not). Whether Muse aliases the names or matches case-insensitively is not determined.
-* In arm C the engine's `torpor log` showed all six turns but "no files" for every turn; in arm D it showed the edited files. Cause not
-  checked (the adapter translates Muse's tool names, `src/hook/normalise.rs`; arm C passes Muse's payloads as they are).
+* In arm C the engine's `torpor log` showed all six turns but "no files" for every turn; in arm D it showed the edited files. Not
+  re-measured here. The drill's notes give the cause (`drill/DISASTERS.md` A1): the engine's edit list and shell checks use Claude Code's
+  tool names (`Edit`, `Write`, `Bash`), Muse's are `bash`, `edit_file`, `write_file`, and only the adapter translates them
+  (`src/hook/normalise.rs`). That holds for the arm C of the drill and of this runner alike.
 * Errors: a rejected key ends `muse exec` with exit 1 and "failed to fetch model catalog: authentication failed"; an unknown model id with a
   good key gives exit 1 and "model ... does not exist or you lack access", no tokens. Both are `fatal` (the run stops). The 429 message is
   NOT measured.

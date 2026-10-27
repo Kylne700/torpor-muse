@@ -6,9 +6,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { INSTALL, InfraError } from './arms.mjs';
 import * as L from './lib.mjs';
-import { epProcs, killEp, sandbox, sandboxInfo } from './sandbox.mjs';
+import { egressRead, killEp, sandbox, sandboxInfo } from './sandbox.mjs';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const activeEps = new Set(); // for the runner's signal handler
 
 // ---------------------------------------------------------------- small host helpers
@@ -42,16 +41,6 @@ const countFiles = (dir) => {
   walk(dir);
   return n;
 };
-// Arm D's check-writer runs detached and may finish after Muse is gone: wait for it (not for the model's own leftovers).
-export async function waitWriters(ep, maxMs) {
-  const t0 = Date.now();
-  for (;;) {
-    const w = epProcs(ep).filter((p) => /torpor-muse\S*\s+suggest\b/.test(p.cmd));
-    if (!w.length) return { waited_ms: Date.now() - t0, still_running: 0 };
-    if (Date.now() - t0 >= maxMs) return { waited_ms: Date.now() - t0, still_running: w.length };
-    await sleep(400);
-  }
-}
 const keepTorpor = (p) => /torpor/.test(p.cmd);
 
 // ---------------------------------------------------------------- host-side runs (patch, oracle) in their own sandboxes
@@ -59,7 +48,7 @@ export async function runOracle(cx, ep, task) {
   const od = `${ep}.oracle`;
   const ws = path.join(ep, 'ws');
   const r = await sandbox({
-    runDir: od, ro: [cx.evalDir, ws], net: 'none', pid: true, chdir: od,
+    runDir: od, ro: [cx.evalDir, ws], net: 'none', chdir: od,
     cmd: ['node', path.join(cx.evalDir, 'oracles', `${task.app}.mjs`), '--task', task.id, '--dir', ws], timeoutMs: cx.oracleTimeoutMs || 120000,
   });
   const lines = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -79,7 +68,7 @@ const laterKept = (o) => {
 
 export async function applyInject(cx, ep, task) {
   const patch = path.join(cx.evalDir, 'tasks', task.id, task.inject.patch);
-  const r = await sandbox({ runDir: ep, ro: [patch], net: 'none', pid: true, chdir: path.join(ep, 'ws'), cmd: ['git', 'apply', '--recount', '-C1', '--whitespace=nowarn', patch], timeoutMs: 30000 });
+  const r = await sandbox({ runDir: ep, ro: [patch], net: 'none', chdir: path.join(ep, 'ws'), cmd: ['git', 'apply', '--recount', '-C1', '--whitespace=nowarn', patch], timeoutMs: 30000 });
   return { ok: r.code === 0, why: (r.stderr || '').trim().split('\n')[0].slice(0, 160) };
 }
 
@@ -111,7 +100,7 @@ export async function runEpisode(job, attempt, cx) {
     manifest: null,
   };
   const turnLog = [];
-  let bit = null, bitFailed = null, injectApplied = null, held = [], arm = null, leftover = 0, writerWait = null, rateHits = 0;
+  let bit = null, bitFailed = null, injectApplied = null, held = [], arm = null, leftover = 0, writerWait = null, rateHits = 0, egress = null;
   let invalid = null, retryable = true, stopRun = false, timedOut = false;
   const fail = (reason, retry = true) => { if (!invalid) { invalid = L.scrub(reason, cx.key); retryable = retry; } };
   let spentSoFar = { hi: 0, lo: 0, w: 0 }, paused = 0;
@@ -129,6 +118,10 @@ export async function runEpisode(job, attempt, cx) {
     };
     held = L.heldOutLeaks(ep, cx.heldIdx);
     if (held.length) { fail(`held_out_violation: ${held.slice(0, 3).join(', ')}`, false); throw new Error('stop'); }
+    // Arm D with the writer on: its check-writer runs detached and can outlive Muse, and nothing outlives a sandbox, so the launcher waits for it
+    // (--drain) after every turn. That wait is not the model's time: the turn limit is extended by it and the episode cap does not count it.
+    const drainS = arm.manifest.writer_drain_s || 0;
+    if (drainS) writerWait = { waited_ms: 0, still_running: 0 };
 
     for (let n = 1; n <= L.MAX_TURNS; n++) {
       const p0 = Date.now();
@@ -142,17 +135,23 @@ export async function runEpisode(job, attempt, cx) {
       try {
         fs.writeFileSync(promptFile, `${task.turns[n - 1].prompt}\n`, { mode: 0o600 });
         const m = museCmd(cx, session, promptFile);
-        const r = await sandbox({ runDir: ep, ro: [cx.museDir, ...arm.ro], net, env, chdir: ws, cmd: m.cmd, timeoutMs: Math.min(cx.turnTimeoutMs, left()) });
+        const r = await sandbox({
+          runDir: ep, ro: [cx.museDir, ...arm.ro], net, env, chdir: ws, cmd: m.cmd, timeoutMs: Math.min(cx.turnTimeoutMs, left()) + drainS * 1000, drain: drainS,
+          // Muse's own process (the binary, or a script run by an interpreter), not bwrap's or the launcher's, which only carry its command line
+          watchExit: drainS ? (a) => a.includes(session) && [a[0], a[1]].some((x) => x?.startsWith(`${cx.museDir}/`)) : undefined,
+        });
+        paused += r.drainMs;
+        if (writerWait) { writerWait.waited_ms += r.drainMs; writerWait.still_running += r.drainStopped; }
         fs.rmSync(promptFile, { force: true });
         removePayloads(ep);
         leftover += killEp(ep, keepTorpor).length;
         t = L.tally(home, row.model);
-        w = L.writerLedger(home);
+        w = L.writerLedger(ep);
         const d = { steps: t.steps - (turnLog.at(-1)?.cum_steps || 0), hi: t.hi - spentSoFar.hi, lo: t.lo - spentSoFar.lo, w: w.usd - spentSoFar.w };
         spentSoFar = { hi: t.hi, lo: t.lo, w: w.usd };
         endSpend({ usd_hi: d.hi, usd_lo: d.lo, writer_usd_hi: d.w });
         const c = L.classifyTurn({ code: r.code, signal: r.signal, timedOut: r.timedOut, stderr: r.stderr });
-        turnLog.push({ n, exit: r.code, ms: r.ms, kind: c.kind, steps: d.steps, usd_hi: L.round6(d.hi), writer_usd: L.round6(d.w), cum_steps: t.steps });
+        turnLog.push({ n, exit: r.code, ms: r.ms, kind: c.kind, steps: d.steps, usd_hi: L.round6(d.hi), writer_usd: L.round6(d.w), cum_steps: t.steps, ...(drainS ? { drain_ms: r.drainMs, drain_cut_off: r.drainStopped } : {}) });
         row.turns_run = n;
         if (c.kind === 'timeout') { timedOut = true; break; }
         if (c.kind === 'fatal') { fail(`fatal: ${c.reason}`); stopRun = true; break; }
@@ -178,12 +177,11 @@ export async function runEpisode(job, attempt, cx) {
     }
 
     if (!invalid) { held = L.heldOutLeaks(ep, cx.heldIdx); if (held.length) fail(`held_out_violation: ${held.slice(0, 3).join(', ')}`, false); }
-    // a detached writer may still be working: wait for it, then count what it cost
-    if (job.arm === 'D' && !invalid) writerWait = await waitWriters(ep, cx.writerWaitMs ?? 60000);
     leftover += killEp(ep).length;
     removePayloads(ep);
     const t = L.tally(home, row.model);
-    const w = L.writerLedger(home);
+    const w = L.writerLedger(ep);
+    if (cx.keyed) egress = egressRead(ep);
     if (t.hi - spentSoFar.hi > 1e-9 || w.usd - spentSoFar.w > 1e-9) cx.spend.add({ ep: `${L.epKey(job)}__a${attempt}`, turn: 'after', usd_hi: t.hi - spentSoFar.hi, usd_lo: t.lo - spentSoFar.lo, writer_usd_hi: w.usd - spentSoFar.w });
     Object.assign(row, { steps_total: t.steps, usd_lo: L.round6(t.lo), usd_hi: L.round6(t.hi), calls: t.calls, writer_usd_hi: L.round6(w.usd), writer_calls: w.rows, hook_failures: t.hook_failures, gate_blocks: t.gate_blocks });
     row.rate_limited = t.rate_limited + rateHits;
@@ -208,7 +206,9 @@ export async function runEpisode(job, attempt, cx) {
   } catch (e) {
     if (e.message !== 'stop') fail(e instanceof InfraError ? e.message : `infra: ${String(e.message || e).slice(0, 200)}`);
   } finally {
-    try { L.saveSessions(home, path.join(cx.outDir, 'episodes', `${L.epKey(job)}__a${attempt}`), cx.key); } catch { /* logs are evidence, not the result */ }
+    const logs = path.join(cx.outDir, 'episodes', `${L.epKey(job)}__a${attempt}`);
+    try { L.saveSessions(home, logs, cx.key); } catch { /* logs are evidence, not the result */ }
+    try { fs.mkdirSync(logs, { recursive: true }); fs.copyFileSync(path.join(ep, 'net', 'proxy.log'), path.join(logs, 'proxy.log')); } catch { /* an echo episode has none */ }
     killEp(ep);
     removePayloads(ep);
     if (!cx.keepEp) { for (const d of [ep, `${ep}.oracle`]) { try { rmEp(d, cx.tmpBase); } catch { /* leave it for the operator */ } } }
@@ -224,6 +224,7 @@ export async function runEpisode(job, attempt, cx) {
   row.bit_failed = bitFailed;
   row.leftover_killed = leftover;
   row.writer_wait = writerWait;
+  row.egress = egress;
   row.valid = !invalid;
   row.invalid_reason = invalid;
   row.retryable = invalid ? retryable : false;

@@ -1,8 +1,12 @@
-// One function that runs a command inside the Muse sandbox. CLI-compatible with scripts/sandbox/muse-sandbox.sh (v3):
-//   --run-dir DIR  --ro PATH...  --net none|meta  --allow HOST:PORT...  --chdir DIR2  -- CMD...
-// Until that script is on main, the v2.1 bwrap flags of the confinement rule are used. Backend choice is ONE line (BACKEND).
-// Secrets reach the child through the spawned process's own env, never through argv.
-import { spawn, spawnSync } from 'node:child_process';
+// One function that runs a command inside the Muse sandbox: scripts/sandbox/muse-sandbox.sh (v3).
+//   --run-dir DIR  --ro PATH...  --net none|meta  --allow HOST:PORT...  --chdir DIR2  --drain SECS  -- CMD...
+// The launcher clears the environment (only TORPOR_* and, with --net meta, META_API_KEY pass in), puts HOME, TMPDIR and XDG_* inside
+// the run folder, gives no network under --net none, and under --net meta only api.meta.ai:443 through a host proxy that logs every
+// connection to <run-dir>/net/proxy.log. Under --net meta it also waits up to --drain seconds for leftover processes (the detached
+// writer of arm D); under --net none everything dies with the command. Secrets reach the child through the spawned process's own
+// env, never through argv.
+import crypto from 'node:crypto';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,27 +14,25 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const SCRIPT = path.resolve(HERE, '..', '..', 'scripts', 'sandbox', 'muse-sandbox.sh');
-// auto = the v3 script when it exists, else v2.1. Force one with EVAL_SANDBOX=v2.1 or EVAL_SANDBOX=v3.
-export const BACKEND = process.env.EVAL_SANDBOX || (fs.existsSync(SCRIPT) ? 'v3' : 'v2.1');
-const REAL = os.homedir();
 const KEEP = 64 * 1024;
-const DRAIN_MS = 300;
+const GRACE_MS = 300; // after the launcher exits: let the pipes drain, then give up on them
 
+// What the row's manifest says about the sandbox: the launcher's two files by hash, and the commit that last touched them.
+let info = null;
 export function sandboxInfo() {
-  if (BACKEND === 'v3') return { backend: 'v3', script: 'scripts/sandbox/muse-sandbox.sh', net_keyed: 'allowlist proxy' };
-  const v = spawnSync('bwrap', ['--version'], { encoding: 'utf8' }).stdout?.trim() || 'bwrap ?';
-  return { backend: 'v2.1', bwrap: v, net_keyed: 'shared (v2.1 gap: the host network is open in keyed runs)' };
-}
-
-// The env every sandboxed command gets (the same set muse-sandbox.sh builds).
-function baseEnv(runDir) {
-  const home = path.join(runDir, 'home');
-  return {
-    HOME: home, TMPDIR: path.join(runDir, 'tmp'), SHELL: '/bin/bash', LANG: 'C.UTF-8',
-    PATH: '/usr/local/bin:/usr/bin:/bin', MUSE_NO_AUTO_UPDATE: '1',
-    XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local', 'share'),
-    XDG_STATE_HOME: path.join(home, '.local', 'state'), XDG_CACHE_HOME: path.join(home, '.cache'),
+  if (info) return info;
+  if (!fs.existsSync(SCRIPT)) throw new Error('scripts/sandbox/muse-sandbox.sh is missing: merge origin/main');
+  const dir = path.dirname(SCRIPT);
+  const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+  const git = (...a) => { try { return execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
+  const files = ['muse-sandbox.sh', 'netproxy.mjs'];
+  const status = git('status', '--porcelain', '--', ...files);
+  info = {
+    backend: 'v3', script: 'scripts/sandbox/muse-sandbox.sh', commit: git('log', '-n1', '--format=%h', '--', ...files) || null, dirty: status === null ? null : status !== '',
+    script_sha256: sha(SCRIPT), netproxy_sha256: sha(path.join(dir, 'netproxy.mjs')),
+    bwrap: spawnSync('bwrap', ['--version'], { encoding: 'utf8' }).stdout?.trim() || null, net_keyed: 'api.meta.ai:443 only, through the logging proxy',
   };
+  return info;
 }
 
 // Only TORPOR_* and (with --net meta) META_API_KEY may be passed in; anything else is a bug in the caller.
@@ -44,20 +46,7 @@ function passEnv(env, net) {
   return out;
 }
 
-// pid: a private pid namespace, so nothing the command started outlives it (oracle, patch and init runs; NOT the model's own
-// runs, where a detached writer must be able to outlive Muse). v2.1 only.
-export function bwrapArgs({ runDir, ro = [], net = 'none', chdir, cmd, pid = false }) {
-  const a = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', REAL, '--tmpfs', '/run/user'];
-  for (const p of ro) a.push('--ro-bind', p, p);
-  a.push('--bind', runDir, runDir, '--bind', path.join(runDir, 'muse-share'), path.join(REAL, '.local', 'share', 'muse'));
-  a.push('--new-session', '--die-with-parent');
-  if (net === 'none') a.push('--unshare-net');
-  if (pid) a.push('--unshare-pid');
-  if (chdir) a.push('--chdir', chdir);
-  return [...a, '--', ...cmd];
-}
-
-// Processes of this episode: cwd inside runDir, or HOME=<runDir>/home in their env. Used to wait for / kill leftovers (ours only).
+// Processes of this episode: cwd inside runDir, or HOME=<runDir>/home in their env. Used to find and kill leftovers (ours only).
 export function epProcs(runDir) {
   const home = `HOME=${path.join(runDir, 'home')}\0`;
   const out = [];
@@ -83,25 +72,45 @@ export function killEp(runDir, keep = () => false, signal = 'SIGKILL') {
   return killed;
 }
 
-export function sandbox({ runDir, ro = [], net = 'none', allow = [], chdir, env = {}, cmd, timeoutMs = 0, input, pid = false }) {
+// Is a process alive whose argv (an array) satisfies the predicate? The launcher's own processes carry the whole command line as later
+// arguments, so a test on argv[0] picks out the command itself.
+const argvAlive = (pred) => {
+  for (const d of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(d)) continue;
+    try { if (pred(fs.readFileSync(`/proc/${d}/cmdline`, 'latin1').split('\0').filter(Boolean))) return true; } catch { /* gone */ }
+  }
+  return false;
+};
+
+// The proxy's log of a run folder (every keyed sandbox call of the episode appends to <runDir>/net/proxy.log):
+// `<UTC time> host:port allowed|denied up=N down=N via=fwd|proxy [err=CODE]`. Muse's own traffic is via=proxy; hooks and the detached writer
+// reach the API through the forwarder (via=fwd). `other` lists (at most 8, distinct) everything that is not an allowed api.meta.ai:443.
+// The runner records this and does not stop on it: reading `other` is the operator's job.
+export function egressRead(runDir) {
+  const out = { allowed: 0, denied: 0, via_fwd: 0, other: [] };
+  let text = '';
+  try { text = fs.readFileSync(path.join(runDir, 'net', 'proxy.log'), 'utf8'); } catch { return out; }
+  for (const l of text.split('\n').filter(Boolean)) {
+    const m = /^\S+ (\S+) (allowed|denied)\b.*\bvia=(fwd|proxy)\b/.exec(l);
+    if (m) { out[m[2]]++; if (m[3] === 'fwd') out.via_fwd++; }
+    const what = m ? `${m[1]} ${m[2]}` : `unparsed: ${l.slice(0, 60)}`;
+    if (what !== 'api.meta.ai:443 allowed' && !out.other.includes(what) && out.other.length < 8) out.other.push(what);
+  }
+  return out;
+}
+
+// drain: seconds the launcher waits for leftover processes after the command exits (--net meta only; 0 = none). watchExit: a test on the
+// argv of the command's own process; when given, the result's drainMs is how long the call lasted after that process was gone.
+export function sandbox({ runDir, ro = [], net = 'none', allow = [], chdir, env = {}, cmd, timeoutMs = 0, input, drain = 0, watchExit }) {
   if (!path.isAbsolute(runDir)) throw new Error('runDir must be absolute');
   for (const d of ['home', 'tmp', 'muse-share']) fs.mkdirSync(path.join(runDir, d), { recursive: true });
   const passed = passEnv(env, net);
-  let file, args, childEnv;
-  if (BACKEND === 'v3') {
-    file = SCRIPT;
-    args = ['--run-dir', runDir, ...ro.flatMap((p) => ['--ro', p]), '--net', net, ...allow.flatMap((h) => ['--allow', h]),
-      ...(chdir ? ['--chdir', chdir] : []), '--', ...cmd];
-    childEnv = { PATH: '/usr/local/bin:/usr/bin:/bin', ...passed };
-  } else {
-    file = 'bwrap';
-    args = bwrapArgs({ runDir, ro, net, chdir, cmd, pid });
-    childEnv = { ...baseEnv(runDir), ...passed };
-  }
+  const args = ['--run-dir', runDir, ...ro.flatMap((p) => ['--ro', p]), '--net', net, ...allow.flatMap((h) => ['--allow', h]),
+    ...(net === 'meta' ? ['--drain', String(Math.max(0, Math.ceil(drain)))] : []), ...(chdir ? ['--chdir', chdir] : []), '--', ...cmd];
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const child = spawn(file, args, { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'], cwd: os.tmpdir() });
-    let out = '', err = '', timedOut = false, done = false, killTimer = null;
+    const child = spawn(SCRIPT, args, { env: { PATH: '/usr/local/bin:/usr/bin:/bin', ...passed }, stdio: ['pipe', 'pipe', 'pipe'], cwd: os.tmpdir() });
+    let out = '', err = '', timedOut = false, done = false, killTimer = null, seen = false, goneAt = null;
     child.stdout.on('data', (b) => { out = (out + b).slice(-KEEP); });
     child.stderr.on('data', (b) => { err = (err + b).slice(-KEEP); });
     child.stdin.on('error', () => {});
@@ -111,17 +120,23 @@ export function sandbox({ runDir, ro = [], net = 'none', allow = [], chdir, env 
       try { child.kill('SIGTERM'); } catch { /* gone */ }
       killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 5000);
     }, timeoutMs) : null;
-    // A leftover process can hold the pipes open after the command is gone: resolve on 'exit' (plus a short drain), not on 'close'.
+    const watch = watchExit ? setInterval(() => {
+      if (argvAlive(watchExit)) seen = true;
+      else if (seen && goneAt === null) goneAt = Date.now() - t0;
+    }, 250) : null;
+    // A leftover process can hold the pipes open after the launcher is gone: resolve on 'exit' (plus a short grace), not on 'close'.
     const finish = (code, signal) => {
       if (done) return;
       done = true;
-      clearTimeout(timer); clearTimeout(killTimer);
+      clearTimeout(timer); clearTimeout(killTimer); clearInterval(watch);
       try { child.stdout.destroy(); child.stderr.destroy(); } catch { /* closed */ }
       const killed = timedOut ? killEp(runDir) : [];
-      resolve({ code, signal, stdout: out, stderr: err, timedOut, ms: Date.now() - t0, pid: child.pid, reaped: killed.length });
+      const ms = Date.now() - t0;
+      const stopped = /(\d+) process\(es\) still running after --drain/.exec(err);
+      resolve({ code, signal, stdout: out, stderr: err, timedOut, ms, pid: child.pid, reaped: killed.length, drainMs: goneAt === null ? 0 : Math.max(0, ms - goneAt), drainStopped: stopped ? Number(stopped[1]) : 0 });
     };
     child.on('error', (e) => { err += String(e); finish(127, null); });
-    child.on('exit', (code, signal) => setTimeout(() => finish(code, signal), DRAIN_MS));
+    child.on('exit', (code, signal) => setTimeout(() => finish(code, signal), GRACE_MS));
     child.on('close', (code, signal) => finish(code, signal));
   });
 }

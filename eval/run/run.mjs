@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { activeEps, rmEp, runEpisode } from './episode.mjs';
 import * as L from './lib.mjs';
-import { BACKEND, killEp, sandbox } from './sandbox.mjs';
+import { killEp, sandbox, sandboxInfo } from './sandbox.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -99,7 +99,7 @@ async function main() {
 
   // versions, from the real binaries, inside a sandbox
   const probeDir = path.join(tmpBase, `ep-${crypto.randomBytes(5).toString('hex')}`);
-  const ver = async (bin, args, ro = [bin]) => ((await sandbox({ runDir: probeDir, ro, cmd: [bin, ...args], timeoutMs: 30000, pid: true })).stdout || '').trim().split('\n')[0];
+  const ver = async (bin, args, ro = [bin]) => ((await sandbox({ runDir: probeDir, ro, cmd: [bin, ...args], timeoutMs: 30000 })).stdout || '').trim().split('\n')[0];
   const museVersion = await ver(path.join(museDir, 'muse'), ['--version'], [museDir]); // Muse needs its whole install dir
   if (!museVersion) throw new Error(`"muse --version" printed nothing inside the sandbox (muse dir ${museDir})`);
   const engineVersion = arms.some((x) => x === 'C' || x === 'D') ? await ver(engineBin, ['--version']) : 'n/a';
@@ -122,11 +122,10 @@ async function main() {
     spend, backoff: new L.Backoff(), heldIdx: L.heldOutIndex(EVAL), writerKeyFile: keyed && a.writerKeyFile ? path.resolve(a.writerKeyFile) : null, writerDayCapUsd: a.writerDayCap, keepEp: !!a.keepEp,
   };
 
-  let conc = Math.max(1, a.concurrency | 0);
-  if (keyed && BACKEND === 'v2.1' && conc > 1) { console.error(`note: keyed runs share the host network under sandbox v2.1; concurrency forced from ${conc} to 1`); conc = 1; }
+  const conc = Math.max(1, a.concurrency | 0);
   const states = L.episodeStates(L.readRows(rowsDir));
   const pending = jobs.filter((j) => !states.get(L.epKey(j))?.done);
-  console.error(`${runId}: ${jobs.length} episodes planned, ${jobs.length - pending.length} already finished, ${pending.length} to run, concurrency ${conc}, ${keyed ? `keyed ${a.model}, cap $${a.capUsd}` : 'echo'}, sandbox ${BACKEND}`);
+  console.error(`${runId}: ${jobs.length} episodes planned, ${jobs.length - pending.length} already finished, ${pending.length} to run, concurrency ${conc}, ${keyed ? `keyed ${a.model}, cap $${a.capUsd}` : 'echo'}, sandbox ${sandboxInfo().commit || 'v3'}`);
 
   // One group at a time. A (task, rep) group is played whole: its arms run together (up to --concurrency at once), and the next group only
   // starts when the cap leaves room for all of it. A stop (cap, fatal error, first SIGINT or SIGTERM) starts no new group and lets the group

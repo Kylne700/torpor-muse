@@ -116,14 +116,18 @@ export function tally(home, fallbackModel) {
 }
 export const hookRuns = (t) => Object.values(t.hooks).reduce((n, h) => n + Object.entries(h).reduce((m, [k, v]) => m + (k === 'ok' ? 0 : v), 0), 0);
 
-// The check-writer's own ledger (every response, failed ones too): one JSON row per line.
-export function writerLedger(home) {
+// The check-writer's own ledger (every response, failed ones too): one JSON row per line, in the episode folder. Where the adapter keeps
+// it depends on its version: under TORPOR_HOME since the writer state fix (1b01d36), in the home's XDG state before. One adapter writes
+// to one of the two places; both are read so that an older adapter can never make the writer's dollars count as 0 against the cap.
+export function writerLedger(ep) {
   const out = { rows: 0, usd: 0 };
-  let text = '';
-  try { text = fs.readFileSync(path.join(home, '.local', 'state', 'torpor-muse', 'ledger.jsonl'), 'utf8'); } catch { return out; }
-  for (const l of text.split('\n')) {
-    if (!l) continue;
-    try { const r = JSON.parse(l); out.rows++; out.usd += Number(r.usd) || 0; } catch { /* a torn line counts for nothing */ }
+  for (const f of [path.join(ep, 'torpor-home', 'muse', 'suggest', 'ledger.jsonl'), path.join(ep, 'home', '.local', 'state', 'torpor-muse', 'ledger.jsonl')]) {
+    let text = '';
+    try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    for (const l of text.split('\n')) {
+      if (!l) continue;
+      try { const r = JSON.parse(l); out.rows++; out.usd += Number(r.usd) || 0; } catch { /* a torn line counts for nothing */ }
+    }
   }
   return out;
 }

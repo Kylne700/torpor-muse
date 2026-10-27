@@ -7,10 +7,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { armCList, armCSettings, armCShape, AGENTS_MD, ENGINE_EVENTS } from './arms.mjs';
+import { armCList, armCSettings, armCShape, armCText, AGENTS_MD, ENGINE_EVENTS } from './arms.mjs';
 import { rmEp, runEpisode } from './episode.mjs';
 import * as L from './lib.mjs';
-import { sandbox } from './sandbox.mjs';
+import { egressRead, sandbox } from './sandbox.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVAL = path.resolve(HERE, '..');
@@ -42,17 +42,23 @@ const ev = (e) => fs.appendFileSync(path.join(dir, 'session.jsonl'), JSON.string
 if (prompt === '@@plant-oracle') fs.copyFileSync(path.join(__dirname, 'oracle-copy.mjs'), path.join(ws, 'helper.mjs'));
 if (prompt === '@@plant-name') fs.writeFileSync(path.join(ws, 'reference.patch'), 'x');
 if (prompt === '@@hang') { setInterval(() => {}, 1000); return; }
+if (prompt === '@@writer') { // like the adapter's check-writer: detached, outlives Muse, writes its ledger row 1.5 s after it was started
+  require('child_process').spawn(process.execPath, [path.join(__dirname, 'writer.js'), path.join(ep, 'torpor-home', 'muse', 'suggest')], { detached: true, stdio: 'ignore' }).unref();
+  for (const t0 = Date.now(); Date.now() - t0 < 800;); // Muse itself is alive for a while (the runner sees it go)
+}
 if (prompt === '@@fail') { console.error('muse: something broke'); process.exit(3); }
 ev({ kind: 'model_response_created' });
 ev({ kind: 'model_completed', model: cost.model, usage: { input_tokens: cost.input, cached_tokens: 0, output_tokens: cost.output, reasoning_tokens: 0 } });
 if (prompt === '@@steps') { console.error('muse: model did not reach a terminal state within 40 step(s)'); process.exit(1); }
 console.log('done');
 `;
+const WRITER = `setTimeout(() => { const d = process.argv[2]; require('fs').mkdirSync(d, { recursive: true }); require('fs').appendFileSync(d + '/ledger.jsonl', '{"usd":0.01}\\n'); }, 1500);\n`;
 let fakeN = 0;
 function fakeMuse(costObj = { model: 'muse-spark-1.3-contributor', input: 1000, output: 500 }) {
   const d = mk(`fake-muse-${++fakeN}`);
   fs.writeFileSync(path.join(d, 'muse'), FAKE, { mode: 0o755 });
   fs.writeFileSync(path.join(d, 'cost.json'), JSON.stringify(costObj));
+  fs.writeFileSync(path.join(d, 'writer.js'), WRITER);
   fs.copyFileSync(path.join(EVAL, 'oracles', 'notes.mjs'), path.join(d, 'oracle-copy.mjs'));
   return d;
 }
@@ -174,22 +180,32 @@ await test('session logs: usage, hooks, gate blocks, writer ledger, frame childr
   const t = L.tally(home, 'x');
   assert.deepEqual([t.steps, t.calls, t.hook_failures, t.gate_blocks, t.rate_limited, t.hooks.Stop.ok], [2, 1, 1, 1, 1, 1]);
   assert.ok(Math.abs(t.hi - (L.cost('muse-spark-1.3-contributor', { input_tokens: 1000, cached_tokens: 200, output_tokens: 100, reasoning_tokens: 50 }).hi + 10 * 0.1 / 1e6)) < 1e-12);
-  const w = L.writerLedger(home);
-  assert.deepEqual([w.rows, Number(w.usd.toFixed(2))], [2, 0.03]);
+  const ep = path.dirname(home), nd = path.join(ep, 'torpor-home', 'muse', 'suggest'); // where the adapter keeps it since the writer state fix
+  assert.deepEqual([L.writerLedger(ep).rows, L.writerLedger(ep).usd.toFixed(2)], [2, '0.03'], 'an older adapter: the XDG state place');
+  fs.mkdirSync(nd, { recursive: true });
+  fs.writeFileSync(path.join(nd, 'ledger.jsonl'), `${JSON.stringify({ usd: 0.04 })}\n`);
+  const w = L.writerLedger(ep);
+  assert.deepEqual([w.rows, w.usd.toFixed(2)], [3, '0.07'], 'a new adapter: under TORPOR_HOME; both places are counted');
 });
 
-await test('arms: C is the engine\'s ten documented hook commands and nothing else; B never names the tool', () => {
-  const s = armCSettings('/x/torpor');
-  assert.deepEqual(Object.keys(s), ['schema_version', 'hooks']);
+await test('arms: C is the drill\'s arm 3 byte for byte (ten engine events, no matcher); B never names the tool', async () => {
+  const a = { engineBin: '/x/torpor', torporHome: '/e/torpor-home', keyFile: '/e/h/.config/torpor/key' };
+  const s = armCSettings(a);
+  assert.deepEqual(Object.keys(s).sort(), ['hooks', 'schema_version']);
   assert.equal(Object.keys(s.hooks).length, 10);
-  for (const [event, matcher, timeout] of ENGINE_EVENTS) {
+  for (const [event, timeout] of ENGINE_EVENTS) {
     const g = s.hooks[event];
-    assert.equal(g.length, 1); assert.equal(g[0].matcher, matcher ?? undefined); assert.ok(Number.isInteger(g[0].hooks[0].timeout) && g[0].hooks[0].timeout === timeout);
-    assert.equal(g[0].hooks[0].command, `/x/torpor hook ${event}`);
+    assert.equal(g.length, 1); assert.equal(g[0].matcher, undefined); assert.equal(g[0].hooks[0].timeout, timeout);
+    assert.equal(g[0].hooks[0].command, `env TORPOR_HOME=/e/torpor-home TORPOR_KEY_FILE=/e/h/.config/torpor/key /x/torpor hook ${event}`);
     assert.deepEqual(Object.keys(g[0].hooks[0]).sort(), ['command', 'timeout', 'type']);
   }
-  assert.deepEqual(Object.entries(s.hooks).filter(([, g]) => g[0].matcher).map(([e]) => e).sort(), ['PostToolUse', 'PostToolUseFailure', 'PreToolUse']);
   assert.ok(armCShape().includes('ENGINE_BIN hook Stop'));
+  // the drill harness (T3) wires arm 3 itself; the two files must be the same text, so a change on one side fails here
+  const drill = await import('../../drill/harness/arms.mjs');
+  assert.deepEqual(Object.fromEntries(ENGINE_EVENTS), drill.ENGINE_EVENTS);
+  const T = mk('drill-arm3');
+  const d = drill.writeArm3Settings(T);
+  assert.equal(d.text, armCText({ engineBin: `${T}/bin/torpor`, torporHome: `${T}/torpor-home`, keyFile: path.join(T, 'home', '.config', 'torpor', 'key') }));
   assert.ok(!/torpor|engine|save point|undo/i.test(AGENTS_MD) && /NOTES\.md/.test(AGENTS_MD));
   // RUN.md shows the exact notes text and the exact list of C's events; the lead checks it against PREREG, so it must not drift from the code
   const md = fs.readFileSync(path.join(HERE, 'RUN.md'), 'utf8');
@@ -210,6 +226,30 @@ await test('sandbox: writes stay inside the run folder, the key needs the networ
   await assert.rejects(async () => sandbox({ runDir: rd, net: 'none', env: { OTHER: '1' }, cmd: ['true'] }), /not passed/);
   const hang = await sandbox({ runDir: rd, net: 'none', cmd: ['sh', '-c', 'sleep 30'], timeoutMs: 400 });
   assert.equal(hang.timedOut, true); assert.ok(hang.ms < 8000);
+});
+
+await test('sandbox: --net meta waits for a detached leftover up to --drain and measures the wait; --net none lets nothing outlive the command', async () => {
+  if (!bwrapOk) return 'skip';
+  const mark = `mark-${process.pid}`;
+  const watchExit = (a) => a[0] === 'sh' && a.some((x) => x.includes(mark)); // the command's own process, not bwrap's or the launcher's
+  // the command lives 1 s and leaves a 2 s process behind: the call lasts about 2 s, about 1 s of it after the command was gone
+  let r = await sandbox({ runDir: mk('dr1'), net: 'meta', drain: 5, watchExit, cmd: ['sh', '-c', `sleep 2 & sleep 1 # ${mark}`], timeoutMs: 30000 });
+  assert.equal(r.code, 0, r.stderr); assert.equal(r.drainStopped, 0);
+  assert.ok(r.ms >= 1900 && r.drainMs >= 300 && r.drainMs <= r.ms, `ms ${r.ms}, drainMs ${r.drainMs}`);
+  // a leftover that outlasts the drain is stopped, and counted
+  r = await sandbox({ runDir: mk('dr2'), net: 'meta', drain: 1, cmd: ['sh', '-c', 'sleep 30 & sleep 0.2'], timeoutMs: 30000 });
+  assert.equal(r.drainStopped, 1); assert.ok(r.ms < 8000, `ms ${r.ms}`);
+  r = await sandbox({ runDir: mk('dr3'), net: 'none', cmd: ['sh', '-c', 'sleep 30 & sleep 0.2'], timeoutMs: 30000 });
+  assert.ok(r.ms < 8000 && r.drainStopped === 0, `ms ${r.ms}`);
+});
+
+await test('egress: the proxy log is counted; only an allowed api.meta.ai:443 line is silent', () => {
+  const rd = mk('eg');
+  fs.mkdirSync(path.join(rd, 'net'));
+  fs.writeFileSync(path.join(rd, 'net', 'proxy.log'), ['2026-10-27T01:00:00.000Z api.meta.ai:443 allowed up=10 down=20 via=proxy', '2026-10-27T01:00:01.000Z api.meta.ai:443 allowed up=1 down=2 via=fwd',
+    '2026-10-27T01:00:02.000Z registry.npmjs.org:443 denied up=0 down=0 via=proxy err=EACCES', 'garbage'].join('\n') + '\n');
+  assert.deepEqual(egressRead(rd), { allowed: 2, denied: 1, via_fwd: 1, other: ['registry.npmjs.org:443 denied', 'unparsed: garbage'] });
+  assert.deepEqual(egressRead(mk('eg2')), { allowed: 0, denied: 0, via_fwd: 0, other: [] }, 'no log, no network');
 });
 
 await test('episode (arm A, control): six turns, valid row, nothing injected, oracle scored in a sandbox, no prompt file left', async () => {
@@ -277,6 +317,25 @@ await test('episode: the spend cap refuses the next turn before it starts', asyn
   clean(cx);
 });
 
+await test('episode (arm D, keyed, writer on): the launcher waits for the detached writer, its dollars and the wait are recorded, egress is summarised', async () => {
+  if (!bwrapOk) return 'skip';
+  const d = mk('fake-adapter');
+  fs.writeFileSync(path.join(d, 'torpor-muse'), '#!/bin/sh\nmkdir -p "$HOME/.config/muse" && echo \'{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"}]}]}}\' > "$HOME/.config/muse/settings.json"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(d, 'engine'), 'x'); fs.writeFileSync(path.join(d, 'key'), 'selftest-not-a-key', { mode: 0o600 });
+  const cx = mkCx({ keyed: true, key: 'selftest-not-a-key', adapterBin: path.join(d, 'torpor-muse'), engineBin: path.join(d, 'engine'), adapterSha: 'x', adapterVersion: 'x', writerKeyFile: path.join(d, 'key'), writerDayCapUsd: 0.05, writerWaitMs: 8000,
+    tasks: new Map([...tasks, ['notes-ctrl', withPrompts('notes-ctrl', { 2: '@@writer' })]]) });
+  const { row } = await runEpisode(job('notes-ctrl', 'D'), 1, cx);
+  assert.equal(row.valid, true, row.invalid_reason);
+  assert.deepEqual([row.manifest.writer, row.manifest.writer_drain_s], ['on', 8]);
+  assert.deepEqual([row.writer_calls, row.writer_usd_hi], [1, 0.01], 'the writer finished after Muse was gone and its row was counted');
+  assert.equal(row.turn_log[1].writer_usd, 0.01); assert.equal(row.turn_log[0].drain_ms < 600, true);
+  assert.ok(row.writer_wait.waited_ms >= 200 && row.writer_wait.waited_ms === row.turn_log.reduce((n, t) => n + t.drain_ms, 0), JSON.stringify(row.writer_wait));
+  assert.equal(row.writer_wait.still_running, 0);
+  assert.deepEqual(row.egress, { allowed: 0, denied: 0, via_fwd: 0, other: [] });
+  assert.ok(fs.existsSync(path.join(cx.outDir, 'episodes', 'notes-ctrl__D__r1__a1', 'proxy.log')), 'the proxy log is kept beside the session logs');
+  clean(cx);
+});
+
 await test('episode: a crash is an infra failure (re-runnable), a step cap is not, a hung turn is a timeout fail', async () => {
   if (!bwrapOk) return 'skip';
   let cx = mkCx({ tasks: new Map([...tasks, ['notes-ctrl', withPrompts('notes-ctrl', { 2: '@@fail' })]]) });
@@ -321,9 +380,9 @@ await test('cli: a stop (cap, or a signal) leaves whole (task, rep) groups, and 
   if (!bwrapOk) return 'skip';
   // A fake model call costs $0.01 (100000 input tokens at the contributor price): an episode is $0.06, a group of 2 arms $0.12.
   const muse = fakeMuse({ model: 'muse-spark-1.3-contributor', input: 100000, output: 0 });
-  const env = { PATH: process.env.PATH, HOME: process.env.HOME, META_API_KEY: 'selftest-not-a-key', EVAL_SANDBOX: 'v2.1' };
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME, META_API_KEY: 'selftest-not-a-key' };
   const args = (out, tmp, cap) => [path.join(HERE, 'run.mjs'), '--tasks', 'notes-ctrl,todo-ctrl,shop-ctrl', '--arms', 'A,B', '--reps', '1', '--seed', '5', '--muse', muse, '--tmp', tmp, '--out', out,
-    '--model', 'muse-spark-1.3-contributor', '--cap-usd', String(cap)];
+    '--model', 'muse-spark-1.3-contributor', '--cap-usd', String(cap), '--concurrency', '1']; // one arm at a time, so a SIGTERM lands while a group is half done
   const groupsOf = (out) => { const g = new Map(); for (const r of L.readRows(path.join(out, 'rows'))) g.set(L.groupKey(r), (g.get(L.groupKey(r)) || 0) + 1); return g; };
   // 1. the cap: room for two groups, not three
   const out = mk('grp-out'), tmp = mk('grp-tmp');

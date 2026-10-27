@@ -119,6 +119,8 @@ t('attempt selection, exclusion and pending counts; pairs need a valid unit on b
   assert.equal(u.find((x) => x.key === 'A/a1/rep 1').row.attempt, 2);
   assert.equal(u.find((x) => x.key === 'A/a4/rep 1').row.attempt, 1);
   assert.equal(u.find((x) => x.key === 'A/a6/rep 1').row.attempt, 1);
+  // one attempt the runner marked not re-runnable (inject_failed) is exhausted at once; the same attempt without the mark is pending
+  assert.deepEqual(buildUnits([{ ...inv('b1', 1, 'inject_failed: x'), retryable: false }, inv('b2', 1, 'inject_failed: x')]).map((x) => x.status), ['exhausted', 'pending']);
   const res = run(rows);
   const a = res.by_arm.A;
   assert.deepEqual([a.units, a.valid, a.exhausted, a.pending, a.attempts, a.invalid_attempts], [6, 4, 1, 1, 11, 6]);
