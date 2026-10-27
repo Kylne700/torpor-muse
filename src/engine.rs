@@ -321,6 +321,8 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
     }
 
+    // Linux only: macOS starts a script that is still open for writing, so there is no ETXTBSY to retry (CI run 40439904535).
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_program_still_open_for_writing_is_started_once_it_is_closed() {
         let d = scratch("etxtbsy");
