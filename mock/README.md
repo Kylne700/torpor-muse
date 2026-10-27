@@ -1,9 +1,9 @@
 # Meta Model API mock
 
-A zero-dependency Node (>= 20) server that imitates `POST /v1/responses` of the Meta Model API, failures included, so the check-writer is tested offline and in CI.
+A zero-dependency Node (>= 20) server that imitates `POST /v1/responses` of the Meta Model API, failures included, so the check-writer is tested offline and in CI. It also imitates `POST /v1/asr/transcribe` (Muse Voice Transcribe), see "Voice route" below.
 
 ```
-node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] [--delay-ms <n>] [--log <file>]
+node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] [--delay-ms <n>] [--log <file>] [--asr ok,429,...] [--transcript <text>]
 ```
 
 - Binds 127.0.0.1 only. The first stdout line is `listening <port>` (use `--port 0` and read it). Bad arguments exit with code 2 and a message on stderr.
@@ -12,7 +12,7 @@ node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] 
 - `--delay-ms`: how long `slow` waits (default 2000).
 - `--log`: appended (created if missing). One JSON line per request, any path, written before the answer is sent: `{"method","path","headers","body"}`. Header names are lowercase. `body` is a JSON string holding the body as received, so parse each line with `JSON.parse` before searching it. Only `authorization` is redacted: `<redacted len=N>`, N being the length of the whole value including `Bearer `.
 - Every response gets a fresh `id` (`resp_mock_<n>`) and `created_at` (and `completed_at` where the fixture has one). Everything else, `usage` too, is as recorded.
-- Not covered: no 401 (the Authorization header is not checked), no request validation, no streaming.
+- Not covered on `/v1/responses`: no 401 (the Authorization header is not checked), no request validation, no streaming.
 
 ## Fixtures
 
@@ -33,6 +33,14 @@ Each file in `fixtures/` has `_shape` (`recorded` or `assumed`), then `_model` a
 | `hang` | none | not an envelope | reads the request, logs it, never answers |
 
 Wrong-type and extra-key outputs are content: make them with `--output-text-file`.
+
+## Voice route
+
+`POST /v1/asr/transcribe` takes `multipart/form-data` with a `request` part (JSON) and an `audio` part (WAV). It has its own request count and its own answers, so voice requests never use up `--fixture` entries and `--fixture` never changes the voice answers.
+
+- `--asr a,b,c`: request 1 gets `a`, request 2 gets `b`, and so on; the last one repeats. Default `ok`. Each entry is `ok`, a canned HTTP status other than 200 (`429` carries `Retry-After: 2`; the body is `{"error":{"message","type":"mock_error","code":"mock_<status>"}}`), `hang` (reads the request, logs it, never answers) or `drop` (destroys the socket).
+- `ok` checks what the real API checks: a `Bearer` key (else 401), `Accept` allowing `application/json` (else 406), both parts, and `request` holding `model` `muse-voice-transcribe-1.0`, `audioEncoding` `WAV` and `mode` `PUSH_TO_TALK` (else 400). It answers `{"sessionId":"mock-asr-<n>","transcript":<--transcript>,"audioDurationMs":<read from the WAV header>,"turns":[]}`. `--transcript` defaults to `login works now for alice and bob`.
+- `--log`: for this route `body` is a JSON string `{"request":<the parsed request part>,"audio":{"bytes","type","filename"},"parts":[names]}`. The audio itself is never written.
 
 ## How the recorded ones were made
 

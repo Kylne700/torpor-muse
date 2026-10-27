@@ -223,7 +223,88 @@ test('binds 127.0.0.1 only', async (t) => {
 });
 
 test('bad arguments exit with code 2 and a message, without printing "listening"', async () => {
-  for (const args of [['--fixture', 'nope'], ['--output-text-file', path.join(tmp, 'missing.txt')], ['--delay-ms', 'abc'], ['--bogus'], ['--log', path.join(tmp, 'no-dir', 'x.log')]]) {
+  for (const args of [['--fixture', 'nope'], ['--output-text-file', path.join(tmp, 'missing.txt')], ['--delay-ms', 'abc'], ['--bogus'], ['--asr', 'ok,200'], ['--asr', 'nope'], ['--log', path.join(tmp, 'no-dir', 'x.log')]]) {
     await assert.rejects(start(args), (e) => e.code === 2 && /^mock: /.test(e.err) && e.out === '', args.join(' '));
   }
+});
+
+// ---- POST /v1/asr/transcribe: the voice route has its own counter and never uses up the writer fixtures
+
+// A mono 16-bit WAV of `ms` milliseconds of silence at 24000 Hz.
+function wav(ms) {
+  const n = 24 * ms * 2;
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0);
+  h.writeUInt32LE(36 + n, 4);
+  h.write('WAVEfmt ', 8);
+  h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20);
+  h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(24000, 24);
+  h.writeUInt32LE(48000, 28);
+  h.writeUInt16LE(2, 32);
+  h.writeUInt16LE(16, 34);
+  h.write('data', 36);
+  h.writeUInt32LE(n, 40);
+  return Buffer.concat([h, Buffer.alloc(n)]);
+}
+const REQUEST = { model: 'muse-voice-transcribe-1.0', audioEncoding: 'WAV', mode: 'PUSH_TO_TALK' };
+function asrBody({ request = REQUEST, audio = wav(2500), boundary = 'b0und4ry' } = {}) {
+  const part = (name, type, body, extra = '') => [Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"${extra}\r\nContent-Type: ${type}\r\n\r\n`), body, Buffer.from('\r\n')];
+  const parts = [];
+  if (request) parts.push(...part('request', 'application/json', Buffer.from(JSON.stringify(request))));
+  if (audio) parts.push(...part('audio', 'audio/wav', audio, '; filename="audio.wav"'));
+  return { body: Buffer.concat([...parts, Buffer.from(`--${boundary}--\r\n`)]), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+const asrAsk = (port, { auth = 'Bearer fake-test-value-123', accept = 'application/json', ...rest } = {}) => {
+  const { body, contentType } = asrBody(rest);
+  const headers = { 'content-type': contentType };
+  if (auth) headers.authorization = auth;
+  if (accept) headers.accept = accept;
+  return ask(port, { path: '/v1/asr/transcribe', headers, body });
+};
+
+test('asr: a good request gets the transcript and the audio length, the log holds no audio, and the writer fixtures are untouched', async () => {
+  const log = path.join(tmp, 'asr.log');
+  const { port } = await start(['--fixture', 'server-500,ok', '--transcript', 'hello there', '--log', log]);
+  const r = await asrAsk(port);
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.text), { sessionId: 'mock-asr-1', transcript: 'hello there', audioDurationMs: 2500, turns: [] });
+  assert.equal(Number(r.headers['content-length']), Buffer.byteLength(r.text));
+  const line = JSON.parse(fs.readFileSync(log, 'utf8').trim());
+  assert.equal(line.path, '/v1/asr/transcribe');
+  assert.deepEqual(JSON.parse(line.body), { request: REQUEST, audio: { bytes: 44 + 120000, type: 'audio/wav', filename: 'audio.wav' }, parts: ['request', 'audio'] });
+  assert.ok(line.body.length < 300, 'the audio itself is not in the log');
+  assert.ok(!JSON.stringify(line).includes('fake-test-value-123'));
+  // the first writer request still meets the first fixture, so the voice request used none
+  assert.equal((await ask(port)).status, 500);
+  assert.equal((await ask(port)).status, 200);
+});
+
+test('asr: --asr gives each status in turn (the last repeats), 429 carries retry-after', async () => {
+  const { port } = await start(['--asr', '413,429,503,ok']);
+  const got = [];
+  for (let i = 0; i < 5; i++) {
+    const r = await asrAsk(port);
+    got.push(r.status);
+    if (r.status === 429) assert.equal(r.headers['retry-after'], '2');
+    if (r.status !== 200) assert.equal(JSON.parse(r.text).error.type, 'mock_error');
+  }
+  assert.deepEqual(got, [413, 429, 503, 200, 200]);
+});
+
+test('asr: ok refuses what the real API refuses (no key, no JSON Accept, a part missing, wrong fields)', async () => {
+  const { port } = await start(['--asr', 'ok']);
+  assert.equal((await asrAsk(port, { auth: '' })).status, 401);
+  assert.equal((await asrAsk(port, { accept: 'text/html' })).status, 406);
+  assert.equal((await asrAsk(port, { audio: null })).status, 400);
+  assert.equal((await asrAsk(port, { request: null })).status, 400);
+  assert.equal((await asrAsk(port, { request: { ...REQUEST, mode: 'STREAM' } })).status, 400);
+  assert.equal((await asrAsk(port)).status, 200);
+  assert.equal(JSON.parse((await asrAsk(port, { audio: wav(1000) })).text).audioDurationMs, 1000);
+});
+
+test('asr: drop closes the connection without an answer', async () => {
+  const { port } = await start(['--asr', 'drop']);
+  await assert.rejects(asrAsk(port), (e) => ['ECONNRESET', 'EPIPE'].includes(e.code) || /socket hang up/.test(e.message));
 });

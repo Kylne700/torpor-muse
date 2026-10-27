@@ -100,7 +100,7 @@ const PREFIXES: [&str; 17] = [
     "LLM_",
     "eyJ",
 ];
-const MASK: &str = "[redacted]";
+pub(super) const MASK: &str = "[redacted]";
 
 fn is_tok(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '.')
@@ -423,7 +423,7 @@ pub fn cut(s: &str, max: usize) -> &str {
     &s[..n]
 }
 
-fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<String> {
+pub(super) fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<String> {
     let path = root.join(rel);
     let meta = fs::symlink_metadata(&path).ok()?;
     if !meta.is_file() || meta.len() > BIG_FILE || !fs::canonicalize(&path).ok()?.starts_with(root)
@@ -445,9 +445,14 @@ fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<String> {
     Some(shown)
 }
 
+/// The files the writer may read: tracked and not ignored, a known text extension, no secrets. Sorted.
+pub fn allowed_files(root: &Path) -> Vec<String> {
+    listing(root).into_iter().filter(|p| allowed(p)).collect()
+}
+
 /// The excerpt: a file list, then the start of the most useful files, all redacted. Stable for an unchanged project.
 pub fn excerpt(root: &Path, synthetic: bool) -> String {
-    let mut files: Vec<String> = listing(root).into_iter().filter(|p| allowed(p)).collect();
+    let mut files = allowed_files(root);
     files.sort_by(|a, b| (rank(a), a).cmp(&(rank(b), b)));
     let mut out = String::from("FILE LIST\n");
     let mut names: Vec<&String> = files.iter().take(LIST_CAP).collect();

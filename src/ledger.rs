@@ -24,6 +24,17 @@ pub enum Charge {
     Free,
     /// We cannot know (dropped, hung, 5xx): charged as the worst case so the cap stays safe.
     Estimate(f64),
+    /// An exact price in dollars: audio is billed by the second, and the response tells how many.
+    Usd(f64),
+}
+
+/// Muse Voice Transcribe: USD 0.18 per audio hour, metered in whole seconds (Meta price list read on 2026-10-26).
+pub const ASR_MODEL: &str = "muse-voice-transcribe-1.0";
+const ASR_USD_PER_HOUR: f64 = 0.18;
+
+/// Dollars for `ms` of audio, rounded up to whole seconds.
+pub fn asr_cost(ms: u64) -> f64 {
+    ms.div_ceil(1000) as f64 * ASR_USD_PER_HOUR / 3600.0
 }
 
 /// USD per million tokens as (cached input, fresh input, output), from the Meta price list read on 2026-10-26.
@@ -128,7 +139,11 @@ impl Ledger {
         max_output: u32,
         cap: f64,
     ) -> Result<f64, String> {
-        let worst = worst_case(model, input_bytes, max_output);
+        self.preflight_usd(worst_case(model, input_bytes, max_output), cap)
+    }
+
+    /// The same check for a call whose worst case is already known in dollars.
+    pub fn preflight_usd(&mut self, worst: f64, cap: f64) -> Result<f64, String> {
         let spent = self.spent_today()?;
         if spent + worst > cap {
             return Err(format!(
@@ -151,6 +166,7 @@ impl Ledger {
             Charge::Usage(u) => (u, cost(model, u), false),
             Charge::Free => (Usage::default(), 0.0, false),
             Charge::Estimate(x) => (Usage::default(), x, true),
+            Charge::Usd(x) => (Usage::default(), x, false),
         };
         let at = iso(self.now);
         let row = serde_json::json!({
@@ -237,6 +253,27 @@ mod tests {
         let text = fs::read_to_string(d.join("ledger.jsonl")).unwrap();
         assert_eq!(text.lines().count(), 2);
         assert!(text.contains("\"est\":true") && text.contains("http_429"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn audio_is_billed_by_the_whole_second_and_counts_against_the_same_cap() {
+        // 3.6 s -> 4 s of USD 0.18 per hour; a full hour -> USD 0.18
+        assert!((asr_cost(3600) - 4.0 * 0.18 / 3600.0).abs() < 1e-12);
+        assert!((asr_cost(3_600_000) - 0.18).abs() < 1e-12);
+        assert_eq!(asr_cost(0), 0.0);
+        let d = dir("asr");
+        let mut l = Ledger::open_at(&d, 1_793_041_603).unwrap();
+        assert!(l.preflight_usd(0.0001, 0.0002).is_ok());
+        l.record(ASR_MODEL, "http_200", Charge::Usd(0.00015), "audio 2580 ms")
+            .unwrap();
+        let e = l.preflight_usd(0.0001, 0.0002).unwrap_err();
+        assert!(e.contains("cap") && e.contains("Nothing was sent"), "{e}");
+        let text = fs::read_to_string(d.join("ledger.jsonl")).unwrap();
+        assert!(
+            text.contains("\"est\":false") && text.contains(ASR_MODEL),
+            "{text}"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
