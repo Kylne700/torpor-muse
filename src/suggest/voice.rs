@@ -797,8 +797,22 @@ mod tests {
     #[ignore = "costs money: real transcriptions"]
     fn measure_keywords() {
         let get = |n: &str| std::env::var(n).unwrap_or_else(|_| panic!("set {n}"));
+        // both are read later by `transcribe`: say so before any call, and never write to the default state dir
+        for n in ["META_API_KEY", "TORPOR_MUSE_STATE"] {
+            get(n);
+        }
         let manifest: Vec<Value> =
             serde_json::from_str(&fs::read_to_string(get("VOICE_MANIFEST")).unwrap()).unwrap();
+        // a clip and arm that already has a row is skipped: a run that stopped halfway goes on, nothing is asked twice
+        let done: Vec<(String, String)> = fs::read_to_string(get("VOICE_ROWS"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .map(|r| {
+                let s = |k: &str| r[k].as_str().unwrap_or("").to_string();
+                (s("id"), s("arm"))
+            })
+            .collect();
         let mut rows = fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -809,19 +823,24 @@ mod tests {
                 .join("eval/apps")
                 .join(clip["app"].as_str().unwrap());
             for arm in ["without", "with"] {
+                if done.contains(&(clip["id"].as_str().unwrap().to_string(), arm.to_string())) {
+                    continue;
+                }
                 let words = if arm == "with" {
                     keywords(&app)
                 } else {
                     Vec::new()
                 };
-                // a call that fails (network, 5xx) is made again, up to 3 tries; a transcript is never asked for twice
+                // a call that fails (network, 5xx, rate limit) is made again 10 s later, up to 3 tries; a transcript that
+                // came back is never asked for twice
                 let mut tries = 0;
                 let (text, ms) = loop {
                     tries += 1;
                     match transcribe(clip["file"].as_str().unwrap(), &words) {
                         Ok(h) => break h,
                         Err(e) if tries < 3 => {
-                            eprintln!("{} {arm}: try {tries} failed: {e}", clip["id"])
+                            eprintln!("{} {arm}: try {tries} failed: {e}", clip["id"]);
+                            std::thread::sleep(std::time::Duration::from_secs(10));
                         }
                         Err(e) => panic!("{} {arm}: {e}", clip["id"]),
                     }
