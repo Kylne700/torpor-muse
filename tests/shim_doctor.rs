@@ -590,6 +590,7 @@ fn a_turn_without_stop_is_a_warning_and_a_repeated_stop_is_normal() {
         "1 turn(s) of session s1 ended without a Stop",
     );
     must(&r, Level::Info, "2 extra Stop(s) in session s1");
+    must(&r, Level::Info, "when it double-checks its answer"); // dogfood1 n2: no Stop blocked there
     must(&r, Level::Ok, "gate live");
     every_problem_says_how(&r);
     assert_eq!(r.fixes(), 0, "{}", r.text());
@@ -624,6 +625,7 @@ fn events_without_their_pair_are_a_warning_only_when_both_hooks_exist() {
         Level::Warn,
         "2 PreToolUse without PostToolUse/PostToolUseFailure",
     );
+    must(&r, Level::Warn, "or the turn was stopped while a tool ran"); // dogfood1 n7: often no rejected output
     every_problem_says_how(&r);
     // with no hook for the second half of the pair there is nothing to compare
     w.write_json(&w.settings_value(&all[..4]));

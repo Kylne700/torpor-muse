@@ -64,9 +64,9 @@ sb "$R1" -- bash -c "exec 3<>/dev/tcp/127.0.0.1/$P1" >/dev/null 2>&1; rc=$?
 [ -z "$(sb "$R1" -- getent hosts example.com)" ]; chk "1.8 no DNS inside"
 sb "$R1" -- kill -0 "$CANARY" >/dev/null 2>&1; rc=$?
 kill -0 "$CANARY" && [ "$rc" -eq 1 ]; chk "1.9 a host process (alive: control) cannot be signalled from inside (rc=$rc, want 1)"
-envout=$(FOO=bar META_API_KEY=not-a-key TORPOR_SELFTEST=1 sb "$R1" -- env)
-grep -qx TORPOR_SELFTEST=1 <<<"$envout" && grep -qx "HOME=$R1/home" <<<"$envout" && ! grep -qE '^(FOO|META_API_KEY)=' <<<"$envout"
-chk "1.10 env cleared: FOO and META_API_KEY (with --net none) gone, TORPOR_* and HOME kept"
+envout=$(FOO=bar DIR=/x CHDIR=/x DRAIN=5 META_API_KEY=not-a-key TORPOR_SELFTEST=1 sb "$R1" -- env)
+grep -qx TORPOR_SELFTEST=1 <<<"$envout" && grep -qx "HOME=$R1/home" <<<"$envout" && ! grep -qE '^(FOO|DIR|CHDIR|DRAIN|META_API_KEY)=' <<<"$envout"
+chk "1.10 env cleared: FOO, META_API_KEY (with --net none) and a caller's DIR, CHDIR, DRAIN gone, TORPOR_* and HOME kept"
 bad=''
 for r in "$REAL" / relative "$T/missing"; do "$SB" --run-dir "$r" -- true >/dev/null 2>&1; [ $? -eq 125 ] || bad+=" $r"; done
 PATH=/nonexistent "$BASH" "$SB" --run-dir "$R1" -- true >/dev/null 2>&1; [ $? -eq 125 ] || bad+=" no-bwrap"

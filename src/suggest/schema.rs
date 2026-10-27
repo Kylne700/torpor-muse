@@ -157,6 +157,36 @@ pub fn parse(text: &str) -> Result<Answer, String> {
     serde_json::from_str(text).map_err(|e| format!("the answer does not fit the schema: {e}"))
 }
 
+/// Takes out the steps whose path names a record already in the user's data, one the check did not create and that may
+/// be gone tomorrow (dogfood1 M5: a note id from the data). Such a path part (before `?`, without `{rand}`) has a digit
+/// and is all digits or no whole word of the code the model saw. Returns them as "step N (METHOD path)".
+/// shortcut: names without a digit (`/users/alice`) and ids in a body or a query are not caught; upgrade when a saved
+/// check is seen to depend on one.
+pub fn drop_data_records(a: &mut Answer, excerpt: &str) -> Vec<String> {
+    let words: std::collections::HashSet<&str> = excerpt
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .collect();
+    let foreign = |t: &str| {
+        t.bytes().any(|b| b.is_ascii_digit())
+            && (t.bytes().all(|b| b.is_ascii_digit()) || !words.contains(t))
+    };
+    let (mut gone, mut n) = (Vec::new(), 0);
+    a.steps.retain(|st| {
+        n += 1;
+        let path = st.path.split('?').next().unwrap_or("");
+        let hit = path
+            .split('/')
+            .filter(|part| !part.contains("{rand}"))
+            .flat_map(|part| part.split(|c: char| !c.is_ascii_alphanumeric()))
+            .any(foreign);
+        if hit {
+            gone.push(format!("step {n} ({} {path})", st.method.as_str()));
+        }
+        !hit
+    });
+    gone
+}
+
 /// Builds the engine's check from a `check` answer. Empty strings mean "not set". Only what the schema cannot say is
 /// checked here (the allowlisted start and env, a body that is JSON text); the engine's lint judges the rest.
 pub fn to_check(a: &Answer, starts: &[Start]) -> Result<Value, String> {

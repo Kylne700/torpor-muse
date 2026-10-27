@@ -114,11 +114,12 @@ fi
 # --- the environment inside: cleared (never through argv, so the key stays out of ps), then a fixed set
 KEEP_KEY=''
 [ "$NET" = meta ] && [ -n "${META_API_KEY:-}" ] && KEEP_KEY=1
+# shellcheck disable=SC2163 # $v holds the name of the variable to un-export
 for v in $(compgen -e); do
   case $v in
     TORPOR_*) ;;
     META_API_KEY) [ -n "$KEEP_KEY" ] || unset META_API_KEY ;;
-    *) unset "$v" 2>/dev/null ;;
+    *) export -n "$v" 2>/dev/null ;; # un-export, not unset: a caller's DIR, CHDIR or DRAIN must not wipe this script's own
   esac
 done
 export HOME="$DIR/home" TMPDIR="$DIR/tmp" LANG=C.UTF-8 PATH=/usr/local/bin:/usr/bin:/bin MUSE_NO_AUTO_UPDATE=1 PWD="$CHDIR"

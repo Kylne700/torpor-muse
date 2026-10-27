@@ -300,9 +300,10 @@ const FILE_CAP: usize = 6_000;
 const LINE_CAP: usize = 300;
 const BIG_FILE: u64 = 64_000;
 const LIST_CAP: usize = 120;
-const EXTS: [&str; 22] = [
-    "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "md", "txt", "html", "ejs", "hbs", "pug", "py",
-    "rb", "php", "go", "java", "rs", "cs", "sql", "vue",
+/// Code only: the app's data (.json, .txt, .csv, .sql, notes in .md) never goes to the model (dogfood1 M2).
+const EXTS: [&str; 18] = [
+    "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "ejs", "hbs", "pug", "py", "rb", "php", "go",
+    "java", "rs", "cs", "vue",
 ];
 const SKIP_DIRS: [&str; 11] = [
     "node_modules",
@@ -374,17 +375,21 @@ fn listing(root: &Path) -> Vec<String> {
     v
 }
 
+/// A code file (`EXTS`) or one of the manifests the writer needs to start the app: `package.json` (the scripts) and
+/// `tsconfig*.json`. No other file, so no data, notes or dumps; never in a dot folder or a skipped one.
+/// shortcut: data kept in a code file (a `data.js` that exports records) still goes; upgrade when a project is seen
+/// to keep its records that way.
 fn allowed(p: &str) -> bool {
     let parts: Vec<&str> = p.split('/').collect();
     let name = parts.last().copied().unwrap_or("").to_lowercase();
     let ext = name.rsplit_once('.').map_or("", |(_, e)| e);
+    let manifest = name == "package.json" || (name.starts_with("tsconfig") && ext == "json");
     parts
         .iter()
         .all(|c| !c.starts_with('.') && !SKIP_DIRS.contains(c))
-        && EXTS.contains(&ext)
+        && (EXTS.contains(&ext) || manifest)
         && !name.contains("secret")
         && !name.contains("credential")
-        && !name.ends_with("-lock.json")
         && !name.ends_with(".min.js")
         && !name.ends_with(".d.ts")
 }
@@ -394,8 +399,6 @@ fn rank(p: &str) -> u8 {
     let base = low.rsplit('/').next().unwrap_or(&low);
     if base == "package.json" {
         0
-    } else if base.starts_with("readme") {
-        1
     } else if ["server.", "app.", "index.", "main."]
         .iter()
         .any(|n| base.starts_with(n))
@@ -445,7 +448,7 @@ pub(super) fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<Str
     Some(shown)
 }
 
-/// The files the writer may read: tracked and not ignored, a known text extension, no secrets. Sorted.
+/// The files the writer may read: tracked and not ignored, code or a manifest (`allowed`), no secrets. Sorted.
 pub fn allowed_files(root: &Path) -> Vec<String> {
     listing(root).into_iter().filter(|p| allowed(p)).collect()
 }
@@ -577,7 +580,6 @@ mod tests {
             r#"{"scripts":{"start":"node server.js"}}"#,
         )
         .unwrap();
-        fs::write(d.join("README.md"), "# demo\n").unwrap();
         fs::write(d.join(".env"), "CANARY_ENV=abc\n").unwrap();
         fs::write(d.join(".synthetic"), "").unwrap();
         fs::write(d.join("notes.txt"), "ignored by git\n").unwrap();
@@ -585,7 +587,7 @@ mod tests {
         fs::write(d.join(".gitignore"), "notes.txt\n").unwrap();
         fs::create_dir_all(d.join("node_modules/x")).unwrap();
         fs::write(d.join("node_modules/x/i.js"), "module.exports=1").unwrap();
-        std::os::unix::fs::symlink("/etc/hosts", d.join("link.md")).unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", d.join("link.js")).unwrap();
         let ex = excerpt(&d, true);
         for gone in [
             "CANARY_ENV",
@@ -594,20 +596,58 @@ mod tests {
             "notes.txt",
             "secrets.json",
             "node_modules",
-            "link.md",
+            "link.js",
             &key,
         ] {
             assert!(!ex.contains(gone), "{gone} should not be in:\n{ex}");
         }
-        for here in [
-            "FILE package.json",
-            "FILE server.js",
-            "FILE README.md",
-            "console.log('hi')",
-        ] {
+        for here in ["FILE package.json", "FILE server.js", "console.log('hi')"] {
             assert!(ex.contains(here), "{here} missing in:\n{ex}");
         }
         assert!(ex.find("FILE package.json") < ex.find("FILE server.js"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// dogfood1 M2: the app's own data never goes to the model, only code and the manifests.
+    #[test]
+    fn the_excerpt_holds_code_and_manifests_and_none_of_the_data_files() {
+        let d = ws("data");
+        fs::write(d.join("server.js"), "app.get('/notes', list);\n").unwrap();
+        fs::write(
+            d.join("package.json"),
+            r#"{"scripts":{"start":"node server.js"}}"#,
+        )
+        .unwrap();
+        fs::write(d.join("tsconfig.json"), r#"{"compilerOptions":{}}"#).unwrap();
+        fs::write(
+            d.join("notes.json"),
+            r#"[{"id":"mvqm4ta2","text":"buy oat milk"}]"#,
+        )
+        .unwrap();
+        fs::write(d.join("data.txt"), "my bank pin is in here\n").unwrap();
+        fs::write(d.join("dump.sql"), "INSERT INTO users VALUES ('ana');\n").unwrap();
+        fs::write(d.join("README.md"), "# my private notes\n").unwrap();
+        let ex = excerpt(&d, false);
+        for gone in [
+            "notes.json",
+            "mvqm4ta2",
+            "data.txt",
+            "bank pin",
+            "dump.sql",
+            "INSERT INTO",
+            "README.md",
+            "private notes",
+        ] {
+            assert!(!ex.contains(gone), "{gone} should not be in:\n{ex}");
+        }
+        for here in [
+            "FILE server.js",
+            "app.get('/notes'",
+            "FILE package.json",
+            "FILE tsconfig.json",
+        ] {
+            assert!(ex.contains(here), "{here} missing in:\n{ex}");
+        }
         let _ = fs::remove_dir_all(&d);
     }
 

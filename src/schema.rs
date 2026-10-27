@@ -229,12 +229,13 @@ pub fn validate(event: &str, text: &str) -> Result<Output, String> {
 }
 
 /// A message of our own (the engine did not run): `systemMessage`, plus `additionalContext` where the event takes it.
+/// An empty `system` or `context` leaves that channel out.
 pub fn notice(event: &str, system: &str, context: &str) -> Option<String> {
     let mut o = Output {
-        system_message: Some(cut_chars(system, SYSTEM_MESSAGE_MAX)),
+        system_message: (!system.is_empty()).then(|| cut_chars(system, SYSTEM_MESSAGE_MAX)),
         ..Output::default()
     };
-    if CONTEXT_OK.contains(&event) {
+    if CONTEXT_OK.contains(&event) && !context.is_empty() {
         o.hook_specific_output = Some(Specific {
             hook_event_name: event.to_string(),
             additional_context: Some(context.to_string()),
@@ -247,18 +248,21 @@ pub fn notice(event: &str, system: &str, context: &str) -> Option<String> {
 
 /// The engine's output `body` (None or blank: it printed nothing) with a note of our own added: `system` after its
 /// `systemMessage`, `context` after its `additionalContext` (where the event takes one). None = `body` is not valid
-/// for `event`, or the two together do not fit; the caller then keeps `body` as it is.
+/// for `event`, or the two together do not fit; the caller then keeps `body` as it is. An empty `system` or `context`
+/// adds nothing to that channel.
 pub fn with_note(event: &str, body: Option<&str>, system: &str, context: &str) -> Option<String> {
     let Some(body) = body.filter(|b| !b.trim().is_empty()) else {
         return notice(event, system, context);
     };
     let mut o = validate(event, body).ok()?;
-    let room = SYSTEM_MESSAGE_MAX.saturating_sub(system.chars().count() + 1);
-    o.system_message = Some(match o.system_message.take() {
-        Some(m) => format!("{}\n{system}", cut_chars(&m, room)),
-        None => cut_chars(system, SYSTEM_MESSAGE_MAX),
-    });
-    if CONTEXT_OK.contains(&event) {
+    if !system.is_empty() {
+        let room = SYSTEM_MESSAGE_MAX.saturating_sub(system.chars().count() + 1);
+        o.system_message = Some(match o.system_message.take() {
+            Some(m) => format!("{}\n{system}", cut_chars(&m, room)),
+            None => cut_chars(system, SYSTEM_MESSAGE_MAX),
+        });
+    }
+    if CONTEXT_OK.contains(&event) && !context.is_empty() {
         let h = o.hook_specific_output.get_or_insert_with(|| Specific {
             hook_event_name: event.to_string(),
             ..Specific::default()

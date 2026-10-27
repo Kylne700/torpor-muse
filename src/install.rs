@@ -464,8 +464,11 @@ fn tidy(settings: &Path, state: &Path) -> Option<String> {
     }
     fs::read_dir(state).ok()?.next().map(|_| {
         format!(
-            "kept: {} still holds torpor-muse's files (spend ledger, results, logs); deleting that folder is your choice",
-            state.display()
+            "kept: {} still holds torpor-muse's files (spend ledger, results, logs); deleting that folder is your choice. \
+             Also kept: ~/.config/torpor-muse/config (if you made one) and the engine's {} and ~/.config/torpor; \
+             to remove Torpor completely, delete those too",
+            state.display(),
+            state.parent().unwrap_or(state).display()
         )
     })
 }

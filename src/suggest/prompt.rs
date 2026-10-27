@@ -22,9 +22,10 @@ For "check":
 - steps: the requests in order; cookies are kept between steps. path starts with "/" and has no host. body_json is the JSON body as text, or "" for none; GET and HEAD never have a body. expect_status is the HTTP status the code really returns for that request (200, 201, ...), or 0 for none. Every step needs at least one of expect_status, json_has (field paths such as "user.name" or "items[0]"), json_types, body_contains.
 - Use only routes, field names and logins that appear in the repo files. Never invent a login or a route. If you cannot find what you need, answer "cannot_check".
 - Where a value must be new on every run (a new account, a note title), write {rand} in the text; it becomes 8 random letters or digits.
+- Never use the id of a record that the check did not create in an earlier step (a note, a user or an order already in the app, or one the developer names): the user may change or delete it, and the check would then fail with nothing broken. If a part can only be tested on such a record, leave those steps out and name that part in reason.
 - Do not expect ids, dates, UUIDs or numbers of 5 or more digits. Do not write absolute URLs.
 - The why of every step must contain at least one word of 4 or more letters that the developer wrote, spelled exactly as they wrote it.
-- When the developer names a value (a quantity, a total, a name, a status), assert that exact value with body_contains or json_types, worked out from the data in the repo files; a field that is merely present does not prove it.
+- When the developer names a value (a quantity, a total, a name, a status), assert that exact value with body_contains or json_types, worked out from the code and from what the earlier steps sent; a field that is merely present does not prove it.
 - reason: empty when the steps prove everything the developer said. Otherwise one sentence naming the part they cannot test (a restart of the server, a request header such as a bearer token, replaying an old cookie, waiting for time to pass).
 - Keep the check small: only what the developer said works, at most 6 steps."#;
 
