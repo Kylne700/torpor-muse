@@ -544,7 +544,7 @@ fn db_note(
                 "\nTurn {n} changed {} (database file{s}). To get it back as it was before turn {n}, stop the app first, \
                  then run the command below; it also puts every other file back to the start of turn {n}, so later \
                  changes are undone too. The command: {} back --id {p} --with-data",
-                t.files.join(", "),
+                suggest::scrub(&t.files.join(", "), 300), // the note must fit Muse's 12 KiB stdout limit
                 engine_cmd(bin)
             ));
         }

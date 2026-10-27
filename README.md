@@ -93,7 +93,7 @@ Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks
 
 ## Where to read Torpor's lines
 
-Muse Code 1.4.13 shows the line Torpor prints after a turn only for a moment in its status bar and does not keep it in the conversation. In a terminal in the project folder, `torpor log` lists the turns and what each one changed, `torpor show N` the files and save points of turn N, and `torpor status` whether Torpor is saving the folder. `torpor undo N` undoes one turn, `torpor back N` puts the whole folder back to an earlier state, and `torpor help` lists the rest. When the check-writer saves a check that does not test everything you said, the line that announces the new promise names what it does not cover, and `torpor promise show N` prints that on its Why line.
+Muse Code 1.4.13 shows the line Torpor prints after a turn only for a moment in its status bar and does not keep it in the conversation. In a terminal in the project folder, `torpor log` lists the turns and what each one changed, `torpor show N` the files and save points of turn N, and `torpor status` whether Torpor is saving the folder. `torpor undo N` undoes one turn, `torpor back N` puts the whole folder back to an earlier state, and `torpor help` lists the rest. When the check-writer saves a check that does not test everything you said, the line that announces the new promise names what it does not cover, and `torpor promise show N` prints that on its Why line when the line has room.
 
 ### The AI deleted or broke my database
 

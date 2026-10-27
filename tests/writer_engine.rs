@@ -30,7 +30,9 @@ fn hook_run(sb: &Sandbox, base: &str) -> Ran {
 fn a_praise_becomes_a_proven_check_that_catches_a_break_and_ignores_a_harmless_edit() {
     let Some(sb) = with_engine("e2e") else { return };
     sb.engine_history(PRAISE);
-    let mock = Mock::ok(&sb.dir, &good_answer());
+    let mut answer = good_answer();
+    answer["reason"] = json!("a wrong password is not tried");
+    let mock = Mock::ok(&sb.dir, &answer);
     let r = hook_run(&sb, &mock.base());
     let ctx = format!("out={:?} err={:?}", r.out, r.err);
     assert_eq!(r.code, 0, "{ctx}");
@@ -44,6 +46,12 @@ fn a_praise_becomes_a_proven_check_that_catches_a_break_and_ignores_a_harmless_e
     assert!(
         list.contains("login works") && list.contains("your words, turn 2"),
         "{list}"
+    );
+    // what the check leaves out is on the Why line the engine prints (L3 N4)
+    let (_, show, _) = sb.torpor(&["promise", "show", "1"], None);
+    assert!(
+        show.contains("Why: login works for alice Not covered: a wrong password is not tried"),
+        "{show}"
     );
 
     // it passes on the app as it is
