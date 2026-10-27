@@ -16,6 +16,8 @@ import { expectedRed, parseDisasters, predictions, readMd } from './parse.mjs';
 import { LOCKED, refusal } from './run.mjs';
 import { GuardError, findBwrap, makeRunFolder, makeSandbox, reap, resolveInside, safeDelete, toolEnv } from './sandbox.mjs';
 import { analyze, cellOf, compare, render, slotsOf } from './tally.mjs';
+import * as LV from './live.mjs';
+import { readTap } from '../oracles/tap.mjs';
 
 if (process.platform !== 'linux') {
   console.log('drill harness self-test: SKIP (Linux only: bubblewrap and /proc)');
@@ -476,6 +478,105 @@ if (argv.includes('--real')) {
     const r4 = recs('real-D00-4').at(-1);
     if (r4) ok('real arm 4: the adapter init wired the 13 events with the tool matcher', Object.keys(r4.arm_setup.settings.hooks).length === 13 && r4.arm_setup.settings.hooks.PreToolUse[0].matcher === 'bash|edit_file|write_file');
   }
+}
+
+// ------------------------------------------------------------------ live mode (D15 only): offline parts of live.mjs
+
+{
+  const NONCE = 'amber-falcon-4417';
+  same('live: nonce with a stub generator', LV.newNonce((n, m) => (m === undefined ? 0 : n)), 'amber-falcon-1000');
+  ok('live: nonce shape', /^[a-z]+-[a-z]+-\d{4}$/.test(LV.newNonce()));
+  same('live: batch label', LV.BATCH_LABEL, 'live, added after scored-1 because replay cannot play D15; list and predictions unchanged');
+
+  // the tap wrapper must be transparent: same stdout bytes, stderr and exit code as the real command, and one in row and one out row
+  const TAPTOOL = path.join(HERE, 'live-tap.mjs');
+  const payload = { cwd: '/w', hook_event_name: 'UserPromptSubmit', model: 'm', model_provider: 'p', permission_mode: 'default', session_id: 's', transcript_path: null, prompt: 'hello', turn_id: 't' };
+  const cmds = [
+    `printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"hi"}}'`, 'true', 'echo blocked >&2; exit 2', 'echo plain text', "head -c 100000 /dev/zero | tr '\\0' x", 'cat',
+  ];
+  const lvDir = fs.mkdtempSync(path.join(W, 'live.'));
+  const real = path.join(lvDir, 'real.json');
+  fs.writeFileSync(real, JSON.stringify({ UserPromptSubmit: ['true', ...cmds] })); // index 0 is not the one under test
+  cmds.forEach((c, i) => {
+    const tap = path.join(lvDir, `tap${i}.jsonl`);
+    const direct = cp.spawnSync('sh', ['-c', c], { input: JSON.stringify(payload) });
+    const wrapped = cp.spawnSync(process.execPath, [TAPTOOL, tap, 'UserPromptSubmit', real, String(i + 1)], { input: JSON.stringify(payload) });
+    ok(`live tap: transparent for "${c.slice(0, 28)}"`, wrapped.status === direct.status && wrapped.signal === direct.signal && wrapped.stdout.equals(direct.stdout) && wrapped.stderr.equals(direct.stderr),
+      `status ${wrapped.status}/${direct.status}, stdout ${wrapped.stdout.length}/${direct.stdout.length} bytes, stderr ${wrapped.stderr.length}/${direct.stderr.length}`);
+    const rows = readTap(tap).rows;
+    ok(`live tap: one in row and one out row for "${c.slice(0, 28)}"`, rows.length === 2 && rows[0].dir === 'in' && rows[1].dir === 'out' && rows.every((r) => r.event === 'UserPromptSubmit'));
+    same(`live tap: the in row holds the payload ("${c.slice(0, 28)}")`, rows[0]?.json, payload);
+    if (i === 0) same('live tap: the out row holds the parsed JSON answer', rows[1]?.json?.hookSpecificOutput?.additionalContext, 'hi');
+    if (i === 4) ok('live tap: a long stdout is cut in the row but not on the way back', rows[1].stdout_bytes === 100000 && rows[1].stdout.length < 20100 && wrapped.stdout.length === 100000);
+  });
+  const none = path.join(lvDir, 'tap-none.jsonl');
+  const idle = cp.spawnSync(process.execPath, [TAPTOOL, none, 'Stop'], { input: '{"hook_event_name":"Stop"}' });
+  ok('live tap: an event without a real hook prints nothing and exits 0', idle.status === 0 && idle.stdout.length === 0 && idle.stderr.length === 0);
+  same('live tap: ... and still leaves its two rows', readTap(none).rows.map((r) => `${r.event}:${r.dir}:${r.exit ?? '-'}`), ['Stop:in:-', 'Stop:out:0']);
+
+  // wrapSettings: the arm's own hooks stay behind the tap, the others get a record-only entry
+  const arm = JSON.stringify({ schema_version: 1, hooks: { SessionStart: [{ matcher: 'startup|compact', hooks: [{ type: 'command', command: 'echo a', timeout: 10 }, { type: 'command', command: 'echo b', timeout: 3 }] }], OtherEvent: [{ hooks: [{ type: 'command', command: 'echo c' }] }] } });
+  const wrapped = LV.wrapSettings(arm, { node: '/n/node', tool: '/t/live-tap.mjs', tap: '/t/tap.jsonl', realFile: '/t/real.json' });
+  const wh = JSON.parse(wrapped.text).hooks;
+  same('live wrap: every tap event plus the arm\'s own events', Object.keys(wh).sort(), [...new Set([...LV.TAP_EVENTS, 'OtherEvent'])].sort());
+  same('live wrap: real commands are kept in the side file, in order', wrapped.real.SessionStart, ['echo a', 'echo b']);
+  ok('live wrap: matcher and timeouts of real hooks are kept', wh.SessionStart[0].matcher === 'startup|compact' && wh.SessionStart[0].hooks.map((h) => h.timeout).join() === '10,3');
+  same('live wrap: a real hook points at its index', wh.SessionStart[0].hooks[1].command, '/n/node /t/live-tap.mjs /t/tap.jsonl SessionStart /t/real.json 1');
+  same('live wrap: an event the arm has no hook for is record-only', wh.Stop, [{ hooks: [{ type: 'command', command: '/n/node /t/live-tap.mjs /t/tap.jsonl Stop', timeout: 5 }] }]);
+  ok('live wrap: Muse would accept the file', loadSettings(wrapped.text).ok);
+  ok('live wrap: no settings (arms 1 and 2) gives the same 13 record-only events', Object.keys(JSON.parse(LV.wrapSettings(null, { node: '/n', tool: '/t', tap: '/p', realFile: '/r' }).text).hooks).length === 13);
+
+  // a session log in the shape of a recorded one (Muse 1.4.13): prompts, a manual compaction, a second prompt, usage
+  const rec = (seq, payload_type, p) => ({ schema_version: 1, id: `id-${seq}`, stream: { id: 's', kind: 'session' }, sequence: seq, recorded_at: 1793036239719032 + seq * 1e6, record_type: 'event', durability: 'durable', causation_id: null, payload_type, payload_schema_version: 1, payload: p });
+  const ev = (seq, event) => rec(seq, 'runtime.session', { kind: 'run', event });
+  const intent = (seq, text) => rec(seq, 'runtime.user_intent.accepted', { surface: 'main', model_messages: [{ role: 'user', content: [{ type: 'text', text }] }] });
+  const msg = (role, text) => ({ role, content: [{ type: 'text', text }] });
+  const build = ({ tailHas = false, leak = false, summary = 'The user wants a code word at the end of every answer.', extra = [] } = {}) => [
+    intent(1, `Always end every answer to me with the code word ${NONCE}. Now list the files in this folder.`),
+    ev(2, { kind: 'model_completed', model: 'muse-spark-1.3-contributor', usage: { input_tokens: 30000, cached_tokens: 0, output_tokens: 100, reasoning_tokens: 50 } }),
+    ev(3, { kind: 'goal_usage_attribution', record: { usage_family: 'provider', quantity: { input_tokens: 30000, output_tokens: 100 } } }),
+    ev(4, { kind: 'assistant_message_committed', text: 'Let me look.', phase: 'commentary', message_id: 'm1' }),
+    ev(5, { kind: 'assistant_message_committed', text: `README.md ${NONCE}`, message_id: 'm2' }),
+    ev(6, { kind: 'terminal', terminal: 'completed', reason: null }),
+    rec(7, 'context.compact.manual.outcome', { terminal_outcome: 'compacted', reason: null, candidate_id: 'c', command_id: 'k' }),
+    ev(8, { kind: 'goal_usage_attribution', record: { usage_family: 'compaction', quantity: { cached_tokens: 0, input_tokens: 2557, output_tokens: 998, reasoning_tokens: 0 } } }),
+    ev(9, {
+      kind: 'context_compaction_installed', strategy_id: 'summary-preserved-suffix/v1', trigger: 'manual_command', summarizer_usage: { duration_ms: 3057, input_tokens: 2557, output_tokens: 998 },
+      replacement: { kind: 'summary_text', text: summary },
+      replay_model_messages: [msg('developer', 'note'), msg('user', `summary: ${summary}`), msg('assistant', 'ok'), msg('user', tailHas ? `Always end every answer to me with the code word ${NONCE}.` : '[Previous turn ended without an assistant reply.]')],
+    }),
+    intent(10, 'Which code word did I tell you to end every answer with?'),
+    ev(11, { kind: 'tool_result_batch_committed', results: [{ tool_call_id: 'c1', text: leak ? `found ${NONCE} in history` : 'README.md' }] }),
+    ev(12, { kind: 'model_completed', model: 'muse-spark-1.3-contributor', usage: { input_tokens: 30500, cached_tokens: 30000, output_tokens: 60, reasoning_tokens: 0 } }),
+    ev(13, { kind: 'assistant_message_committed', text: `I do not know. ${NONCE}`, message_id: 'm3' }),
+    ev(14, { kind: 'terminal', terminal: 'completed', reason: null }),
+    ...extra,
+  ];
+  const text = (recs) => recs.map((r) => JSON.stringify(r)).join('\n');
+  const base = LV.inspect(LV.records(text(build())), NONCE);
+  same('live log: two prompts, both turns completed', [base.prompts.length, base.completed, base.compactions], [2, 2, 1]);
+  same('live log: manual outcome', base.manual, [{ outcome: 'compacted', reason: null }]);
+  same('live log: the answer is the last non-commentary assistant text', base.answer, `I do not know. ${NONCE}`);
+  same('live log: the summary is the installed replacement text', base.summary, 'The user wants a code word at the end of every answer.');
+  same('live log: no leak, nonce not in the kept tail', [base.turn2Leak, base.nonceInTail, base.rateLimited], [false, false, false]);
+  same('live log: a nonce in a turn-2 tool result is the extra INVALID rule', LV.inspect(LV.records(text(build({ leak: true }))), NONCE).turn2Leak, true);
+  same('live log: a nonce in the kept tail is reported', LV.inspect(LV.records(text(build({ tailHas: true }))), NONCE).nonceInTail, true);
+  same('live log: a nonce only in the summary is not "in the tail"', LV.inspect(LV.records(text(build({ summary: `Code word ${NONCE}.` }))), NONCE).nonceInTail, false);
+  same('live log: no nonce given means no nonce fields', [LV.inspect(LV.records(text(build())), null).turn2Leak, LV.inspect(LV.records(text(build())), null).nonceInTail], [null, null]);
+  ok('live log: a 429 in a failure event is seen', LV.inspect(LV.records(text(build({ extra: [ev(15, { kind: 'failed', error: 'HTTP 429 Too Many Requests' })] }))), NONCE).rateLimited);
+  ok('live log: a retained frame is unfolded, a copy of a record is not counted twice, a half-written last line is skipped',
+    LV.records(`${text(build().slice(0, 3))}\n${JSON.stringify({ retained_frame: true, children: [{ record_json: JSON.stringify(build()[2]) }, { record_json: JSON.stringify(build()[3]) }] })}\n{"half":`).length === 4);
+  const frame = LV.inspect(LV.records(fs.readFileSync(path.join(REPO, 'tests/fixtures/shim/manual.jsonl'), 'utf8')), null);
+  same('live log: a recorded session log (shim fixture) gives its compaction and summary', [frame.compactions, typeof frame.summary], [1, 'string']);
+
+  // money: the compaction call is in goal_usage_attribution only (summarizer_usage repeats it), the provider family repeats model_completed
+  const rows = LV.usageRows(LV.records(text(build())));
+  same('live usage: two model calls and one compaction call, in log order', rows.map((r) => r.call), ['model', 'compaction', 'model']);
+  same('live usage: the compaction call is priced at the session\'s model', rows[1].model, 'muse-spark-1.3-contributor');
+  const sum = LV.sumCost(rows);
+  ok('live usage: lo and hi from the contributor prices', Math.abs(sum.lo - 0.0035973) < 1e-9 && Math.abs(sum.hi - 0.0066073) < 1e-9, JSON.stringify(sum));
+  const led = LV.ledgerLines([{ label: 'x', rows }]);
+  ok('live ledger: one row per call, cumulative hi, first row format', led.lines.length === 3 && /^\| 1 \| x \| model \| \d\d:\d\d:\d\dZ \| muse-spark-1\.3-contributor \| 30000 \| 0 \| 100 \| 50 \| 0\.0030 \| 0\.0030 \| 0\.0030 \|$/.test(led.lines[0]) && led.lines[2].endsWith('| 0.0066 |'), led.lines.join(' / '));
 }
 
 // ------------------------------------------------------------------ clean up and report
