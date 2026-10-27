@@ -34,6 +34,7 @@ const slot = (r) => `${r.disaster}|${r.arm}|${r.repetition}|${r.control ?? ''}`;
 
 // The facts the head states about the data. If a record ever says otherwise the head must be rewritten, so this throws.
 const EXPECT = {
+  modes: 'replay and live',
   loss_ids: 'D07',
   miss_list: 'D11 arm 3, D12 arm 3, D15 arm 1, D15 arm 2, D15 arm 3',
   red_unexpected_ids: 'D15',
@@ -65,6 +66,9 @@ const CITES = [
   ['drill/PREREG.md', 106, 'Before the first scored run'],
   ['drill/PREREG.md', 106, 'the words "no scored run has happened"'],
   ['drill/PREREG.md', 107, 'After the first scored run, nothing in the list or the predictions changes'],
+  ['drill/PREREG.md', 107, 'A defect in the harness or an oracle may be fixed'],
+  ['drill/PREREG.md', 107, 'every affected run is repeated, and both results are published'],
+  ['drill/PREREG.md', 87, 'a second tally over echo and live cells only'],
   ['drill/PREREG.md', 112, 'v2 (tag `drill-prereg-v2`). No scored run has happened'],
   ['drill/PREREG.md', 116, 'a miss is published as a miss'],
   ['drill/PREREG.md', 117, 'v3 (tag `drill-prereg-v3`). No scored run has happened'],
@@ -252,6 +256,7 @@ export function build({ scored, live, pred, expected, head, shas, sources = null
     d15_cost_cap: usd(cost.cap_hi, 2),
     d15_pids: pids.join(' and '),
     d15_overlap: of(count(d15, (r) => r.overlap?.start?.eval_runner_pids?.length && r.overlap?.end?.eval_runner_pids?.length), n15),
+    modes: uniq(combined.map((r) => r.mode)).join(' and '),
     live_ids: liveIds.join(', '),
     live_tallies: TL.map((t, i) => `${T[i].name.replace('arm 4 vs ', '')} ${fmt(t)}`).join('; '),
     prereg_same: hdrs.every((h) => h.prereg_sha256 === shas.prereg) ? 'yes' : 'NO',
