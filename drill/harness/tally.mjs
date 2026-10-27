@@ -276,11 +276,14 @@ export function readRecords(paths) {
   return { records, files };
 }
 
+// The replay header holds one harness sha256 (string); the live-scripted header one per driver file (object).
+const harnessText = (s) => (s && typeof s === 'object' ? Object.entries(s).map(([f, x]) => `${f} ${String(x).slice(0, 12)}`).join(', ') : s?.slice(0, 12));
+
 // One provenance line from the `header` of a run-log.json.
 export function provenanceOf(label, h) {
   const e = h.provenance?.engine;
   const a = h.provenance?.adapter;
-  return `${label}: mode ${h.mode}; deny contract ${h.deny_contract?.name}; sandbox ${h.sandbox}; gate ${h.gate?.max_polls} polls x ${h.gate?.sleep_ms} ms${h.gate?.overridden ? ' (OVERRIDDEN)' : ''}; engine ${e ? `${e.version_line} sha256 ${e.sha256}` : 'none'}; adapter ${a ? `${a.version_line} sha256 ${a.sha256} git ${a.git_head}${a.source_dirty ? ' (dirty)' : ''}` : 'none'}; harness ${h.harness?.sha256?.slice(0, 12)}; prereg sha256 ${h.prereg_sha256?.slice(0, 12)}`;
+  return `${label}: mode ${h.mode}; deny contract ${h.deny_contract?.name}; sandbox ${h.sandbox}; gate ${h.gate?.max_polls} polls x ${h.gate?.sleep_ms} ms${h.gate?.overridden ? ' (OVERRIDDEN)' : ''}; engine ${e ? `${e.version_line} sha256 ${e.sha256}` : 'none'}; adapter ${a ? `${a.version_line} sha256 ${a.sha256} git ${a.git_head}${a.source_dirty ? ' (dirty)' : ''}` : 'none'}; harness ${harnessText(h.harness?.sha256)}; prereg sha256 ${h.prereg_sha256?.slice(0, 12)}`;
 }
 
 function provenance(files) {
