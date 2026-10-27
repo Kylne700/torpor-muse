@@ -1,6 +1,6 @@
 # Proposed amendments to the drill pre-registration (from the T3 harness build)
 
-For the lead. Nothing here was applied: `DISASTERS.md` and `PREREG.md` are frozen at `drill-prereg-v1`, and no scored run has happened. Each entry has where, what, why (with the evidence), the exact change, and a kind: NEEDED (the text cannot be followed as written, or the harness had to pick a meaning that changes a result) or CLARIFY (the harness picked the stated meaning; writing it down closes the gap). If you take none of them, the harness still runs as described in `README.md`; the choices below are what it does.
+For the lead. Applied at `drill-prereg-v2` (the amendment log in `PREREG.md`): items 1 to 6, with the deny contract chosen in `PREREG.md` section 3; items 7 and 8 are noted there, nothing changed. The text below is as proposed against `drill-prereg-v1`. Each entry has where, what, why (with the evidence), the exact change, and a kind: NEEDED (the text cannot be followed as written, or the harness had to pick a meaning that changes a result) or CLARIFY (the harness picked the stated meaning; writing it down closes the gap). If you take none of them, the harness still runs as described in `README.md`; the choices below are what it does.
 
 No defect was found in a builder, an oracle or the parse of the 16 blocks (`--plan`: 16 disasters, 0 parse errors, 0 static check defects; `build-check`: 16/16 ok).
 
