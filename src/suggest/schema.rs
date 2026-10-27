@@ -187,6 +187,41 @@ pub fn drop_data_records(a: &mut Answer, excerpt: &str) -> Vec<String> {
     gone
 }
 
+/// What a check with a logout cannot see (L3 N3), named as not covered; the steps stay.
+pub const LOGOUT_GAP: &str = "the check cannot tell whether the server ended the session (Torpor's client drops a cookie \
+     the server clears, so the refusal after the logout comes either way)";
+
+/// True when a logout-like step (a path part with logout, signout, revoke and the like, or DELETE on a `session(s)`
+/// path) comes before a step that expects a refusal: 401, 403, a redirect, or a GET of a page with a login word.
+/// shortcut: logout is known by its path words only (`/api/bye` is not caught); upgrade when a saved check misses one.
+pub fn logout_refusal(a: &Answer) -> bool {
+    let parts = |st: &Step| -> Vec<String> {
+        let path = st.path.split('?').next().unwrap_or("");
+        path.split('/').map(str::to_lowercase).collect()
+    };
+    let logout = |st: &Step| {
+        let words = [
+            "logout", "log-out", "log_out", "signout", "sign-out", "sign_out", "revoke",
+        ];
+        let parts = parts(st);
+        parts.iter().any(|p| words.iter().any(|w| p.contains(w)))
+            || (matches!(st.method, Method::Delete)
+                && parts.iter().any(|p| p == "session" || p == "sessions"))
+    };
+    let refused = |st: &Step| {
+        let page = st.body_contains.to_lowercase();
+        matches!(st.expect_status, 401 | 403 | 300..=399)
+            || (matches!(st.method, Method::Get)
+                && ["login", "log in", "sign in"]
+                    .iter()
+                    .any(|w| page.contains(w)))
+    };
+    a.steps
+        .iter()
+        .position(logout)
+        .is_some_and(|i| a.steps[i + 1..].iter().any(refused))
+}
+
 /// Builds the engine's check from a `check` answer. Empty strings mean "not set". Only what the schema cannot say is
 /// checked here (the allowlisted start and env, a body that is JSON text); the engine's lint judges the rest.
 pub fn to_check(a: &Answer, starts: &[Start]) -> Result<Value, String> {
@@ -368,5 +403,50 @@ mod tests {
         let mut a = parse(GOOD).unwrap();
         a.node_env = "test".into();
         assert_eq!(to_check(&a, &starts()).unwrap()["env"]["NODE_ENV"], "test");
+    }
+
+    #[test]
+    fn a_logout_is_flagged_only_when_a_refusal_comes_after_it() {
+        let flagged = |steps: &[(&str, &str, i64, &str)]| {
+            let mut a = parse(GOOD).unwrap();
+            a.steps = steps
+                .iter()
+                .map(|(m, p, status, body)| Step {
+                    method: serde_json::from_value(json!(m)).unwrap(),
+                    path: (*p).into(),
+                    body_json: String::new(),
+                    expect_status: *status,
+                    json_has: vec![],
+                    json_types: vec![],
+                    body_contains: (*body).into(),
+                    why: "logout works".into(),
+                })
+                .collect();
+            logout_refusal(&a)
+        };
+        assert!(flagged(&[
+            ("POST", "/auth/Sign-Out", 200, ""),
+            ("GET", "/me", 403, "")
+        ]));
+        assert!(flagged(&[
+            ("DELETE", "/api/sessions/current", 204, ""),
+            ("GET", "/", 302, "")
+        ]));
+        assert!(flagged(&[
+            ("POST", "/logout?next=/", 200, ""),
+            ("GET", "/notes", 200, "Please log in")
+        ]));
+        assert!(
+            !flagged(&[("POST", "/logout", 200, ""), ("GET", "/", 200, "")]),
+            "no refusal"
+        );
+        assert!(
+            !flagged(&[("GET", "/me", 401, ""), ("POST", "/logout", 200, "")]),
+            "refusal first"
+        );
+        assert!(!flagged(&[
+            ("DELETE", "/api/notes/1", 204, ""),
+            ("GET", "/api/notes/1", 403, "")
+        ]));
     }
 }

@@ -138,6 +138,8 @@ pub fn is_child(v: &Value) -> bool {
 pub const STDOUT_LIMIT: usize = 12 * 1024;
 /// Muse stores `systemMessage` cut to 1000 characters; we stay under.
 const SYSTEM_MESSAGE_MAX: usize = 999;
+/// Muse shows `systemMessage` on one line and drops its newlines, so lines ran together (L3 N7): they get this between.
+const JOIN: &str = " — ";
 /// `decision: block` is verified on Stop only (the engine uses it nowhere else).
 const BLOCKABLE: &[&str] = &["Stop"];
 /// `additionalContext` is accepted here and rejected on Stop, PreCompact and PostCompact (research/59 D5).
@@ -247,18 +249,25 @@ pub fn notice(event: &str, system: &str, context: &str) -> Option<String> {
 }
 
 /// The engine's output `body` (None or blank: it printed nothing) with a note of our own added: `system` after its
-/// `systemMessage`, `context` after its `additionalContext` (where the event takes one). None = `body` is not valid
-/// for `event`, or the two together do not fit; the caller then keeps `body` as it is. An empty `system` or `context`
-/// adds nothing to that channel.
-pub fn with_note(event: &str, body: Option<&str>, system: &str, context: &str) -> Option<String> {
+/// `systemMessage` (before it when `first`; the engine's part is the one cut to fit), `context` after its
+/// `additionalContext` (where the event takes one). None = `body` is not valid for `event`, or the two together do
+/// not fit; the caller then keeps `body` as it is. An empty `system` or `context` adds nothing to that channel.
+pub fn with_note(
+    event: &str,
+    body: Option<&str>,
+    system: &str,
+    context: &str,
+    first: bool,
+) -> Option<String> {
     let Some(body) = body.filter(|b| !b.trim().is_empty()) else {
         return notice(event, system, context);
     };
     let mut o = validate(event, body).ok()?;
     if !system.is_empty() {
-        let room = SYSTEM_MESSAGE_MAX.saturating_sub(system.chars().count() + 1);
+        let room = SYSTEM_MESSAGE_MAX.saturating_sub(system.chars().count() + JOIN.chars().count());
         o.system_message = Some(match o.system_message.take() {
-            Some(m) => format!("{}\n{system}", cut_chars(&m, room)),
+            Some(m) if first => format!("{system}{JOIN}{}", cut_chars(&m, room)),
+            Some(m) => format!("{}{JOIN}{system}", cut_chars(&m, room)),
             None => cut_chars(system, SYSTEM_MESSAGE_MAX),
         });
     }
@@ -383,7 +392,10 @@ pub fn sanitise(
     // What the model reads names the engine by `torpor` (the path of the engine that ran, see `runnable`).
     let for_model = |m: &Map<String, Value>, k: &str| text(m, k).map(|s| runnable(&s, torpor));
     let mut out = Output {
-        system_message: text(&map, "systemMessage").map(|m| cut_chars(&m, SYSTEM_MESSAGE_MAX)),
+        system_message: text(&map, "systemMessage").map(|m| {
+            let lines: Vec<&str> = m.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+            cut_chars(&lines.join(JOIN), SYSTEM_MESSAGE_MAX)
+        }),
         ..Output::default()
     };
     if let Some(d) = map.get("decision") {
@@ -757,8 +769,9 @@ mod tests {
 
     #[test]
     fn a_note_is_added_to_what_the_engine_printed_or_stands_alone() {
-        let note =
-            |event, body: Option<&str>| with_note(event, body, "SYS", "CTX").unwrap_or_default();
+        let note = |event, body: Option<&str>| {
+            with_note(event, body, "SYS", "CTX", false).unwrap_or_default()
+        };
         // nothing printed: the note alone, on both channels where the event takes context
         for body in [None, Some(""), Some("  \n")] {
             let o = note("UserPromptSubmit", body);
@@ -773,7 +786,7 @@ mod tests {
         let engine = r#"{"systemMessage":"saved","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[H]\nx"}}"#;
         let o = note("UserPromptSubmit", Some(engine));
         let v: Value = serde_json::from_str(&o).unwrap();
-        assert_eq!(v["systemMessage"], "saved\nSYS");
+        assert_eq!(v["systemMessage"], "saved — SYS");
         assert_eq!(
             v["hookSpecificOutput"]["additionalContext"],
             "[H]\nx\n\nCTX"
@@ -786,7 +799,7 @@ mod tests {
         );
         // an engine message near the limit is cut to make room, and the result is still valid
         let long = json!({"systemMessage": "y".repeat(999)}).to_string();
-        let o = with_note("SessionStart", Some(&long), &"n".repeat(400), "CTX").unwrap();
+        let o = with_note("SessionStart", Some(&long), &"n".repeat(400), "CTX", false).unwrap();
         let sys = serde_json::from_str::<Value>(&o).unwrap()["systemMessage"]
             .as_str()
             .unwrap()
@@ -799,11 +812,32 @@ mod tests {
             sys.len()
         );
         validate("SessionStart", &o).unwrap();
+        // `first` (the database line, L3 N2): ours leads, the engine's message is the part cut
+        let o = with_note("Stop", Some(&long), &"n".repeat(400), "", true).unwrap();
+        let sys = serde_json::from_str::<Value>(&o).unwrap()["systemMessage"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            sys.chars().count() <= SYSTEM_MESSAGE_MAX
+                && sys.starts_with(&format!("{} — y", "n".repeat(400)))
+                && sys.ends_with("y..."),
+            "{sys}"
+        );
         // output that is not valid for the event, or does not fit with the note: None
-        assert_eq!(with_note("Stop", Some("not json"), "SYS", "CTX"), None);
+        assert_eq!(
+            with_note("Stop", Some("not json"), "SYS", "CTX", false),
+            None
+        );
         let big = json!({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "z".repeat(STDOUT_LIMIT - 400)}}).to_string();
         assert_eq!(
-            with_note("UserPromptSubmit", Some(&big), "SYS", &"c".repeat(600)),
+            with_note(
+                "UserPromptSubmit",
+                Some(&big),
+                "SYS",
+                &"c".repeat(600),
+                false
+            ),
             None
         );
     }

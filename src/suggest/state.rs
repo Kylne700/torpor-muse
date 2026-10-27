@@ -43,10 +43,41 @@ fn fnv1a(b: &[u8]) -> u64 {
 
 /// The folder of one project (by its canonical path) under the state dir; created private.
 pub fn ws_dir(root: &Path) -> Result<PathBuf, String> {
-    let name = format!("{:016x}", fnv1a(root.as_os_str().as_bytes()));
-    let d = state_dir()?.join("ws").join(name);
+    let d = ws_path(root)?;
     private_dir(&d)?;
     Ok(d)
+}
+
+fn ws_path(root: &Path) -> Result<PathBuf, String> {
+    let name = format!("{:016x}", fnv1a(root.as_os_str().as_bytes()));
+    Ok(state_dir()?.join("ws").join(name))
+}
+
+/// What a saved check does not cover (L3 N4), for the hook to show: `gaps.json` in the project's folder, the last 5,
+/// newest first. `session`: the Muse session whose prompt started the run (None: a run typed by hand).
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct Gap {
+    pub promise: u32,
+    pub session: Option<String>,
+    pub gap: String,
+}
+
+/// Only a run that holds the project's lock writes here, so there is one writer at a time.
+pub fn add_gap(root: &Path, g: Gap) -> Result<(), String> {
+    let path = ws_dir(root)?.join("gaps.json");
+    let mut all = gaps(root);
+    all.retain(|x| x.promise != g.promise);
+    all.insert(0, g);
+    all.truncate(5);
+    write_atomic(&path, &serde_json::to_vec(&all).map_err(|e| e.to_string())?)
+}
+
+pub fn gaps(root: &Path) -> Vec<Gap> {
+    ws_path(root)
+        .ok()
+        .and_then(|d| fs::read(d.join("gaps.json")).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 /// The lock of one project: held while this value (the open file) lives.
