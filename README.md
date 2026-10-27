@@ -23,6 +23,8 @@ Planned, not built. The check-writer would send two things to Muse Spark through
 
 The Torpor engine sends nothing to Meta. Its own README (Privacy section) says it makes no AI model calls and uploads nothing of the project. The same section says its only download is `torpor runner install`, which runs after the user confirms.
 
+Muse's model can read Torpor's stored checks; the engine refuses only changes to its store.
+
 ## Who builds this
 
 AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo. Muse Code is planned to build the demo app, and that is not done yet.

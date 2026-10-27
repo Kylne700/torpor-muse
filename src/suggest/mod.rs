@@ -512,8 +512,8 @@ fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result
         Ok(Some(_free)) => {}
         _ => return Err(Skip("a run is already under way here")),
     }
-    Command::new(exe)
-        .args(["suggest", "-"])
+    let mut cmd = Command::new(exe);
+    cmd.args(["suggest", "-"])
         .current_dir(&root)
         .env_remove("META_API_KEY")
         .env_remove("CLAUDECODE")
@@ -522,9 +522,8 @@ fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .process_group(0)
-        .spawn()
-        .map_err(|_| Skip("cannot start the run"))
+        .process_group(0);
+    crate::liveness::spawn_retry(&mut cmd).map_err(|_| Skip("cannot start the run"))
 }
 
 #[cfg(test)]

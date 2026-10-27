@@ -14,16 +14,17 @@ pub fn env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }
 
-/// `TORPOR_MUSE_STATE`, else `$XDG_STATE_HOME/torpor-muse`, else `$HOME/.local/state/torpor-muse`.
+/// `TORPOR_MUSE_STATE`, else `<torpor home>/muse/suggest` (next to the rest of our files). Not XDG_STATE_HOME: Muse
+/// gives its hooks no XDG_* variables, so a run started by a hook and one typed by hand would keep two ledgers and
+/// two day caps (found in A10 of the end-to-end check).
 pub fn state_dir() -> Result<PathBuf, String> {
     if let Some(d) = env("TORPOR_MUSE_STATE") {
         return Ok(PathBuf::from(d));
     }
-    if let Some(d) = env("XDG_STATE_HOME") {
-        return Ok(Path::new(&d).join("torpor-muse"));
+    if env("TORPOR_HOME").is_none() && env("HOME").is_none() {
+        return Err("HOME is not set".into());
     }
-    let home = env("HOME").ok_or("HOME is not set")?;
-    Ok(Path::new(&home).join(".local/state/torpor-muse"))
+    Ok(crate::engine::state_dir().join("suggest"))
 }
 
 pub fn private_dir(p: &Path) -> Result<(), String> {
@@ -124,6 +125,44 @@ mod tests {
         );
         assert_eq!(fs::read_dir(&d).unwrap().count(), 1, "no temp file is left");
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_state_folder_ignores_xdg_so_a_hook_and_a_typed_run_share_it() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved: Vec<_> = ["TORPOR_MUSE_STATE", "TORPOR_HOME", "XDG_STATE_HOME", "HOME"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        // SAFETY: every test that touches the environment holds ENV_LOCK.
+        unsafe {
+            std::env::remove_var("TORPOR_MUSE_STATE");
+            std::env::set_var("TORPOR_HOME", "/th");
+            std::env::set_var("HOME", "/hm/u");
+            std::env::set_var("XDG_STATE_HOME", "/xdg");
+        }
+        let with_xdg = state_dir();
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+        let without_xdg = state_dir();
+        unsafe {
+            std::env::remove_var("TORPOR_HOME");
+            std::env::remove_var("HOME");
+        }
+        let nowhere = state_dir();
+        unsafe {
+            for (k, v) in saved {
+                match v {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+        assert_eq!(
+            with_xdg.as_deref().ok(),
+            Some(Path::new("/th/muse/suggest"))
+        );
+        assert_eq!(with_xdg, without_xdg);
+        assert!(nowhere.is_err());
     }
 
     #[test]

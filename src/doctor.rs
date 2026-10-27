@@ -482,6 +482,8 @@ fn check_vault(c: &Ctx, ours: &[&Hook], r: &mut Report) -> PathBuf {
 
 #[derive(Deserialize)]
 struct LogRec {
+    /// Microseconds since the epoch.
+    recorded_at: Option<u64>,
     payload: Option<LogPayload>,
 }
 
@@ -522,6 +524,8 @@ struct LogEvent {
 
 struct HookRun {
     event: String,
+    /// When Muse recorded the run (microseconds since the epoch).
+    at: u64,
     status: String,
     error: String,
     stdout: String,
@@ -580,6 +584,7 @@ fn scan_log(path: &Path, key_prefix: &str, scan: &mut Scan) {
                         key,
                         HookRun {
                             event,
+                            at: rec.recorded_at.unwrap_or(0),
                             status: ev.status.unwrap_or_default(),
                             error: ev.error.unwrap_or_default(),
                             stdout: ev.stdout.unwrap_or_default(),
@@ -642,8 +647,25 @@ fn check_logs(c: &Ctx, ours: &[&Hook], r: &mut Report) {
         ),
         None => r.add(Level::Info, "Muse Code version not found in its newest session logs"),
     }
+    // The key of a hook ends in a hash of its definition, so a repaired hook is a new key and the old key's failure is
+    // the newest record it will ever have. That failure is history once the settings changed after it and the same event
+    // has run fine since (a hook of the same event that never changed keeps its own newer record, so it is still found).
+    let changed = fs::metadata(&c.settings)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(u64::MAX, |d| d.as_micros() as u64);
     for (key, run) in &scan.last {
         if run.status != "failed" && run.status != "timed_out" {
+            continue;
+        }
+        if run.at < changed
+            && scan.last.values().any(|o| {
+                o.event == run.event
+                    && o.at > changed
+                    && matches!(o.status.as_str(), "completed" | "blocked")
+            })
+        {
             continue;
         }
         let saw = if run.stdout.is_empty() {
@@ -1036,8 +1058,8 @@ fn run_shell(
     stdin: &[u8],
     timeout: Duration,
 ) -> Result<Ran, String> {
-    let mut child = Command::new(shell)
-        .arg("-c")
+    let mut cmd = Command::new(shell);
+    cmd.arg("-c")
         .arg(command)
         .env_clear()
         .envs(env.iter().map(|(k, v)| (k, v)))
@@ -1045,9 +1067,9 @@ fn run_shell(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("cannot start {shell}: {e}"))?;
+        .process_group(0);
+    let mut child =
+        crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
     if let Some(mut si) = child.stdin.take() {
         let _ = si.write_all(stdin); // small; a hook that does not read it is fine
     }
