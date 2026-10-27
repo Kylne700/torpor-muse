@@ -10,6 +10,7 @@ mod prompt;
 mod repo;
 mod schema;
 mod state;
+mod voice;
 
 use client::{Bad, Key};
 use schema::Start;
@@ -20,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+pub use voice::say;
 
 const DEFAULT_MODEL: &str = "muse-spark-1.3";
 /// Low reasoning effort still spends about 500 to 1000 tokens before the answer, so the budget is large.

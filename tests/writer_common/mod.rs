@@ -1,5 +1,5 @@
 //! Shared by tests/writer_*.rs: the mock Meta API as a child process, a synthetic workspace, a scripted fake
-//! engine, and a runner for `torpor-muse suggest` with a clean environment. Owner: S3b-writer.
+//! engine, and a runner for `torpor-muse suggest` and `say` with a clean environment. Owner: S3b-writer.
 #![allow(dead_code)]
 
 use serde_json::{Value, json};
@@ -106,6 +106,17 @@ pub struct Mock {
 impl Mock {
     /// `fixtures`: the mock's `--fixture` list. `text`: what the model "writes" (the `ok` fixture's output text).
     pub fn start(dir: &Path, fixtures: &str, delay_ms: u32, text: &str) -> Mock {
+        Mock::start_with(dir, fixtures, delay_ms, text, &[])
+    }
+
+    /// `start` with more arguments for the mock, e.g. `["--asr", "429,ok", "--transcript", "hello"]`.
+    pub fn start_with(
+        dir: &Path,
+        fixtures: &str,
+        delay_ms: u32,
+        text: &str,
+        extra: &[&str],
+    ) -> Mock {
         let log = dir.join("mock.log");
         let text_file = dir.join("mock-text.txt");
         fs::write(&text_file, text).unwrap();
@@ -117,6 +128,7 @@ impl Mock {
             .arg(&text_file)
             .arg("--log")
             .arg(&log)
+            .args(extra)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -160,6 +172,20 @@ impl Mock {
                 v
             })
             .collect()
+    }
+
+    /// The logged voice requests (`body` is `{request, audio: {bytes, type, filename}, parts}`, never the audio).
+    pub fn asr(&self) -> Vec<Value> {
+        let mut v = self.requests();
+        v.retain(|r| r["path"] == "/v1/asr/transcribe");
+        v
+    }
+
+    /// The logged writer requests (`/v1/responses`).
+    pub fn writer(&self) -> Vec<Value> {
+        let mut v = self.requests();
+        v.retain(|r| r["path"] == "/v1/responses");
+        v
     }
 
     /// All the text the model was given in request `i`: the fixed rules and the data.
@@ -207,7 +233,7 @@ case "$1 $2" in
 esac
 "#;
 
-/// One run of `torpor-muse suggest`.
+/// One run of `torpor-muse suggest` or `say`.
 pub struct Ran {
     pub code: i32,
     pub out: String,
@@ -309,8 +335,41 @@ impl Sandbox {
     /// `torpor-muse suggest <words>` in the workspace with a clean environment (fake key, the sandbox's state,
     /// home and fake engine). `set`: `("NAME", "value")` adds a variable, `("-NAME", "")` removes one.
     pub fn suggest(&self, base: Option<&str>, words: &str, set: &[(&str, &str)]) -> Ran {
+        self.cli(&["suggest", words], base, set)
+    }
+
+    /// `torpor-muse say <args>` in the workspace, the same clean environment as `suggest`.
+    pub fn say(&self, base: Option<&str>, args: &[&str], set: &[(&str, &str)]) -> Ran {
+        let all: Vec<&str> = ["say"].into_iter().chain(args.iter().copied()).collect();
+        self.cli(&all, base, set)
+    }
+
+    /// A WAV of silence, 24 kHz mono 16-bit, `ms` long, written next to the workspace; returns its path.
+    pub fn clip(&self, name: &str, ms: u32) -> PathBuf {
+        let data = (ms * 48) as usize;
+        let mut w = b"RIFF".to_vec();
+        w.extend_from_slice(&(36 + data as u32).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes());
+        for v in [1u16, 1] {
+            w.extend_from_slice(&v.to_le_bytes());
+        }
+        w.extend_from_slice(&24_000u32.to_le_bytes());
+        w.extend_from_slice(&48_000u32.to_le_bytes());
+        for v in [2u16, 16] {
+            w.extend_from_slice(&v.to_le_bytes());
+        }
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&(data as u32).to_le_bytes());
+        w.resize(w.len() + data, 0);
+        let p = self.dir.join(name);
+        fs::write(&p, w).unwrap();
+        p
+    }
+
+    fn cli(&self, args: &[&str], base: Option<&str>, set: &[(&str, &str)]) -> Ran {
         let mut c = Command::new(env!("CARGO_BIN_EXE_torpor-muse"));
-        c.args(["suggest", words])
+        c.args(args)
             .current_dir(&self.ws)
             .env_clear()
             .env("PATH", path_var())
@@ -339,10 +398,7 @@ impl Sandbox {
             }
         }
         let t = Instant::now();
-        let o = c
-            .stdin(Stdio::null())
-            .output()
-            .expect("run torpor-muse suggest");
+        let o = c.stdin(Stdio::null()).output().expect("run torpor-muse");
         Ran {
             code: o.status.code().unwrap_or(-1),
             out: String::from_utf8_lossy(&o.stdout).into_owned(),

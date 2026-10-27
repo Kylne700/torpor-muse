@@ -37,7 +37,7 @@ impl Key {
         s.replace(&self.0, "[key]")
     }
 
-    fn bearer(&self) -> String {
+    pub(super) fn bearer(&self) -> String {
         format!("Bearer {}", self.0)
     }
 }
@@ -210,7 +210,7 @@ pub enum Net {
     Other(String),
 }
 
-fn net(e: ureq::Error) -> Net {
+pub(super) fn net(e: ureq::Error) -> Net {
     match e {
         ureq::Error::Timeout(_) => Net::Timeout,
         other => Net::Other(clean(&other.to_string(), 160)),
@@ -356,7 +356,7 @@ fn usage(v: &Value) -> Option<Usage> {
     })
 }
 
-fn error_message(v: &Option<Value>) -> String {
+pub(super) fn error_message(v: &Option<Value>) -> String {
     v.as_ref()
         .and_then(|v| v["error"]["message"].as_str())
         .map_or_else(|| "(no message)".into(), |m| clean(m, 200))
