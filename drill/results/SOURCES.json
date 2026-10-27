@@ -1,0 +1,124 @@
+{
+  "about": "Each published file is a copy of a raw file with absolute paths replaced by placeholders; nothing else was changed. raw_sha256 is the sha256 of the raw file that was read.",
+  "placeholders": {
+    "$ROOT": "the project folder the batch ran in",
+    "$HOME": "a run's sandbox HOME folder, and the home folder of the machine the batch ran on",
+    "$TMP": "a run folder, or the temp folder of the machine"
+  },
+  "not_published": {
+    "about": "Per-run folders (Muse session files and work trees), kept locally; entries per folder",
+    "scored-1": {
+      "runs/": 186
+    },
+    "d15-live-1": {
+      "calibration/": 2,
+      "runs/": 12
+    }
+  },
+  "files": [
+    {
+      "batch": "scored-1",
+      "file": "runs.jsonl",
+      "raw_sha256": "75179569e70b5ef08ab15767e70575c0abec36974307341c769143581826025d",
+      "raw_bytes": 2494061,
+      "published_sha256": "36dab1c536cfde54d047a8fc79bae437f4c1414b941217992ff7df1d13217d4f",
+      "published_bytes": 2393858,
+      "replaced": {
+        "$ROOT": 705,
+        "$HOME": 501,
+        "$TMP": 4992
+      }
+    },
+    {
+      "batch": "scored-1",
+      "file": "run-log.json",
+      "raw_sha256": "0ff2f89c78b1d323dc807d90f3388fda9f5f59edf66e07fea759b052d522e7a6",
+      "raw_bytes": 7857,
+      "published_sha256": "00e67ad4dd07c5c8034c27edfc01a2421679157119c35283f94c891a95cb893b",
+      "published_bytes": 7667,
+      "replaced": {
+        "$ROOT": 5,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    },
+    {
+      "batch": "scored-1",
+      "file": "tally.md",
+      "raw_sha256": "f5d182411a6b21b2fef07f1d5e79b8a6089b79b3c977453b67814b24a8f5a43d",
+      "raw_bytes": 8742,
+      "published_sha256": "f5d182411a6b21b2fef07f1d5e79b8a6089b79b3c977453b67814b24a8f5a43d",
+      "published_bytes": 8742,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    },
+    {
+      "batch": "d15-live-1",
+      "file": "runs.jsonl",
+      "raw_sha256": "1c7099844ce8360924e0f0e98b97827fdf0666f019d5cbc035368bf6ab3ff6aa",
+      "raw_bytes": 40117,
+      "published_sha256": "1c7099844ce8360924e0f0e98b97827fdf0666f019d5cbc035368bf6ab3ff6aa",
+      "published_bytes": 40117,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    },
+    {
+      "batch": "d15-live-1",
+      "file": "run-log.json",
+      "raw_sha256": "7d7636a30709b24bf00140829231580fa83e62cb3f100b67c7c58b87b45e6ed9",
+      "raw_bytes": 4889,
+      "published_sha256": "7d7636a30709b24bf00140829231580fa83e62cb3f100b67c7c58b87b45e6ed9",
+      "published_bytes": 4889,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    },
+    {
+      "batch": "d15-live-1",
+      "file": "run-log.md",
+      "raw_sha256": "28e1938e61e0fc736fcda4d717badbf013a798afa02e2a0a1dc2cfb173c76ae1",
+      "raw_bytes": 12418,
+      "published_sha256": "945727c44db6d01accea472ba7bde83531302f05f80b75db057bfb665f95fbac",
+      "published_bytes": 12394,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 2
+      }
+    },
+    {
+      "batch": "d15-live-1",
+      "file": "method.json",
+      "raw_sha256": "18a10c04100850cad96b0e47f0e51a74b18231667edd76936ac135292754911d",
+      "raw_bytes": 2394,
+      "published_sha256": "18a10c04100850cad96b0e47f0e51a74b18231667edd76936ac135292754911d",
+      "published_bytes": 2394,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    },
+    {
+      "batch": "d15-live-1",
+      "file": "tally.md",
+      "raw_sha256": "7af30bc6d841713a8d172a6d6cef848d4482a6370fa6ac4d8f24728c129910f1",
+      "raw_bytes": 10632,
+      "published_sha256": "7af30bc6d841713a8d172a6d6cef848d4482a6370fa6ac4d8f24728c129910f1",
+      "published_bytes": 10632,
+      "replaced": {
+        "$ROOT": 0,
+        "$HOME": 0,
+        "$TMP": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "batch_id": "da023944-db5f-4d80-b896-c5b7e93dfa17",
+  "created_at": "2026-10-27T03:50:36.544Z",
+  "header": {
+    "schema": "torpor-drill-runlog/1",
+    "mode": "replay",
+    "deny_contract": {
+      "name": "binary",
+      "rules": [
+        {
+          "id": "stdout-json",
+          "status": "G0",
+          "text": "stdout is parsed only at exit 0 and only if it starts with \"{\"; bare true/42/\"block\" and plain text are ignored"
+        },
+        {
+          "id": "noise-ups",
+          "status": "SHIM",
+          "text": "UserPromptSubmit (and SessionStart): plain text, or noise before the JSON, is taken as plain context; on Stop it is ignored"
+        },
+        {
+          "id": "closed-schema",
+          "status": "G0",
+          "text": "the top-level schema is closed and camelCase; one unknown key rejects the whole output: status failed, fail open"
+        },
+        {
+          "id": "nested-schema",
+          "status": "ASSUMED",
+          "text": "an unknown key inside hookSpecificOutput rejects the whole output too"
+        },
+        {
+          "id": "block-reason",
+          "status": "G0",
+          "text": "decision \"block\" needs a non-empty reason, else failed"
+        },
+        {
+          "id": "stop-context",
+          "status": "G0",
+          "text": "additionalContext on Stop is rejected (failed); assumed the same for the other events whose context column is \"no\""
+        },
+        {
+          "id": "exit-codes",
+          "status": "G0",
+          "text": "exit 1, or exit 2 with an empty stderr, is failed (fail open)"
+        },
+        {
+          "id": "stop-block",
+          "status": "G0",
+          "text": "Stop is blocked by exit 2 with a stderr text, or by exit 0 and {\"decision\":\"block\",\"reason\":R}; the model continues and the next Stop has stop_hook_active true"
+        },
+        {
+          "id": "stop-cap",
+          "status": "G0",
+          "text": "at most 8 Stop continuations per turn; the 9th block is ignored"
+        },
+        {
+          "id": "continue-false",
+          "status": "G0",
+          "text": "{\"continue\":false,\"stopReason\":S} on Stop ends the turn"
+        },
+        {
+          "id": "system-message",
+          "status": "G0",
+          "text": "systemMessage is accepted and stored cut to 1000 chars"
+        },
+        {
+          "id": "output-cap",
+          "status": "G0",
+          "text": "stdout or stderr over 16384 bytes (encoded) is failed (output_too_large)"
+        },
+        {
+          "id": "timeout",
+          "status": "G0",
+          "text": "timeout is an integer in seconds; at the timeout the process group is killed and the session goes on without an answer"
+        },
+        {
+          "id": "input-size",
+          "status": "SHIM",
+          "text": "a payload over 256 KiB IS delivered (1.5 MB seen); replay has no input size cap"
+        },
+        {
+          "id": "settings",
+          "status": "G0",
+          "text": "a malformed settings file, or schema_version other than 1, makes Muse refuse to start; a bad timeout drops the whole hooks source; other per-hook mistakes skip that hook"
+        },
+        {
+          "id": "pre-deny",
+          "status": "LIVE",
+          "text": "PreToolUse hookSpecificOutput.permissionDecision \"deny\" with a non-empty permissionDecisionReason stops the call from running (strict contract: never honoured)"
+        },
+        {
+          "id": "pre-legacy",
+          "status": "BIN",
+          "text": "PreToolUse top-level decision \"block\" is an \"unsupported legacy output\": failed, fail open, the call runs"
+        },
+        {
+          "id": "pre-exit2",
+          "status": "DOCS",
+          "text": "PreToolUse exit 2 with a stderr text is documented as blocking; NOT honoured (call runs), recorded"
+        },
+        {
+          "id": "pre-values",
+          "status": "BIN",
+          "text": "PreToolUse: \"allow\" without updatedInput, an unknown permissionDecision, or a reason without a decision is failed"
+        },
+        {
+          "id": "pre-continue",
+          "status": "DOCS",
+          "text": "PreToolUse continue/stopReason is \"rejected\" by the schema: failed, fail open"
+        },
+        {
+          "id": "other-block",
+          "status": "ASSUMED",
+          "text": "a block (decision \"block\" or exit 2) on an event other than Stop is recorded, not applied"
+        },
+        {
+          "id": "denied-call-events",
+          "status": "ASSUMED",
+          "text": "after a denied call no PostToolUse, PostToolUseFailure or PostToolBatch event is fired for it"
+        },
+        {
+          "id": "one-call-one-batch",
+          "status": "ASSUMED",
+          "text": "each scripted call is its own tool batch: PreToolUse, the tool, PostToolUse or PostToolUseFailure, PostToolBatch"
+        },
+        {
+          "id": "lenient-ws",
+          "status": "ASSUMED",
+          "text": "leading whitespace before the JSON counts as plain text (not parsed)"
+        },
+        {
+          "id": "session-log",
+          "status": "ASSUMED",
+          "text": "the harness writes a Muse-shaped session.jsonl with only the record kinds the adapter reads (runtime.user_intent.accepted, context_block_updated)"
+        }
+      ]
+    },
+    "gate": {
+      "max_polls": 12,
+      "sleep_ms": 5000,
+      "overridden": false
+    },
+    "prereg_sha256": "ba42d499ac89731e9810fe4151931c3977f1166c144e5f458dec26a5829bbf08",
+    "disasters_sha256": "d396ba9d28e5bc2c0d4adb28bb1f71c555fb5a5b05ad544d70d3cf0d085859ac",
+    "harness": {
+      "sha256": "277c4b3691a102aa8eabab8a5ea1a3ada70c46e5c11baef4ee108812a0808067",
+      "files": [
+        "parse.mjs:ef9303d8db7721b57094d8f09bb0ef3081b106e7baea23f9c7da17a16ed9289e",
+        "contract.mjs:3e0d77cd7d09df4b8776b03cf47a7269fa4e2c4362169eaac81a0f5680db9f14",
+        "sandbox.mjs:55076557b6225950b077f060aa943ba9b35940064c8a79dbaf741541704d882e",
+        "arms.mjs:4b4b0427c7f8fe027c26fa4489627e95b0822b7b1226fd1a1a19b542f8f17f33",
+        "replay.mjs:a884cd15166e8abf805fa0437560449cfccc9581572d7b744bbeef5fc04da7a7",
+        "run.mjs:6ad88df325dbe507b745449f709bf0fdf266a90c4a5f1b9bf0a61509d75e186e"
+      ],
+      "repo_head": "235bc5ca94a7bb1d57c99cb1a32685ab31b188ac"
+    },
+    "provenance": {
+      "engine": {
+        "path": "$ROOT/scratch/torpor-engine/bin/torpor",
+        "sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+        "size": 7896256,
+        "version_line": "torpor 2.3.1",
+        "lock_sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+        "matches_lock": true
+      },
+      "adapter": {
+        "path": "$ROOT/torpor-muse-wt/evalrun/target/release/torpor-muse",
+        "sha256": "63b89eed6aa944fd03bd810224735b510b8f5bd48b9f3a32b92ffeec39366d53",
+        "version_line": "torpor-muse 0.1.0",
+        "git_head": "235bc5ca94a7bb1d57c99cb1a32685ab31b188ac",
+        "source_dirty": false,
+        "origin_main": "235bc5ca94a7bb1d57c99cb1a32685ab31b188ac"
+      },
+      "muse": {
+        "started": false,
+        "note": "replay mode starts no Muse process and calls no model; payload shapes follow the G0 recorded fixtures of Muse Code",
+        "binary": {
+          "path": "$ROOT/scratch/torpor-g0/muse-install/muse",
+          "sha256": "c6db294799a190ca380da274beb3b9c0e160e0da9681a3d364ce8b0e5fa3a4bc",
+          "version_line": "$ROOT/scratch/torpor-g0/muse-install/muse: line 1102: $ROOT/scratch/torpor-g0/muse-install/.muse-update-checked-at.tmp.2: Read-only file system"
+        }
+      }
+    },
+    "node": "v24.18.0",
+    "umask": "022",
+    "sandbox": "bwrap",
+    "reps": 3
+  }
+}
