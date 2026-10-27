@@ -187,8 +187,8 @@ export function loadRows(dir) {
   return { rows, skipped };
 }
 
-// A unit is one (arm, task, rep). Its row is the first valid attempt; a unit with no valid attempt after
-// MAX_ATTEMPTS is exhausted (excluded, counted); with fewer attempts it is pending (excluded, flagged).
+// A unit is one (arm, task, rep). Its row is the first valid attempt; a unit with no valid attempt after MAX_ATTEMPTS, or with an
+// attempt the runner marked `retryable: false` (invalid, not re-run: PREREG section 6) is exhausted (excluded, counted); otherwise it is pending (excluded, flagged).
 export function buildUnits(rows) {
   const groups = new Map();
   for (const r of rows) {
@@ -203,7 +203,7 @@ export function buildUnits(rows) {
     const row = rs.find((r) => r.valid) ?? null;
     units.push({
       key, arm: rs[0].arm, task: rs[0].task, rep: rs[0].rep, kind: rs[0].kind, attempts: rs, row,
-      status: row ? 'valid' : rs.length >= MAX_ATTEMPTS ? 'exhausted' : 'pending',
+      status: row ? 'valid' : (rs.length >= MAX_ATTEMPTS || rs.some((r) => r.retryable === false)) ? 'exhausted' : 'pending',
       ignored: row ? rs.filter((r) => r.attempt > row.attempt).length : 0,
     });
   }
