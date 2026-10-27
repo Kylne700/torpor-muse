@@ -805,7 +805,7 @@ fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
         r.problem(
             Level::Fix,
             format!("gate not proven live: session {} has {} prompt(s) and no finished turn (no Stop heartbeat from a previous turn)", short(&sid), t.opened),
-            format!("{how}; if it stays so, the Stop hook does not run: look at the timeouts and the rejected outputs above"),
+            format!("{how}; if it stays so, the Stop hook does not run: look at the timeouts and any rejected outputs above"),
         );
     } else if let (Some(stop), Some(w)) = (last_stop, written)
         && stop < w
@@ -846,7 +846,7 @@ fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
         r.add(
             Level::Info,
             format!(
-                "{} extra Stop(s) in session {}: Muse reruns a turn after a blocking Stop, normal",
+                "{} extra Stop(s) in session {}: Muse runs Stop again after a blocking Stop and when it double-checks its answer, normal",
                 t.extra_stops,
                 short(&sid)
             ),
@@ -857,7 +857,7 @@ fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
         r.problem(
             Level::Warn,
             format!("events without their pair in session {}: {u}", short(&sid)),
-            "a hook of that pair failed or timed out: see the rejected outputs above",
+            "a hook of that pair failed or timed out (Muse's rejected outputs, if any, are listed above), or the turn was stopped while a tool ran",
         );
     }
     if let Some(st) = transcript::read_state(vault, &sid) {

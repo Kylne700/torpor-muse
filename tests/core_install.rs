@@ -330,7 +330,17 @@ fn uninstall_keeps_the_ledger_and_the_saved_checks_and_says_so() {
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 2, "{out}");
     let state = r.home.join(".torpor/muse");
-    for want in [state.to_str().unwrap(), "ledger", "your choice"] {
+    let store = format!(
+        "the engine's {} and ~/.config/torpor;",
+        r.home.join(".torpor").display()
+    ); // dogfood1 m4
+    for want in [
+        state.to_str().unwrap(),
+        "ledger",
+        "your choice",
+        "~/.config/torpor-muse/config",
+        &store,
+    ] {
         assert!(lines[1].contains(want), "{want:?} not in {:?}", lines[1]);
     }
 }
