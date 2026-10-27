@@ -23,7 +23,7 @@ runner in `eval/run/`.
 `--tasks all|id,id`  `--arms A,B,C,D`  `--reps N`  `--seed S`  `--model ID` (keyed; it is passed to every `muse exec`)  `--cap-usd X` (keyed)
 `--out DIR`  `--run-id ID`  `--concurrency 3`  `--max-steps 40` (per turn)  `--turn-timeout-s 420`  `--episode-cap-s 900`  `--effort medium`
 `--muse DIR` (the Muse install folder)  `--engine BIN`  `--adapter BIN` (default: `target/release/torpor-muse` of this checkout)
-`--writer-key-file FILE` (arm D, keyed; mode 0600)  `--writer-day-cap USD` (default 0.05, per episode)  `--tmp DIR` (under /tmp)
+`--writer-key-file FILE` (arm D, keyed; mode 0600)  `--writer-day-cap USD` (default 0.35, per episode)  `--tmp DIR` (under /tmp)
 `--keep-ep` (keep the episode folders)  `--dry-run` (print the plan). Without the muse/engine/out flags the defaults are
 `scratch/torpor-g0/muse-install`, `scratch/torpor-engine/bin/torpor` and `scratch/torpor-s4a/results/<run-id>` under the nearest folder
 above the repo that has a `scratch/` folder. `--tmp` shows up in the model's working-directory path: use a neutral name.
@@ -95,7 +95,7 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
 
   **The writer in arm D** (the model call that proposes checks): ON when the command has `--writer-key-file FILE` (keyed runs only; the file
   must be mode 0600). The runner then writes `$HOME/.config/torpor-muse/config` in the episode HOME with `key_file = FILE` and
-  `day_cap_usd = <--writer-day-cap>` (default 0.05, a fresh ledger per episode, so 0.05 per episode), and binds FILE read-only into the model
+  `day_cap_usd = <--writer-day-cap>` (default 0.35, a fresh ledger per episode, so 0.35 per episode; derived below), and binds FILE read-only into the model
   sandbox (so a model that looks can read it; saved session logs are scrubbed of the key). The writer uses the adapter's default model
   (standard prices, not the contributor id). Without `--writer-key-file`, and always in ECHO runs, the writer is OFF. Every D row says which
   (`manifest.writer` on/off, `writer_day_cap_usd`, `writer_model`) and records the writer's own calls and dollars apart in `writer_calls` and
@@ -107,8 +107,23 @@ Exit codes: 0 finished, 2 bad flags or setup, 3 stopped early (cap, fatal error,
   wait ends (the writer, or a server the model left running) is stopped and counted: `still_running` and `drain_cut_off` count leftover
   processes, not only writers. A hung Muse in such a turn is stopped up to 60 s later than the turn limit. Measured with the real Muse
   binary (ECHO provider, a hook that leaves a 7 s sleeper behind): the call lasted 9.6 s, Muse 2.2 s, `drain_ms` 7.0 s. Per turn: `turn_log[].drain_ms` and `drain_cut_off`; per episode: `writer_wait` (`waited_ms`,
-  `still_running`). Keyed runs with the writer off use `--drain 0`; `--net none` calls take no `--drain` (nothing outlives them). **NOT VERIFIED** until the exploratory episode below has run: that the writer
-  fires through Muse's hooks in this setup.
+  `still_running`). Keyed runs with the writer off use `--drain 0`; `--net none` calls take no `--drain` (nothing outlives them). A writer still running when the wait ends is stopped
+  and counted in `still_running`; the episode stays valid and what it would have written is not counted. The writer does fire through Muse's hooks in this setup (last entry under "Measured").
+
+  **The writer's cap** (`--writer-day-cap`, default 0.35 per episode). The adapter refuses a call, and sends nothing, when the dollars already spent that UTC day plus the call's
+  worst case would pass the cap. The worst case (`src/ledger.rs` `worst_case`) is the request bytes at $1.25 per million plus 6000 output tokens at $4.25 per million: $0.0255 + 1.25e-6 per byte.
+  Every prompt of 3 or more characters triggers the writer, so an episode has 6 triggers. Measured with the real adapter against a local server that answers HTTP 400 (no model, no cost): the request
+  is 13.0 KB for the notes-ctrl start state and at most 14.4 KB for the other start states (worst case $0.042 to $0.043), and 19.8 KB for the largest request the adapter can build (the workspace excerpt at its
+  14000-byte cap plus the longest of the 126 eval prompts, 341 characters): worst case $0.0502. 6 x $0.0502 = $0.301, so 0.35 (16% margin) passes all 6 triggers even if every earlier call
+  were charged its worst case. The old default 0.05 refused every trigger after the first ($0.010 spent + $0.043 > $0.05; run s4a-d-writer-1, turn 2 never reached the model). Real calls cost about
+  $0.01 (3350 input, 1341 output tokens), so twelve calls plus the next worst case also fit. Not in the figure: JSON escaping of real code (a few percent more bytes) and the second try after a rejected
+  answer (its request also carries the first answer); both fit because the check compares the worst case with the dollars actually spent, not with the sum of worst cases.
+
+  **What the writer decided** is in `writer_results`. Each trigger overwrites one `result.json` per workspace, so after every writer-on turn's drain the runner reads
+  `<episode>/torpor-home/muse/suggest/ws/*/result.json` (the old place too) and, when its `at` is new, appends `{turn, at, outcome, saved, usd, note}`: `outcome` is the adapter's word
+  (`proven`, `advisory`, `rejected`, `skipped`, `error`), `saved` whether a promise was saved, `usd` the call's dollars (null when the adapter's watchdog wrote the result), `note` the writer's message with the
+  key scrubbed out first, whitespace folded and then cut to 160 characters. The file is treated as untrusted text: the model can write the episode folder. Rows without a writer (ECHO, arms A to C, arm D with
+  the writer off) carry `[]`. The analysis does not read `writer_results` yet.
 
 ## Every Muse Code call
 
@@ -160,8 +175,9 @@ runs `META_API_KEY` (nothing else is passed in). The flags are also in every row
   runner writes at most 3 rows per episode (the analysis refuses more).
 * **Rows that must not be re-run** have the field `retryable: false` (`held_out_violation`, `inject_failed`, and every valid row). The
   runner never re-runs them, and the analysis reads the field: a unit with such a row and no valid attempt is `exhausted` at once (excluded,
-  counted), not pending. PREREG section 6 lists `inject_failed` as invalid, not re-run, counted and listed with its reason, because after
-  turn 3 the files differ per arm and a patch that no longer applies is the arm's own doing.
+  counted), not pending. PREREG section 6 lists `inject_failed` and `held_out_violation` as invalid, not re-run, counted and listed with
+  their reason: after turn 3 the files differ per arm and a patch that no longer applies is the arm's own doing, and a held-out file in the
+  episode means the promise that the model never sees them failed. The analysis calls such a unit "excluded, no valid attempt (3 failed, or one not re-run)".
 
 ## Sandbox
 
@@ -173,7 +189,7 @@ Keyed runs use `--net meta`: only `api.meta.ai:443`, through a host proxy that l
 `--concurrency`. Nothing outlives a sandbox call except the wait for the writer described above.
 The proxy's log of an episode is `<episode>/net/proxy.log` (hidden from the model). The runner reads it at the end of the episode into the
 row's `egress` (`allowed`, `denied`, `via_fwd`, and `other`: up to 8 distinct lines that are not an allowed `api.meta.ai:443`) and copies it
-to `<out>/episodes/<key>/proxy.log`. **It records and does not stop**: a non-empty `other` is for the operator to read. `via=fwd` lines come
+to `<out>/episodes/<key>/proxy.log`. **It records and does not stop**: a non-empty `other` is for the operator to read, it is reported per arm by the analysis, and it does not make an episode invalid (the proxy refuses those connections, so they cannot change the outcome). `via=fwd` lines come
 from hooks and the writer, `via=proxy` from Muse, so `via_fwd > 0` in a writer-on row is a second sign, next to the writer's ledger, that the
 writer reached the API. The row's `manifest.sandbox` has the launcher's commit, whether it was modified, and the sha256 of its two files.
 
@@ -198,7 +214,8 @@ gate_blocks oracle{exit,line} final_pass later_kept break_found valid invalid_re
   `hook_failures` counts hook runs that failed or timed out; `rate_limited` counts 429 evidence in the session logs.
 * Extra fields: `retryable`, `hooks_ok`, `hooks_total`, `hook_events` (completed runs per event), `sessions`, `engine_state_files`,
   `turn_log` (per turn: exit, ms, kind, steps, usd, and for a writer-on turn `drain_ms`, `drain_cut_off`), `inject_applied`, `bit`,
-  `bit_failed`, `leftover_killed`, `writer_wait` (null unless the writer is on), `egress` (null in ECHO runs).
+  `bit_failed`, `leftover_killed`, `writer_wait` (null unless the writer is on), `writer_results` (the writer's verdicts, `[]` unless the writer is on),
+  `egress` (null in ECHO runs).
   `manifest` has the arm's install (with `settings` for C and D), `flags`, `sandbox`, `mode`, `max_steps`, the caps, the versions, and for
   C and D `engine_sha256` and `engine_lock_match`.
 * Scrubbed, gzipped session logs of every attempt are saved in `<out>/episodes/<task>__<arm>__r<rep>__a<attempt>/`.
@@ -218,3 +235,8 @@ command) under the old sandbox (v2.1), before arm C was changed to the drill's a
 * Errors: a rejected key ends `muse exec` with exit 1 and "failed to fetch model catalog: authentication failed"; an unknown model id with a
   good key gives exit 1 and "model ... does not exist or you lack access", no tokens. Both are `fatal` (the run stops). The 429 message is
   NOT measured.
+* Arm D with the writer on, notes-ctrl, cap 0.35 (run s4a-prep-d1; the run before it, s4a-d-writer-1, had the old cap 0.05): all 6 triggers reached the model, 10 calls (4 triggers needed a second
+  try) for $0.108 at standard prices, none refused; `writer_results` has one entry per turn and `egress.via_fwd` 10 matches the 10 calls. Turn 1: the engine turned the check down (`advisory`, not saved).
+  Turn 2, the claim "Login works now for alice and bob ...": `proven`, saved as promise #3 (note: "... passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the start of turn", cut at 160).
+  Turn 3: saved as a guard only (`advisory`). Turns 4 to 6: nothing saved (not checkable over HTTP, or not a claim). The waits after the turns came to 11.1 s (10.9 s after turn 2), `still_running` 0.
+  The row was valid, `final_pass` and `later_kept` true, $0.145 Muse + $0.108 writer = $0.253. Hooks 90 of 91 completed with exit 0; the 91st was a PreToolUse `blocked`, not a failure.

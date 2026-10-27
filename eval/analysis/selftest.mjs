@@ -101,6 +101,13 @@ t('cluster bootstrap: same seed gives the same result, the interval contains the
   assert.equal(clusterBoot([{ d: 1, n: 2 }], 3000, 1).lo, null); // one task cannot be resampled
 });
 
+t('stray network lines (egress.other) are reported per arm and never exclude a unit', () => {
+  const seen = (task, other) => mk({ task, egress: { allowed: 1, denied: other.length, via_fwd: 0, other } });
+  const res = run([seen('e1', ['x.example:443 denied']), seen('e2', ['x.example:443 denied', 'y.example:80 denied']), mk({ task: 'e3', egress: null }), mk({ task: 'e4' })]);
+  assert.deepEqual(res.by_arm.A.egress_other_lines, { 'x.example:443 denied': 2, 'y.example:80 denied': 1 });
+  assert.deepEqual([res.by_arm.A.valid, res.by_arm.A.exhausted], [4, 0]);
+});
+
 // ---------- attempts and exclusions ----------
 t('attempt selection, exclusion and pending counts; pairs need a valid unit on both sides', () => {
   const inv = (task, attempt, why, arm = 'A') => mk({ task, arm, attempt, valid: false, invalid_reason: why });
