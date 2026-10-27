@@ -245,6 +245,33 @@ pub fn notice(event: &str, system: &str, context: &str) -> Option<String> {
     validate(event, &body).ok().map(|_| body)
 }
 
+/// The engine's output `body` (None or blank: it printed nothing) with a note of our own added: `system` after its
+/// `systemMessage`, `context` after its `additionalContext` (where the event takes one). None = `body` is not valid
+/// for `event`, or the two together do not fit; the caller then keeps `body` as it is.
+pub fn with_note(event: &str, body: Option<&str>, system: &str, context: &str) -> Option<String> {
+    let Some(body) = body.filter(|b| !b.trim().is_empty()) else {
+        return notice(event, system, context);
+    };
+    let mut o = validate(event, body).ok()?;
+    let room = SYSTEM_MESSAGE_MAX.saturating_sub(system.chars().count() + 1);
+    o.system_message = Some(match o.system_message.take() {
+        Some(m) => format!("{}\n{system}", cut_chars(&m, room)),
+        None => cut_chars(system, SYSTEM_MESSAGE_MAX),
+    });
+    if CONTEXT_OK.contains(&event) {
+        let h = o.hook_specific_output.get_or_insert_with(|| Specific {
+            hook_event_name: event.to_string(),
+            ..Specific::default()
+        });
+        h.additional_context = Some(match h.additional_context.take() {
+            Some(c) => format!("{c}\n\n{context}"),
+            None => context.to_string(),
+        });
+    }
+    let merged = serde_json::to_string(&o).ok()?;
+    validate(event, &merged).ok().map(|_| merged)
+}
+
 fn cut_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -267,12 +294,63 @@ fn cut_bytes(s: &mut String, excess: usize) {
     s.push_str("\n[cut]");
 }
 
+/// The engine's subcommands (`torpor help`): `torpor <one of these>` in text is a command line.
+const SUBCOMMANDS: &[&str] = &[
+    "status",
+    "log",
+    "show",
+    "back",
+    "undo",
+    "recover",
+    "init",
+    "statusline",
+    "gc",
+    "quiet",
+    "keep",
+    "promise",
+    "check",
+    "find-break",
+    "gate",
+    "off",
+    "on",
+    "retain",
+    "runner",
+    "forget",
+    "version",
+    "help",
+];
+
+/// `text` for the model with each `torpor <subcommand>` written as `cmd <subcommand>`. The model's shell may not have
+/// the engine's folder on its PATH, so `cmd` is the engine's own path. A word that only ends in `torpor` (a path, a
+/// name with `-` or `_`) is left alone.
+fn runnable(text: &str, cmd: &str) -> String {
+    let (mut out, mut done) = (String::with_capacity(text.len()), 0);
+    for (i, _) in text.match_indices("torpor ") {
+        let glued = text[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || "_-/.~".contains(c));
+        let word: String = text[i + 7..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
+        if !glued && SUBCOMMANDS.contains(&word.as_str()) {
+            out.push_str(&text[done..i]);
+            out.push_str(cmd);
+            done = i + 6;
+        }
+    }
+    out.push_str(&text[done..]);
+    out
+}
+
 /// The engine's Claude-style stdout turned into what Muse accepts, plus a note for everything dropped or changed.
 /// `header` makes the "latest supersedes earlier" line (research/59 D9) for the notes that carry state. None = print
 /// nothing (the hook then exits 0 and the turn goes on).
 pub fn sanitise(
     event: &str,
     engine_out: &[u8],
+    torpor: &str,
     mut header: impl FnMut() -> String,
 ) -> (Option<String>, Vec<String>) {
     let mut notes = Vec::new();
@@ -296,8 +374,10 @@ pub fn sanitise(
         m.get(k)
             .and_then(Value::as_str)
             .filter(|s| !s.trim().is_empty())
-            .map(str::to_string)
+            .map(|s| s.replace("Claude Code", "Muse Code")) // the engine's text names another product
     };
+    // What the model reads names the engine by `torpor` (the path of the engine that ran, see `runnable`).
+    let for_model = |m: &Map<String, Value>, k: &str| text(m, k).map(|s| runnable(&s, torpor));
     let mut out = Output {
         system_message: text(&map, "systemMessage").map(|m| cut_chars(&m, SYSTEM_MESSAGE_MAX)),
         ..Output::default()
@@ -305,9 +385,9 @@ pub fn sanitise(
     if let Some(d) = map.get("decision") {
         if d.as_str() == Some("block") && BLOCKABLE.contains(&event) {
             out.decision = Some("block".into());
-            out.reason = Some(text(&map, "reason").unwrap_or_else(|| {
+            out.reason = Some(for_model(&map, "reason").unwrap_or_else(|| {
                 notes.push("block without a reason: default reason used".into());
-                DEFAULT_REASON.into()
+                runnable(DEFAULT_REASON, torpor)
             }));
         } else {
             notes.push(format!("decision {d} dropped on {event}"));
@@ -318,7 +398,7 @@ pub fn sanitise(
             hook_event_name: event.to_string(),
             ..Specific::default()
         };
-        if let Some(c) = text(h, "additionalContext") {
+        if let Some(c) = for_model(h, "additionalContext") {
             if !CONTEXT_OK.contains(&event) {
                 notes.push(format!("additionalContext dropped: not allowed on {event}"));
             } else if matches!(event, "SessionStart" | "UserPromptSubmit") {
@@ -330,7 +410,7 @@ pub fn sanitise(
         if let Some(d) = h.get("permissionDecision").and_then(Value::as_str) {
             if event == "PreToolUse" && (d == "deny" || d == "ask") {
                 let mut why =
-                    text(h, "permissionDecisionReason").unwrap_or_else(|| DEFAULT_DENY.into());
+                    for_model(h, "permissionDecisionReason").unwrap_or_else(|| DEFAULT_DENY.into());
                 if d == "ask" {
                     notes.push(
                         "permissionDecision ask changed to deny: Muse hooks cannot ask".into(),
@@ -500,7 +580,9 @@ mod tests {
     }
 
     fn clean(event: &str, engine: &str) -> (Option<String>, Vec<String>) {
-        sanitise(event, engine.as_bytes(), || "[Torpor note #7]".into())
+        sanitise(event, engine.as_bytes(), "torpor", || {
+            "[Torpor note #7]".into()
+        })
     }
 
     #[test]
@@ -588,5 +670,137 @@ mod tests {
         let sys = json!({"systemMessage": "y".repeat(5000)}).to_string();
         let (o, _) = clean("Stop", &sys);
         assert!(o.unwrap().len() < 1100);
+    }
+
+    #[test]
+    fn the_engine_is_named_by_its_path_for_the_model_only() {
+        let at = "/opt/e/torpor";
+        let run = |event: &str, engine: &str| {
+            sanitise(event, engine.as_bytes(), at, || "[H]".into())
+                .0
+                .unwrap()
+        };
+        // context and a block reason are for the model; the user's systemMessage keeps the plain name
+        let engine = json!({"systemMessage": "run `torpor status`", "hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+            "additionalContext": "`torpor check 3` before finishing; then torpor undo."}})
+        .to_string();
+        let o = run("UserPromptSubmit", &engine);
+        assert!(
+            o.contains(r#""systemMessage":"run `torpor status`""#),
+            "{o}"
+        );
+        assert!(
+            o.contains("`/opt/e/torpor check 3` before finishing; then /opt/e/torpor undo."),
+            "{o}"
+        );
+        let o = run(
+            "Stop",
+            r#"{"decision":"block","reason":"`torpor check 2` failed"}"#,
+        );
+        assert!(o.contains("`/opt/e/torpor check 2` failed"), "{o}");
+        // the default reasons are for the model too
+        assert!(run("Stop", r#"{"decision":"block"}"#).contains("Run `/opt/e/torpor status`"));
+        let deny = r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"`torpor undo` first"}}"#;
+        assert!(run("PreToolUse", deny).contains("`/opt/e/torpor undo` first"));
+    }
+
+    #[test]
+    fn only_a_torpor_command_is_rewritten() {
+        let at = "'/a b/torpor'";
+        assert_eq!(
+            runnable(
+                "run `torpor check 3`, `torpor find-break` or torpor gate",
+                at
+            ),
+            "run `'/a b/torpor' check 3`, `'/a b/torpor' find-break` or '/a b/torpor' gate"
+        );
+        for same in [
+            "torpor-muse doctor",
+            "/usr/bin/torpor check",
+            "~/.local/bin/torpor undo",
+            "my_torpor undo",
+            "not-torpor status",
+            "mytorpor status",
+            "torpor is off",
+            "Torpor status",
+            "torpor  status",
+            "torpor",
+            "torpor ",
+            "torpor statuses",
+            "the torpor\nstatus",
+        ] {
+            assert_eq!(runnable(same, at), same);
+        }
+        assert_eq!(runnable("torpor check", "torpor"), "torpor check");
+        assert_eq!(
+            runnable("\u{e9}torpor check \u{5d0}torpor undo", at),
+            "\u{e9}torpor check \u{5d0}torpor undo"
+        );
+    }
+
+    #[test]
+    fn engine_text_says_muse_code() {
+        let engine = json!({"systemMessage": "Start Claude Code inside a project folder", "hookSpecificOutput": {"hookEventName": "SessionStart",
+            "additionalContext": "If Claude Code asked whether you trust this folder, answer yes."}})
+        .to_string();
+        let o = clean("SessionStart", &engine).0.unwrap();
+        assert!(
+            o.contains("Start Muse Code inside") && o.contains("If Muse Code asked"),
+            "{o}"
+        );
+        assert!(!o.contains("Claude"), "{o}");
+    }
+
+    #[test]
+    fn a_note_is_added_to_what_the_engine_printed_or_stands_alone() {
+        let note =
+            |event, body: Option<&str>| with_note(event, body, "SYS", "CTX").unwrap_or_default();
+        // nothing printed: the note alone, on both channels where the event takes context
+        for body in [None, Some(""), Some("  \n")] {
+            let o = note("UserPromptSubmit", body);
+            assert_eq!(
+                o,
+                notice("UserPromptSubmit", "SYS", "CTX").unwrap(),
+                "{body:?}"
+            );
+        }
+        assert_eq!(note("Stop", None), r#"{"systemMessage":"SYS"}"#);
+        // the engine's own message and context stay, ours follow
+        let engine = r#"{"systemMessage":"saved","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[H]\nx"}}"#;
+        let o = note("UserPromptSubmit", Some(engine));
+        let v: Value = serde_json::from_str(&o).unwrap();
+        assert_eq!(v["systemMessage"], "saved\nSYS");
+        assert_eq!(
+            v["hookSpecificOutput"]["additionalContext"],
+            "[H]\nx\n\nCTX"
+        );
+        // a decision and a reason stay; no context where the event takes none
+        let o = note("Stop", Some(r#"{"decision":"block","reason":"prove X"}"#));
+        assert_eq!(
+            o,
+            r#"{"decision":"block","reason":"prove X","systemMessage":"SYS"}"#
+        );
+        // an engine message near the limit is cut to make room, and the result is still valid
+        let long = json!({"systemMessage": "y".repeat(999)}).to_string();
+        let o = with_note("SessionStart", Some(&long), &"n".repeat(400), "CTX").unwrap();
+        let sys = serde_json::from_str::<Value>(&o).unwrap()["systemMessage"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            sys.chars().count() <= SYSTEM_MESSAGE_MAX
+                && sys.ends_with(&"n".repeat(400))
+                && sys.contains("y..."),
+            "{}",
+            sys.len()
+        );
+        validate("SessionStart", &o).unwrap();
+        // output that is not valid for the event, or does not fit with the note: None
+        assert_eq!(with_note("Stop", Some("not json"), "SYS", "CTX"), None);
+        let big = json!({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "z".repeat(STDOUT_LIMIT - 400)}}).to_string();
+        assert_eq!(
+            with_note("UserPromptSubmit", Some(&big), "SYS", &"c".repeat(600)),
+            None
+        );
     }
 }

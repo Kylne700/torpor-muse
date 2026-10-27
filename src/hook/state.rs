@@ -94,11 +94,13 @@ pub fn safe(id: &str) -> String {
 
 /// One line in `problems.log` (kept to about 32 KiB, newest last) and one on stderr.
 pub fn problem(dir: &Path, event: &str, sid: &str, msg: &str) {
-    let msg: String = msg
-        .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .take(400)
-        .collect();
+    let flat = |s: &str| -> String {
+        s.chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .take(400)
+            .collect()
+    };
+    let (event, msg) = (flat(event), flat(msg));
     eprintln!("torpor-muse: {event}: {msg}");
     let path = dir.join("problems.log");
     let sid: String = safe(sid).chars().take(8).collect();
@@ -172,11 +174,11 @@ pub fn end_session(dir: &Path, sid: &str) {
     let _ = fs::remove_file(dir.join("session").join(format!("{}.json", safe(sid))));
 }
 
-/// SessionStart: removes session and open-turn files nobody has touched for 14 days (a crashed Muse never sends
-/// SessionEnd).
+/// SessionStart: removes the files of sessions (state, open turns, heartbeats, transcript copies) nobody has touched
+/// for 14 days (a crashed Muse never sends SessionEnd).
 pub fn sweep(dir: &Path) {
     let limit = Duration::from_secs(KEEP_DAYS * 86_400);
-    for sub in ["session", "open"] {
+    for sub in ["session", "open", "beats", "transcripts"] {
         let Ok(entries) = fs::read_dir(dir.join(sub)) else {
             continue;
         };
@@ -326,18 +328,36 @@ mod tests {
         crate::engine::write_private(&open_file(&dir, "/w"), &serde_json::to_vec(&old).unwrap())
             .unwrap();
         assert_eq!(open_get(&dir, "/w"), None);
-        // sweep: 15 days untouched goes, in both folders; a fresh file stays
+        // sweep: 15 days untouched goes, in every folder; a fresh file stays
         let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
-        for f in ["open/old.json", "session/old.json", "open/new.json"] {
+        let old_ones = [
+            "open/old.json",
+            "session/old.json",
+            "beats/old.jsonl",
+            "transcripts/old.jsonl",
+            "transcripts/old.state",
+            "transcripts/old.lock",
+        ];
+        for f in old_ones.iter().chain(&["open/new.json", "beats/new.jsonl"]) {
             let p = dir.join(f);
             crate::engine::write_private(&p, b"{}").unwrap();
-            if !f.ends_with("new.json") {
+            if !f.contains("new.") {
                 fs::File::open(&p).unwrap().set_modified(stale).unwrap();
             }
         }
         sweep(&dir);
-        assert!(!dir.join("open/old.json").exists() && !dir.join("session/old.json").exists());
-        assert!(dir.join("open/new.json").exists());
+        assert!(old_ones.iter().all(|f| !dir.join(f).exists()));
+        assert!(dir.join("open/new.json").exists() && dir.join("beats/new.jsonl").exists());
+    }
+
+    #[test]
+    fn a_problem_line_is_one_line_whatever_the_event_argument_holds() {
+        let dir = scratch("state-problem-event");
+        problem(&dir, "Bad\x1b[31m\nEvent", "s1", "wrong\tthing\r\n");
+        let log = fs::read_to_string(dir.join("problems.log")).unwrap();
+        assert_eq!(log.lines().count(), 1, "{log:?}");
+        assert!(!log.chars().any(|c| c.is_control() && c != '\n'), "{log:?}");
+        assert!(log.contains("Bad [31m Event s1 wrong thing"), "{log:?}");
     }
 
     #[test]

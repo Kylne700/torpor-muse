@@ -205,14 +205,30 @@ struct Done {
     prompt: Option<(String, String, String)>,
 }
 
+/// With no TORPOR_HOME and a HOME that is unset, empty or not a full path, the state folder would be `.torpor/` in
+/// whatever folder the hook runs in (the user's project).
+fn home_usable() -> bool {
+    let set = |k| std::env::var_os(k).filter(|v| !v.is_empty());
+    set("TORPOR_HOME").is_some() || set("HOME").is_some_and(|h| Path::new(&h).is_absolute())
+}
+
 pub fn run(event: &str) -> u8 {
-    let dir = engine::state_dir();
     let mut input = Vec::new();
-    let done = match std::io::stdin().lock().read_to_end(&mut input) {
-        Ok(_) => handle(&dir, event, &input),
-        Err(e) => {
-            state::problem(&dir, event, "", &format!("cannot read stdin: {e}"));
-            Done::default()
+    let read = std::io::stdin().lock().read_to_end(&mut input);
+    let done = if !home_usable() {
+        eprintln!(
+            "torpor-muse: hook {}: TORPOR_HOME is not set and HOME is not a full path; Torpor is not saving this project",
+            event.escape_default()
+        );
+        Done::default()
+    } else {
+        let dir = engine::state_dir();
+        match read {
+            Ok(_) => handle(&dir, event, &input),
+            Err(e) => {
+                state::problem(&dir, event, "", &format!("cannot read stdin: {e}"));
+                Done::default()
+            }
         }
     };
     if let Some(text) = &done.stdout {
@@ -301,8 +317,9 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             done.stdout = fail_open(dir, event, &sid, &why);
         }
         Ok(out) => {
-            done.stdout = reply(dir, event, &sid, &turn, &out.stdout);
+            done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), &out.stdout);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
+                done.stdout = writer_note(dir, event, done.stdout.take());
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
         }
@@ -380,8 +397,53 @@ fn check_shape(dir: &Path, event: &str, sid: &str, payload: &Value) {
     }
 }
 
-/// Engine stdout -> what Muse accepts (None = print nothing).
-fn reply(dir: &Path, event: &str, sid: &str, turn: &str, engine_out: &[u8]) -> Option<String> {
+/// How the model should write `torpor` in a command: the engine's own path, because its shell may not have the
+/// engine's folder on its PATH. Only for a file called `torpor` (a Torpor call is known by that name); else the word.
+fn engine_cmd(bin: &Path) -> String {
+    let named = bin.file_name().is_some_and(|n| n == "torpor")
+        && bin.parent().is_some_and(|p| !p.as_os_str().is_empty());
+    match std::path::absolute(bin) {
+        Ok(p) if named => p.to_str().map_or("torpor".into(), crate::doctor::quote),
+        _ => "torpor".into(),
+    }
+}
+
+/// A prompt the check-writer could not start on for want of a key: say so once per state folder, on both channels
+/// like `fail_open` (Muse's screen was not seen to show `systemMessage`). The marker is written only when the note
+/// really is in what gets printed.
+fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> {
+    let Some(why) = suggest::writer_off(true) else {
+        return body;
+    };
+    let why = suggest::scrub(&why, 300);
+    let merged = schema::with_note(
+        event,
+        body.as_deref(),
+        &format!(
+            "Torpor's check-writer is off: {why}. To turn it on, put your Meta API key on one line in a file only you can \
+             read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
+             `torpor-muse doctor` shows this too."
+        ),
+        &format!(
+            "[Torpor note] The Torpor check-writer is off: {why}. Tell the user so in your next reply, in one sentence, \
+             and that `torpor-muse doctor` shows how to fix it. Do not try to fix it yourself."
+        ),
+    );
+    match merged {
+        Some(m) if state::new_key(dir, event, "writer-off") => Some(m),
+        _ => body,
+    }
+}
+
+/// Engine stdout -> what Muse accepts (None = print nothing). `torpor`: see `engine_cmd`.
+fn reply(
+    dir: &Path,
+    event: &str,
+    sid: &str,
+    turn: &str,
+    torpor: &str,
+    engine_out: &[u8],
+) -> Option<String> {
     let header = || {
         let n = state::with_session(dir, sid, |s| s.next_seq()).unwrap_or(0);
         let tail = "the newest Torpor note replaces all earlier ones";
@@ -391,7 +453,7 @@ fn reply(dir: &Path, event: &str, sid: &str, turn: &str, engine_out: &[u8]) -> O
             format!("[Torpor note #{n}: {tail}]")
         }
     };
-    let (body, notes) = schema::sanitise(event, engine_out, header);
+    let (body, notes) = schema::sanitise(event, engine_out, torpor, header);
     for n in notes {
         state::problem(dir, event, sid, &n);
     }
@@ -419,7 +481,7 @@ fn fail_open(dir: &Path, event: &str, sid: &str, why: &str) -> Option<String> {
     if !state::with_session(dir, sid, |s| !std::mem::replace(&mut s.told, true))? {
         return None;
     }
-    let why: String = why.chars().take(300).collect();
+    let why = suggest::scrub(why, 300); // the engine's stderr: no control characters, nothing that looks like a key
     schema::notice(
         event,
         &format!("Torpor is NOT saving this project: {why}. Run `torpor-muse doctor`."),
@@ -481,5 +543,15 @@ mod tests {
             }
         }
         assert!(EVENTS.iter().all(|e| e.name != "state"));
+    }
+
+    #[test]
+    fn the_model_is_given_the_engines_own_path_only_when_that_is_safe_to_run() {
+        let cmd = |p: &str| engine_cmd(Path::new(p));
+        assert_eq!(cmd("/opt/engine/torpor"), "/opt/engine/torpor");
+        assert_eq!(cmd("/opt/my engine/torpor"), "'/opt/my engine/torpor'");
+        // a file with another name is not known as a Torpor call; a bare name has no folder to give
+        assert_eq!(cmd("/opt/engine/torpor-2.3.1"), "torpor");
+        assert_eq!(cmd("torpor"), "torpor");
     }
 }

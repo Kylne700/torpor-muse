@@ -383,7 +383,14 @@ fn uninstall_keeps_what_the_user_added_after_init() {
     );
     doc["another_key"] = json!(true);
     fs::write(r.settings(), serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
-    assert_eq!(r.run(&["uninstall"]).0, 0);
+    let (code, out, _) = r.run(&["uninstall"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("your other settings are kept")
+            && out.contains("settings.json.torpor-muse.bak"),
+        "the saved copy stays, and the message says where: {out}"
+    );
+    assert!(r.backup().exists());
     let after = r.read();
     assert_eq!(after["another_key"], json!(true));
     assert_eq!(after["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
@@ -574,5 +581,123 @@ fn the_installed_command_works_in_the_environment_muse_gives_it() {
         home.trim_end(),
         r.dir.join("it's a store").to_str().unwrap(),
         "the baked TORPOR_HOME reached the engine"
+    );
+}
+
+// ---------------------------------------------------------------- the command line
+
+#[test]
+fn asking_for_help_prints_the_usage_and_succeeds() {
+    let r = Rig::new("help");
+    for args in [
+        vec!["help"],
+        vec!["--help"],
+        vec!["-h"],
+        vec!["suggest", "--help"],
+        vec!["suggest", "-h"],
+    ] {
+        let (code, out, err) = r.run(&args);
+        assert_eq!(code, 0, "{args:?}: {err}");
+        assert!(out.starts_with("usage: torpor-muse "), "{args:?}: {out}");
+        assert!(err.is_empty(), "{args:?}: {err}");
+    }
+    // a mistake is still an error, on stderr
+    let (code, out, err) = r.run(&["frobnicate"]);
+    assert_eq!((code, out.is_empty()), (2, true));
+    assert!(err.starts_with("usage: torpor-muse "), "{err}");
+}
+
+#[test]
+fn an_argument_that_is_not_utf8_is_an_error_not_a_crash() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let r = Rig::new("non-utf8");
+    let bad = OsStr::from_bytes(b"/tmp/\xff\xfe.wav");
+    let (code, _, err) = Rig::finish(r.command(&["version"]).arg(bad));
+    assert_eq!(code, 2, "{err}");
+    assert!(err.starts_with("usage: torpor-muse "), "{err}");
+    let (code, _, err) = Rig::finish(r.command(&["say"]).arg(bad));
+    assert!(matches!(code, 1..=3), "rc {code}: {err}");
+    assert!(!err.contains("panicked"), "{err}");
+}
+
+// ---------------------------------------------------------------- doctor
+
+#[test]
+fn doctor_names_what_stops_init_instead_of_sending_the_user_to_it() {
+    let r = Rig::new("doctor-refusal");
+    for (text, why) in [
+        (r#"{"schema_version":2}"#, "schema_version"),
+        ("{}", "schema_version"),
+        ("[1]", "top level"),
+    ] {
+        r.plant(text);
+        let (code, out, _) = r.run(&["doctor"]);
+        assert_eq!(code, 1, "{text}: {out}");
+        assert!(
+            out.contains("no torpor-muse hook can be installed") && out.contains(why),
+            "{text}: {out}"
+        );
+        assert!(!out.contains("do: torpor-muse init"), "{text}: {out}");
+    }
+    // a settings file that is a symbolic link: init would not touch it either
+    let real = r.dir.join("real-settings.json");
+    fs::write(&real, r#"{"schema_version":1}"#).unwrap();
+    fs::remove_file(r.settings()).unwrap();
+    symlink(&real, r.settings()).unwrap();
+    let (code, out, _) = r.run(&["doctor"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("symbolic link"), "{out}");
+    assert!(!out.contains("do: torpor-muse init"), "{out}");
+    // a file init can use, or none at all, still gets "run init"
+    fs::remove_file(r.settings()).unwrap();
+    for text in [Some(r#"{"schema_version":1}"#), None] {
+        if let Some(t) = text {
+            r.plant(t);
+        } else {
+            fs::remove_file(r.settings()).unwrap();
+        }
+        let (code, out, _) = r.run(&["doctor"]);
+        assert_eq!(code, 1, "{out}");
+        assert!(out.contains("do: torpor-muse init"), "{out}");
+        assert!(!out.contains("can be installed"), "{out}");
+    }
+}
+
+#[test]
+fn doctor_says_when_the_check_writer_has_no_key_file_and_why() {
+    let r = Rig::new("doctor-writer");
+    assert_eq!(r.run(&["init"]).0, 0);
+    let line_of = |out: &str| {
+        out.lines()
+            .find(|l| l.starts_with("warn") && l.contains("check-writer off"))
+            .map(str::to_owned)
+    };
+    let (_, out, _) = r.run(&["doctor"]);
+    let line = line_of(&out).unwrap_or_else(|| panic!("{out}"));
+    assert!(line.contains("key_file"), "{line}");
+    assert!(out.contains("do: put your Meta API key"), "{out}");
+    // a META_API_KEY in this shell does not reach Muse's hooks: doctor does not count it
+    let (_, out, _) = Rig::finish(
+        r.command(&["doctor"])
+            .env("META_API_KEY", "LLM|0|fake-key-for-tests"),
+    );
+    assert!(line_of(&out).is_some(), "{out}");
+    // a config naming a key file only the user can read: nothing to say
+    let cfg = r.home.join(".config/torpor-muse/config");
+    let key = r.home.join("key.txt");
+    fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+    fs::write(&cfg, "key_file = ~/key.txt\n").unwrap();
+    fs::write(&key, "LLM|0|fake-key-for-tests\n").unwrap();
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+    let (_, out, _) = r.run(&["doctor"]);
+    assert!(line_of(&out).is_none(), "{out}");
+    // the same file readable by others: named
+    fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
+    let (_, out, _) = r.run(&["doctor"]);
+    assert!(
+        line_of(&out).is_some_and(|l| l.contains("only you can read")),
+        "{out}"
     );
 }

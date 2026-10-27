@@ -17,7 +17,11 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: torpor-muse init | uninstall | hook <Event> | doctor | suggest \"<what works>\" | say <clip.wav> | version";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // not `args()`: it panics on an argument that is not UTF-8
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let code = match args
         .iter()
         .map(String::as_str)
@@ -28,6 +32,11 @@ fn main() -> ExitCode {
         ["uninstall"] => install::uninstall(),
         ["hook", event] => hook::run(event),
         ["doctor"] => doctor::run(),
+        // asked for on purpose: stdout, exit 0 (`suggest --help` must not be taken as the words to check)
+        ["help" | "--help" | "-h"] | ["suggest", "--help" | "-h"] => {
+            println!("{USAGE}");
+            0
+        }
         ["suggest", words @ ..] if !words.is_empty() => suggest::run(&words.join(" ")),
         ["say", rest @ ..] => suggest::say(rest),
         ["version" | "--version"] => {
