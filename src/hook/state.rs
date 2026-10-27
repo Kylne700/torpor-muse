@@ -1,6 +1,7 @@
 //! Our own small files in `<TORPOR_HOME>/muse/` (best effort: a failure here never stops a hook):
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
-//! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events).
+//! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
+//! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -26,9 +27,27 @@ pub struct Session {
     pub told: bool,
     /// (turn id, Stop blocks let through), oldest first, the last 8 turns.
     pub blocks: Vec<(String, u32)>,
-    /// For the model at the next prompt: how to put back a database the last turn changed (`hook::db_note`).
+    /// The newest database turn of the folder the model of this session was told about (`hook::db_note`).
     #[serde(default)]
-    pub db_note: Option<String>,
+    pub db_told: u64,
+    /// The newest promise whose not-covered text the model of this session was given (`hook::gap_note`).
+    #[serde(default)]
+    pub gap_told: u32,
+}
+
+/// A turn whose own commands changed or deleted a database file: its number, its start save point, the files.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DbTurn {
+    pub n: u64,
+    pub p: u64,
+    pub files: Vec<String>,
+}
+
+/// The database turns of one folder, newest first. The folder is stored inside and compared whole.
+#[derive(Serialize, Deserialize, Default)]
+struct DbTurns {
+    cwd: String,
+    turns: Vec<DbTurn>,
 }
 
 impl Session {
@@ -141,15 +160,48 @@ pub fn new_key(dir: &Path, event: &str, key: &str) -> bool {
 /// Runs `f` on the state of session `sid` under an exclusive file lock (waits up to 500 ms) and saves the result.
 /// None = the state could not be opened or locked; callers then do without it.
 pub fn with_session<R>(dir: &Path, sid: &str, f: impl FnOnce(&mut Session) -> R) -> Option<R> {
-    let sdir = dir.join("session");
-    crate::engine::private_dir(&sdir).ok()?;
+    locked(&dir.join("session").join(format!("{}.json", safe(sid))), f)
+}
+
+/// Adds turn `t` to the database turns of folder `cwd` (the last 5, newest first; a turn already there stays once).
+pub fn db_add(dir: &Path, cwd: &str, t: DbTurn) {
+    locked(&folder_file(dir, "db", cwd), |d: &mut DbTurns| {
+        if d.cwd != cwd {
+            *d = DbTurns {
+                cwd: cwd.into(),
+                turns: Vec::new(),
+            };
+        }
+        d.turns.retain(|x| x.n != t.n);
+        d.turns.push(t);
+        d.turns.sort_by_key(|x| std::cmp::Reverse(x.n));
+        d.turns.truncate(5);
+    });
+}
+
+/// The database turns of folder `cwd`, newest first.
+pub fn db_turns(dir: &Path, cwd: &str) -> Vec<DbTurn> {
+    fs::read(folder_file(dir, "db", cwd))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<DbTurns>(&b).ok())
+        .filter(|d| d.cwd == cwd)
+        .map_or_else(Vec::new, |d| d.turns)
+}
+
+/// Runs `f` on the JSON value in `path` (a default one when there is none) under an exclusive file lock (waits up to
+/// 500 ms) and saves the result. None = the file could not be opened or locked.
+fn locked<T: Serialize + serde::de::DeserializeOwned + Default, R>(
+    path: &Path,
+    f: impl FnOnce(&mut T) -> R,
+) -> Option<R> {
+    crate::engine::private_dir(path.parent()?).ok()?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .mode(0o600)
-        .open(sdir.join(format!("{}.json", safe(sid))))
+        .open(path)
         .ok()?;
     let start = Instant::now();
     loop {
@@ -163,7 +215,7 @@ pub fn with_session<R>(dir: &Path, sid: &str, f: impl FnOnce(&mut Session) -> R)
     }
     let mut text = String::new();
     file.read_to_string(&mut text).ok()?;
-    let mut s: Session = serde_json::from_str(&text).unwrap_or_default();
+    let mut s: T = serde_json::from_str(&text).unwrap_or_default();
     let r = f(&mut s);
     file.set_len(0).ok()?;
     file.seek(SeekFrom::Start(0)).ok()?;
@@ -181,7 +233,7 @@ pub fn end_session(dir: &Path, sid: &str) {
 /// for 14 days (a crashed Muse never sends SessionEnd).
 pub fn sweep(dir: &Path) {
     let limit = Duration::from_secs(KEEP_DAYS * 86_400);
-    for sub in ["session", "open", "beats", "transcripts"] {
+    for sub in ["session", "open", "db", "beats", "transcripts"] {
         let Ok(entries) = fs::read_dir(dir.join(sub)) else {
             continue;
         };
@@ -213,12 +265,12 @@ struct Open {
 /// A turn open for longer than this is a crashed Muse's leftover, not a running turn.
 const OPEN_MAX_S: u64 = 12 * 3600;
 
-fn open_file(dir: &Path, cwd: &str) -> PathBuf {
+fn folder_file(dir: &Path, sub: &str, cwd: &str) -> PathBuf {
     // FNV-1a: the same hash on every run (std's hasher promises none); the folder is stored inside and compared whole.
     let h = cwd.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     });
-    dir.join("open").join(format!("{h:016x}.json"))
+    dir.join(sub).join(format!("{h:016x}.json"))
 }
 
 /// A main session's UserPromptSubmit: `turn` of session `sid` is the one open in `cwd`.
@@ -230,19 +282,19 @@ pub fn open_set(dir: &Path, cwd: &str, sid: &str, turn: &str) {
         at: unix_now(),
     };
     if let Ok(b) = serde_json::to_vec(&o) {
-        let _ = crate::engine::write_private(&open_file(dir, cwd), &b);
+        let _ = crate::engine::write_private(&folder_file(dir, "open", cwd), &b);
     }
 }
 
 /// (session id, turn id) of the main turn open in `cwd`, if there is one.
 pub fn open_get(dir: &Path, cwd: &str) -> Option<(String, String)> {
-    let o: Open = serde_json::from_slice(&fs::read(open_file(dir, cwd)).ok()?).ok()?;
+    let o: Open = serde_json::from_slice(&fs::read(folder_file(dir, "open", cwd)).ok()?).ok()?;
     (o.cwd == cwd && unix_now().saturating_sub(o.at) < OPEN_MAX_S).then_some((o.sid, o.turn))
 }
 
 /// The turn of `sid` is over (a Stop that let it end, StopFailure, SessionEnd). A record of another session stays.
 pub fn open_clear(dir: &Path, cwd: &str, sid: &str) {
-    let f = open_file(dir, cwd);
+    let f = folder_file(dir, "open", cwd);
     let mine = fs::read(&f)
         .ok()
         .and_then(|b| serde_json::from_slice::<Open>(&b).ok())
@@ -328,12 +380,16 @@ mod tests {
             turn: "t".into(),
             at: unix_now() - OPEN_MAX_S - 1,
         };
-        crate::engine::write_private(&open_file(&dir, "/w"), &serde_json::to_vec(&old).unwrap())
-            .unwrap();
+        crate::engine::write_private(
+            &folder_file(&dir, "open", "/w"),
+            &serde_json::to_vec(&old).unwrap(),
+        )
+        .unwrap();
         assert_eq!(open_get(&dir, "/w"), None);
         // sweep: 15 days untouched goes, in every folder; a fresh file stays
         let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
         let old_ones = [
+            "db/old.json",
             "open/old.json",
             "session/old.json",
             "beats/old.jsonl",

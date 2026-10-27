@@ -60,7 +60,7 @@ fn a_step_on_a_record_the_check_did_not_create_is_left_out_and_named() {
     );
     let adds = sb.adds();
     assert!(
-        adds.len() == 1 && !adds[0].to_string().contains("mvqm4ta2"),
+        adds.len() == 1 && !adds[0]["steps"].to_string().contains("mvqm4ta2"),
         "{adds:?}"
     );
     let sb = Sandbox::new("records");
@@ -75,6 +75,99 @@ fn a_step_on_a_record_the_check_did_not_create_is_left_out_and_named() {
         "{ctx}"
     );
     assert!(sb.adds().is_empty(), "{ctx}");
+}
+
+/// L3 N3: the engine's client drops a cookie the server clears, so a refusal after a logout step comes whether or not
+/// the server ended the session. Such a check keeps its steps and is told to say so; one without a logout is unchanged.
+#[test]
+fn a_refusal_after_a_logout_step_is_named_as_not_covered() {
+    let sb = Sandbox::new("logout");
+    say_proven(&sb);
+    let mut answer = good_answer();
+    let out = json!({"method": "POST", "path": "/api/logout", "body_json": "", "expect_status": 200, "json_has": [],
+        "json_types": [], "body_contains": "", "why": "logout works"});
+    let refused = json!({"method": "GET", "path": "/api/me", "body_json": "", "expect_status": 401, "json_has": [],
+        "json_types": [], "body_contains": "", "why": "logout works: the account page is closed"});
+    answer["steps"]
+        .as_array_mut()
+        .unwrap()
+        .extend([out, refused]);
+    let mock = Mock::ok(&sb.dir, &answer);
+    let r = sb.suggest(Some(&mock.base()), "logout works now", &[]);
+    let ctx = format!("out={:?} err={:?}", r.out, r.err);
+    assert_eq!(r.code, 0, "{ctx}");
+    assert!(
+        r.out.contains(
+            "Not covered by this check: the check cannot tell whether the server ended the session"
+        ),
+        "{ctx}"
+    );
+    let adds = sb.adds();
+    assert_eq!(
+        adds[0]["steps"].as_array().map(Vec::len),
+        Some(4),
+        "{adds:?}"
+    );
+    // control: no logout step
+    let sb = Sandbox::new("no-logout");
+    say_proven(&sb);
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert!(r.code == 0 && !r.out.contains("session"), "{:?}", r.out);
+    assert_eq!(sb.adds()[0]["why"], good_answer()["why"]);
+}
+
+/// L3 N4: what a check does not cover goes into its why (the Why line of `torpor promise show`; the engine takes at
+/// most 200 characters, and the model's own words are never cut) and into `gaps.json`, where the hook finds it.
+#[test]
+fn the_not_covered_text_goes_into_the_why_and_to_the_hook() {
+    let gap = "it cannot restart the server to see the data survive";
+    let sb = Sandbox::new("gap-why");
+    say_proven(&sb);
+    let mut answer = good_answer();
+    answer["reason"] = json!(gap);
+    let mock = Mock::ok(&sb.dir, &answer);
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert_eq!(r.code, 0, "out={:?} err={:?}", r.out, r.err);
+    assert_eq!(
+        sb.adds()[0]["why"],
+        format!("login works for alice Not covered: {gap}")
+    );
+    let ws: Vec<_> = fs::read_dir(sb.state().join("ws"))
+        .unwrap()
+        .flatten()
+        .collect();
+    let gaps: Value =
+        serde_json::from_str(&fs::read_to_string(ws[0].path().join("gaps.json")).unwrap()).unwrap();
+    assert_eq!(
+        gaps,
+        json!([{"promise": 1, "session": null, "gap": gap}]),
+        "{gaps}"
+    );
+    // no room left in the why: it stays as the model wrote it
+    let sb = Sandbox::new("gap-full-why");
+    say_proven(&sb);
+    answer["why"] = json!(format!("login works {}", "w".repeat(183)));
+    let mock = Mock::ok(&sb.dir, &answer);
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert_eq!(r.code, 0, "out={:?} err={:?}", r.out, r.err);
+    assert_eq!(sb.adds()[0]["why"], answer["why"]);
+}
+
+/// M2 evidence: the ledger row of each call names the files whose names and starts were sent, never what is in them.
+#[test]
+fn the_ledger_names_the_files_that_were_sent() {
+    let sb = Sandbox::new("sent");
+    say_proven(&sb);
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert_eq!(r.code, 0, "out={:?} err={:?}", r.out, r.err);
+    let rows = sb.ledger();
+    let note = rows[0]["note"].as_str().unwrap_or("");
+    assert!(
+        note.starts_with("attempt 1, ") && note.ends_with("s; sent: package.json, server.js"),
+        "{note}"
+    );
 }
 
 #[test]

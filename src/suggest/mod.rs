@@ -15,6 +15,7 @@ mod voice;
 use client::{Bad, Key};
 use schema::Start;
 use serde_json::{Value, json};
+pub use state::Gap;
 use state::env;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -354,7 +355,7 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             schema::Verdict::Check => {}
         }
         // what the steps cannot prove, in the model's words (for a `check` the reason is only that)
-        let mut gap = c.safe(&answer.reason, 200);
+        let mut gaps = vec![c.safe(&answer.reason, 200)];
         let gone = schema::drop_data_records(&mut answer, &p.excerpt);
         if !gone.is_empty() {
             let why = format!(
@@ -365,11 +366,22 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             if answer.steps.is_empty() {
                 return Outcome::new(Kind::Advisory, format!("no check saved: {why}"));
             }
-            gap = if gap.is_empty() {
-                why
+            gaps.push(why);
+        }
+        if schema::logout_refusal(&answer) {
+            gaps.push(schema::LOGOUT_GAP.into());
+        }
+        gaps.retain(|g| !g.is_empty());
+        let gap = gaps.join("; ");
+        // `torpor promise show` prints the why (the engine takes 200 characters); the model's own words are never cut
+        let room = 200usize.saturating_sub(answer.why.chars().count() + " Not covered: ".len());
+        if !gap.is_empty() && room >= 20 {
+            let short = if gap.chars().count() > room {
+                format!("{}...", c.safe(&gap, room - 3))
             } else {
-                format!("{gap}; {why}")
+                gap.clone()
             };
+            answer.why = format!("{} Not covered: {short}", answer.why);
         }
         let check = match schema::to_check(&answer, &p.starts) {
             Ok(v) => v,
@@ -388,8 +400,12 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             Err(e) => return Outcome::new(Kind::Error, e),
         };
         let turned_down = match said {
-            attach::Added::Proven { id, line } => return saved(Kind::Proven, id, &line, &gap),
-            attach::Added::Advisory { id, line } => return saved(Kind::Advisory, id, &line, &gap),
+            attach::Added::Proven { id, line } => {
+                return saved(c, p, Kind::Proven, id, &line, &gap);
+            }
+            attach::Added::Advisory { id, line } => {
+                return saved(c, p, Kind::Advisory, id, &line, &gap);
+            }
             attach::Added::Lint(m) => m,
             attach::Added::NotSaved { why, retry: true } => why,
             attach::Added::NotSaved { why, retry: false } => {
@@ -411,7 +427,18 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
     Outcome::new(Kind::Advisory, "no check was made")
 }
 
-fn saved(kind: Kind, promise: Option<u32>, line: &str, gap: &str) -> Outcome {
+/// A saved check. What it does not cover also goes to `gaps.json`, for the hook to tell the user and the model.
+fn saved(c: &Ctx, p: &Plan, kind: Kind, promise: Option<u32>, line: &str, gap: &str) -> Outcome {
+    if let (Some(id), false) = (promise, gap.is_empty()) {
+        let g = state::Gap {
+            promise: id,
+            session: c.session.clone(),
+            gap: gap.into(),
+        };
+        if let Err(e) = state::add_gap(&p.root, g) {
+            eprintln!("torpor-muse suggest: {e}");
+        }
+    }
     let message = if gap.is_empty() {
         line.to_string()
     } else {
@@ -450,6 +477,15 @@ fn ask(c: &mut Ctx, p: &Plan, body: &str, attempt: u32) -> Result<client::Readin
             c.safe(&bad.reason(), 120)
         ),
     };
+    // M2 evidence: the names in the FILE LIST that went out (names only, never what is in the files).
+    // shortcut: names past 2000 characters are not recorded; upgrade when a ledger must show a bigger project's list.
+    let names: Vec<&str> = p
+        .excerpt
+        .lines()
+        .skip(1)
+        .take_while(|l| !l.is_empty())
+        .collect();
+    let note = format!("{note}; sent: {}", c.safe(&names.join(", "), 2000));
     c.usd += ledger
         .record(&p.model, &reading.status, reading.charge, &note)
         .map_err(err)?;
@@ -506,6 +542,11 @@ fn finish(c: &Ctx, o: Outcome) -> u8 {
         (false, Kind::Error) => 1,
         (false, _) => 3,
     }
+}
+
+/// What the saved checks of the project in `cwd` do not cover, newest first (hook.rs tells the user and the model).
+pub fn gaps(cwd: &str) -> Vec<Gap> {
+    repo::resolve_root(Some(cwd)).map_or_else(|_| Vec::new(), |r| state::gaps(&r))
 }
 
 /// hook.rs calls this on UserPromptSubmit (main session) after the engine call; returns at once (detached run).

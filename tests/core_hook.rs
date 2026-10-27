@@ -25,13 +25,16 @@ fn pinned() -> &'static str {
 
 /// A stand-in engine (POSIX sh). Per event, files next to it steer it: `sleep.<E>` (seconds to hang), `err.<E>`
 /// (stderr), `out.<E>` (stdout), `code.<E>` (exit code). It keeps every payload as `in.<E>.<n>`, every `version` call
-/// as a line of `version.calls`, and the pids of what it started as `pid.<E>` and `child.<E>`.
+/// as a line of `version.calls`, and the pids of what it started as `pid.<E>` and `child.<E>`. `status --json` and
+/// `show N --json` print `out.status` and `out.show.N` when those exist.
 fn write_fake(dir: &Path, version: &str) -> PathBuf {
     let script = format!(
         r#"#!/bin/sh
 d=$(dirname "$0")
 case "$1" in
 version) echo x >> "$d/version.calls"; echo 'torpor {version}'; exit 0 ;;
+status) [ -f "$d/out.status" ] && cat "$d/out.status" && exit 0 ;;
+show) [ -f "$d/out.show.$2" ] && cat "$d/out.show.$2" && exit 0 ;;
 hook)
   c=$(cat "$d/count.$2" 2>/dev/null || echo 0); c=$((c + 1)); echo $c > "$d/count.$2"
   cat > "$d/in.$2.$c"
@@ -842,7 +845,7 @@ fn the_note_is_added_to_what_the_engine_printed() {
     let run = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     let (said, ctx) = note_parts(&run.out);
     assert!(
-        said.starts_with("saved\n") && said.contains("check-writer is off"),
+        said.starts_with("saved — ") && said.contains("check-writer is off"),
         "{said}"
     );
     assert!(
@@ -1083,6 +1086,187 @@ fn real_engine_a_file_made_and_deleted_in_one_turn_comes_back_only_with_the_pre_
     );
 }
 
+/// The additional context of a hook's output, "" when it printed nothing.
+fn context_of(run: &Run) -> String {
+    if run.out.is_empty() {
+        String::new()
+    } else {
+        note_parts(&run.out).1
+    }
+}
+
+/// L3 N1 and N2: a turn that changed a database is kept for its folder (the last 5, newest first), also past
+/// SessionEnd. The user gets a short line with the command first; the model gets every kept turn, each with its own
+/// command, once per session: at the next prompt, or at the start of a session (startup, resume, compact) in that folder.
+#[test]
+fn database_turns_reach_the_model_after_an_exit_and_in_later_sessions() {
+    let r = Rig::new("db-kept");
+    let db_turn = |n: u32, p: u32, files: &[&str]| {
+        r.set(
+            "out.status",
+            &json!({"saving": true, "last_turn": {"n": n}}).to_string(),
+        );
+        let files: Vec<Value> = files
+            .iter()
+            .map(|f| json!({"path": f, "class": "tracked", "change": "deleted"}))
+            .collect();
+        let show = json!({"turn": {"n": n, "start_point": p}, "files": files});
+        r.set(&format!("out.show.{n}"), &show.to_string());
+        note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+    };
+    let ups = || context_of(&r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit")));
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    assert_eq!(ups(), "");
+    let said = db_turn(3, 9, &["notes.db"]);
+    assert_eq!(
+        said,
+        "Torpor: turn 3 changed notes.db. Get it back: stop the app, then torpor back --id 9 --with-data"
+    );
+    // exit, then resume (the same session id): the start context has it, and the next prompt does not repeat it
+    r.hook_ok("SessionEnd", &r.fixture("SessionEnd"));
+    let ctx = context_of(&r.hook_ok("SessionStart", &r.fixture("SessionStart-resume")));
+    for part in [
+        "Turn 3 changed notes.db",
+        "stop the app",
+        "every other file",
+        "even if the app made a fresh database since",
+        "only when the user asks",
+    ] {
+        assert!(ctx.contains(part), "{part}: {ctx}");
+    }
+    assert!(
+        ctx.ends_with(&format!(
+            "The command: {} back --id 9 --with-data",
+            r.engine.display()
+        )),
+        "{ctx}"
+    );
+    assert_eq!(ups(), "");
+    // a second database turn: both are listed, the newer first, each with its own command
+    let said = db_turn(5, 12, &["data/app.sqlite"]);
+    assert_eq!(
+        said,
+        "Torpor: turn 5 changed data/app.s... Get it back: stop the app, then torpor back --id 12 --with-data",
+        "100 characters: the name is cut, the command stays whole"
+    );
+    let ctx = ups();
+    let (five, three) = (ctx.find("Turn 5 changed"), ctx.find("Turn 3 changed"));
+    assert!(five.is_some() && three.is_some() && five < three, "{ctx}");
+    assert!(
+        ctx.contains("back --id 12 --with-data") && ctx.contains("back --id 9 --with-data"),
+        "{ctx}"
+    );
+    assert_eq!(ups(), "", "once per session");
+    // an exit with no new start: the next prompt of the session gets them again
+    r.hook_ok("SessionEnd", &r.fixture("SessionEnd"));
+    assert!(ups().contains("Turn 5 changed"));
+    // compaction, and a new session in the same folder
+    assert!(
+        context_of(&r.hook_ok("SessionStart", &r.fixture("SessionStart-compact")))
+            .contains("Turn 3 changed")
+    );
+    let mut other = r.fixture("SessionStart");
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000bb");
+    let ctx = context_of(&r.hook_ok("SessionStart", &other));
+    assert!(
+        ctx.contains("Turn 5 changed") && ctx.contains("Turn 3 changed"),
+        "{ctx}"
+    );
+    // long names are cut, never the command; only the last 5 turns stay
+    let said = db_turn(
+        7,
+        20,
+        &["data/a-database-file-with-a-very-long-name.sqlite3", "b.db"],
+    );
+    assert!(
+        said.chars().count() <= 100
+            && said.starts_with("Torpor: turn 7 changed data/a")
+            && said.contains("...")
+            && said.ends_with(". Get it back: stop the app, then torpor back --id 20 --with-data"),
+        "{said}"
+    );
+    for n in [8, 10, 11] {
+        db_turn(n, n + 20, &["notes.db"]);
+    }
+    let mut fresh = r.fixture("SessionStart");
+    fresh["session_id"] = json!("00000000-0000-7000-8000-0000000000cc");
+    let ctx = context_of(&r.hook_ok("SessionStart", &fresh));
+    assert!(
+        ctx.contains("Turn 11 changed")
+            && ctx.contains("Turn 5 changed")
+            && !ctx.contains("Turn 3 changed"),
+        "{ctx}"
+    );
+}
+
+/// L3 N7: Muse shows `systemMessage` on one line and drops its newlines, so the engine's lines ran together. They are
+/// joined with " — " now; what the model reads keeps its newlines.
+#[test]
+fn the_engine_lines_stay_apart_on_the_one_line_muse_shows() {
+    let r = Rig::new("one-line");
+    r.set(
+        "out.Stop",
+        r#"{"systemMessage":"Torpor: save point 4. undo it: torpor undo 3\nTorpor: new promise #1 \"x\" (guard only), from your words at turn 2. Drop it: torpor promise drop 1"}"#,
+    );
+    let said = note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0;
+    assert_eq!(
+        said,
+        "Torpor: save point 4. undo it: torpor undo 3 — Torpor: new promise #1 \"x\" (guard only), from your words at turn 2. Drop it: torpor promise drop 1"
+    );
+    r.set(
+        "out.UserPromptSubmit",
+        r#"{"systemMessage":"one\ntwo","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"c1\nc2"}}"#,
+    );
+    let (said, ctx) = note_parts(
+        &r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"))
+            .out,
+    );
+    assert_eq!(said, "one — two");
+    assert!(ctx.ends_with("]\nc1\nc2"), "{ctx}");
+}
+
+/// L3 N4: what a check the writer saved does not cover (its `gaps.json`) goes, short, into the engine's line that
+/// announces the promise, and in full to the model of the session that asked for it, once, at its next prompt.
+#[test]
+fn what_a_new_promise_does_not_cover_reaches_the_user_and_the_model() {
+    use std::os::unix::ffi::OsStrExt;
+    let r = Rig::new("gap-note");
+    let root = fs::canonicalize(&r.cwd).unwrap();
+    let h = root
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    let ws = r.store().join(format!("muse/suggest/ws/{h:016x}"));
+    fs::create_dir_all(&ws).unwrap();
+    let gap = "editing a note, and that the notes survive a restart of the server";
+    let gaps = json!([{"promise": 2, "session": SID, "gap": gap}, {"promise": 1, "session": SID, "gap": "older"}]);
+    fs::write(ws.join("gaps.json"), gaps.to_string()).unwrap();
+    r.set(
+        "out.Stop",
+        &json!({"systemMessage": "Torpor: save point 4. undo it: torpor undo 3\nTorpor: new promise #2 \"Adding (and listing) notes works\" (guard only), from your words at turn 2. Drop it: torpor promise drop 2"}).to_string(),
+    );
+    let said = note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0;
+    assert!(
+        said.contains(&format!("\"Adding (and listing) notes works\" (guard only; not covered: {gap}), from your words at turn 2. Drop it: torpor promise drop 2")),
+        "{said}"
+    );
+    let ctx = context_of(&r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit")));
+    assert!(
+        ctx.contains(&format!("#2 does not cover: {gap}"))
+            && ctx.contains("#1 does not cover: older"),
+        "{ctx}"
+    );
+    let again = context_of(&r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit")));
+    assert!(!again.contains("does not cover"), "once: {again}");
+    // another session in the folder did not ask for these checks: its model is not told
+    let mut other = r.fixture("UserPromptSubmit");
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000aa");
+    assert!(!context_of(&r.hook_ok("UserPromptSubmit", &other)).contains("does not cover"));
+}
+
 /// dogfood1 M1: a turn whose shell command rewrote a database (the app made a new, empty one). `torpor undo N` and a
 /// plain `torpor back` leave database content as it is, so the Stop line names the command that does put the data back,
 /// the next prompt gives the model that command with the engine's path, and each, run exactly as printed, brings the
@@ -1131,14 +1315,15 @@ fn real_engine_a_turn_that_rewrote_a_database_names_the_command_that_puts_it_bac
         said.contains("undo it: torpor undo 1"),
         "the engine's line stays: {said}"
     );
-    let user = said.rsplit_once("run: ").map_or("", |(_, c)| c).to_owned();
+    // L3 N2: the database line comes first and ends with the command within 100 characters (the status bar is short)
+    let first = said.split(" — ").next().unwrap_or("");
+    let user = first.split_once("then ").map_or("", |(_, c)| c).to_owned();
     assert!(
-        user.starts_with("torpor back --id ") && user.ends_with(" --with-data"),
+        first.starts_with("Torpor: turn 1 changed notes.db. Get it back: stop the app, then ")
+            && first.chars().count() <= 100
+            && user.starts_with("torpor back --id ")
+            && user.ends_with(" --with-data"),
         "{said}"
-    );
-    assert!(
-        said.contains("every other file"),
-        "it says what else it rewinds: {said}"
     );
     // the user's terminal finds the engine as `torpor` on its PATH
     let path = format!("{}:/usr/bin:/bin", r.engine.parent().unwrap().display());
@@ -1167,7 +1352,7 @@ fn real_engine_a_turn_that_rewrote_a_database_names_the_command_that_puts_it_bac
     // with saving off the engine's last turn stays the database one: its line must not come back at every Stop
     assert_eq!(engine_cli(&r, &["off"]).0, 0);
     let stop = r.hook_ok("Stop", &r.fixture("Stop")).out;
-    assert!(!stop.contains("database"), "{stop}");
+    assert!(!stop.contains("--with-data"), "{stop}");
 
     // control: the same turn on a file that is not a database keeps today's text, and the model hears nothing
     let c = Rig::real("real-db-control");

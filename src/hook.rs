@@ -318,11 +318,14 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             done.stdout = fail_open(dir, event, &sid, &why);
         }
         Ok(out) => {
-            done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), &out.stdout);
+            let edited = gap_line(event, &sid, &cwd, &out.stdout);
+            let engine_out = edited.as_deref().unwrap_or(&out.stdout);
+            done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), engine_out);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
                 done.stdout = writer_note(dir, event, done.stdout.take());
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
+            done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
             let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
             done.stdout = db_note(dir, event, &sid, &cwd, &out.bin, left, done.stdout.take());
         }
@@ -428,6 +431,7 @@ fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> 
              `torpor-muse doctor` shows this too."
         ),
         "",
+        false,
     );
     match merged {
         Some(m) if state::new_key(dir, event, "writer-off") => Some(m),
@@ -435,10 +439,77 @@ fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> 
     }
 }
 
+/// L3 N4: what a check the writer saved does not cover (`suggest::gaps`). The user reads it short inside the engine's
+/// line that announces the promise (a line of its own would fall past the width of Muse's one-line status bar). Some =
+/// the engine's Stop output with it put in.
+fn gap_line(event: &str, sid: &str, cwd: &str, engine_out: &[u8]) -> Option<Vec<u8>> {
+    if event != "Stop" || cwd.is_empty() {
+        return None;
+    }
+    let mut v: Value = serde_json::from_slice(engine_out).ok()?;
+    let mut m = v["systemMessage"].as_str()?.to_owned();
+    if !m.contains("Torpor: new promise #") {
+        return None;
+    }
+    let mine = |g: &suggest::Gap| g.session.as_deref().is_none_or(|s| s == sid);
+    for g in suggest::gaps(cwd).iter().filter(|g| mine(g)) {
+        if let Some(t) = gap_in_line(&m, g.promise, &suggest::scrub(&g.gap, 80)) {
+            m = t;
+        }
+    }
+    v["systemMessage"] = Value::String(m);
+    serde_json::to_vec(&v).ok()
+}
+
+/// `Torpor: new promise #2 "name" (guard only), from ... Drop it: torpor promise drop 2` gets `; not covered: <gap>`
+/// before the `)` that closes its label.
+fn gap_in_line(m: &str, id: u32, gap: &str) -> Option<String> {
+    let start = m.find(&format!("Torpor: new promise #{id} \""))?;
+    let end = start + m[start..].find(&format!(". Drop it: torpor promise drop {id}"))?;
+    let at = start + m[start..end].rfind("), ")?;
+    Some(format!("{}; not covered: {gap}{}", &m[..at], &m[at..]))
+}
+
+/// The model of the session whose prompt started the writer gets what its new checks do not cover, in full, once, at
+/// its next prompt (so it does not say a part is checked that is not).
+fn gap_note(dir: &Path, event: &str, sid: &str, cwd: &str, body: Option<String>) -> Option<String> {
+    if event != "UserPromptSubmit" || cwd.is_empty() {
+        return body;
+    }
+    let Some(told) = state::with_session(dir, sid, |s| s.gap_told) else {
+        return body;
+    };
+    let new: Vec<suggest::Gap> = suggest::gaps(cwd)
+        .into_iter()
+        .filter(|g| g.session.as_deref() == Some(sid) && g.promise > told)
+        .collect();
+    let Some(newest) = new.iter().map(|g| g.promise).max() else {
+        return body;
+    };
+    let mut note = String::from(
+        "[Torpor check note: later Torpor notes do not replace this one] These new promises have a check that does \
+         not test everything the user said. Never tell the user that these parts are checked.",
+    );
+    for g in &new {
+        let gap = suggest::scrub(&g.gap, 600);
+        note.push_str(&format!("\nPromise #{} does not cover: {gap}", g.promise));
+    }
+    match schema::with_note(event, body.as_deref(), "", &note, false) {
+        Some(m) => {
+            state::with_session(dir, sid, |s| s.gap_told = newest);
+            Some(m)
+        }
+        None => body,
+    }
+}
+
 /// `torpor undo N` and a plain `torpor back` leave database content as it is, and the engine's own lines name only those
-/// (dogfood1 M1). So when a turn's own commands changed or deleted a database file, its Stop line names the command
-/// that does put the data back, and the next prompt gives the model that command (with the engine's path, see
-/// `engine_cmd`). Costs two engine calls at Stop, within `left` of the event's engine time; skipped when that is short.
+/// (dogfood1 M1). So when a turn's own commands changed or deleted a database file, its Stop line starts with the
+/// command that does put the data back (L3 N2: Muse shows the line once, on one line cut at the terminal's width), and
+/// the turn is kept for its folder past SessionEnd (L3 N1, `state::db_add`). The model of every session in that folder
+/// gets all kept turns, each with its command (with the engine's path, see `engine_cmd`), once: at the start of the
+/// session (startup, resume, clear, compact) or at the next prompt after a newer one. Costs two engine calls at Stop,
+/// within `left` of the event's engine time; skipped when that is short.
 fn db_note(
     dir: &Path,
     event: &str,
@@ -448,9 +519,40 @@ fn db_note(
     left: Duration,
     body: Option<String>,
 ) -> Option<String> {
-    if event == "UserPromptSubmit" {
-        return match state::with_session(dir, sid, |s| s.db_note.take()).flatten() {
-            Some(note) => schema::with_note(event, body.as_deref(), "", &note).or(body),
+    if matches!(event, "SessionStart" | "UserPromptSubmit") {
+        let turns = if cwd.is_empty() {
+            Vec::new()
+        } else {
+            state::db_turns(dir, cwd)
+        };
+        let Some(newest) = turns.first().map(|t| t.n) else {
+            return body;
+        };
+        let told = state::with_session(dir, sid, |s| s.db_told).unwrap_or(0);
+        if event == "UserPromptSubmit" && newest <= told {
+            return body;
+        }
+        let mut note = String::from(
+            "[Torpor database note: later Torpor notes do not replace this one] `torpor undo` and a plain `torpor \
+             back` leave existing database files as they are. Each command below brings a database's old data back, \
+             even if the app made a fresh database since. Run one only when the user asks for it.",
+        );
+        for t in &turns {
+            let (n, p) = (t.n, t.p);
+            let s = if t.files.len() > 1 { "s" } else { "" };
+            note.push_str(&format!(
+                "\nTurn {n} changed {} (database file{s}). To get it back as it was before turn {n}, stop the app first, \
+                 then run the command below; it also puts every other file back to the start of turn {n}, so later \
+                 changes are undone too. The command: {} back --id {p} --with-data",
+                suggest::scrub(&t.files.join(", "), 300), // the note must fit Muse's 12 KiB stdout limit
+                engine_cmd(bin)
+            ));
+        }
+        return match schema::with_note(event, body.as_deref(), "", &note, false) {
+            Some(m) => {
+                state::with_session(dir, sid, |s| s.db_told = newest);
+                Some(m)
+            }
             None => body,
         };
     }
@@ -477,7 +579,7 @@ fn db_note(
         return body;
     };
     // the engine's own test for a database file (its scan.rs): .db, .sqlite, .sqlite3, any case
-    let dbs: Vec<&str> = show["files"]
+    let dbs: Vec<String> = show["files"]
         .as_array()
         .into_iter()
         .flatten()
@@ -488,31 +590,35 @@ fn db_note(
                 .iter()
                 .any(|x| p.to_lowercase().ends_with(x))
         })
+        .map(String::from)
         .collect();
     let (Some(p), false) = (show["turn"]["start_point"].as_u64(), dbs.is_empty()) else {
         return body;
     };
-    let what = format!(
-        "changed the database{} {}, and `torpor undo` or a plain `torpor back` leave existing database files as \
-         they are",
-        if dbs.len() > 1 { "s" } else { "" },
-        dbs.join(", ")
+    // the user's line: the command within its first 100 characters; long names are cut, never the command
+    let (head, mut tail) = (
+        format!("Torpor: turn {n} changed "),
+        format!(". Get it back: stop the app, then torpor back --id {p} --with-data"),
     );
-    let back = format!("back --id {p} --with-data");
-    let rewinds = format!(
-        "this puts every other file back to the start of turn {n} as well, so later changes are undone too"
-    );
-    let user = format!(
-        "Torpor: turn {n} {what}. To get the data back as it was before turn {n} ({rewinds}), stop your app, then run: \
-         torpor {back}"
-    );
-    let model = format!(
-        "[Torpor database note] Turn {n} {what}. The command below gets the data back as it was before turn {n} \
-         ({rewinds}); the app must be stopped first. Run it only when the user asks for it. The command: {} {back}",
-        engine_cmd(bin)
-    );
-    state::with_session(dir, sid, |s| s.db_note = Some(model));
-    schema::with_note(event, body.as_deref(), &user, "").or(body)
+    let room = 100usize.saturating_sub(head.chars().count() + tail.chars().count());
+    let mut names = dbs.join(", ");
+    if names.chars().count() > room {
+        names = names
+            .chars()
+            .take(room.saturating_sub(2))
+            .collect::<String>()
+            + "...";
+        tail.remove(0); // the "..." ends the sentence
+    }
+    state::db_add(dir, cwd, state::DbTurn { n, p, files: dbs });
+    schema::with_note(
+        event,
+        body.as_deref(),
+        &format!("{head}{names}{tail}"),
+        "",
+        true,
+    )
+    .or(body)
 }
 
 /// Engine stdout -> what Muse accepts (None = print nothing). `torpor`: see `engine_cmd`.

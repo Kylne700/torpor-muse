@@ -26,6 +26,7 @@ For "check":
 - Do not expect ids, dates, UUIDs or numbers of 5 or more digits. Do not write absolute URLs.
 - The why of every step must contain at least one word of 4 or more letters that the developer wrote, spelled exactly as they wrote it.
 - When the developer names a value (a quantity, a total, a name, a status), assert that exact value with body_contains or json_types, worked out from the code and from what the earlier steps sent; a field that is merely present does not prove it.
+- That logging out (signing out, revoking a token) ends the session cannot be checked by these steps: the client drops a cookie the server clears, so a request after the logout is refused whether or not the server ended the session. Never title or describe a check as proving it; name it in reason.
 - reason: empty when the steps prove everything the developer said. Otherwise one sentence naming the part they cannot test (a restart of the server, a request header such as a bearer token, replaying an old cookie, waiting for time to pass).
 - Keep the check small: only what the developer said works, at most 6 steps."#;
 
