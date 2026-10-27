@@ -386,7 +386,7 @@ pub fn init() -> u8 {
     }
 }
 
-fn try_uninstall() -> Result<(), String> {
+fn remove_hooks() -> Result<(), String> {
     let path = settings_path();
     let Some((_, mut doc)) = read_settings(&path)? else {
         println!("nothing to do: {} does not exist", path.display());
@@ -425,6 +425,39 @@ fn try_uninstall() -> Result<(), String> {
             "torpor-muse hooks removed; {} was created by init and is deleted",
             path.display()
         );
+    }
+    Ok(())
+}
+
+/// What `init` leaves besides the hooks: the engine-ok cache, and the folders made for it and for the settings file
+/// (`<config>/muse`, `<config>`, `<store>/muse`, `<store>`). Rule: a directory goes only if it is empty (`remove_dir`
+/// never takes content); removing an empty one the user already had is harmless. Files in the state folder (spend
+/// ledger, results, logs) are never deleted: while any are left this returns the line that says so.
+fn tidy(settings: &Path, state: &Path) -> Option<String> {
+    if !settings.is_absolute() || !state.is_absolute() {
+        return None; // HOME is not set: these would be paths under the current directory
+    }
+    let _ = fs::remove_file(state.join(engine::ENGINE_OK));
+    for dir in settings
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .chain(state.ancestors().take(2))
+    {
+        let _ = fs::remove_dir(dir);
+    }
+    fs::read_dir(state).ok()?.next().map(|_| {
+        format!(
+            "kept: {} still holds torpor-muse's files (spend ledger, results, logs); deleting that folder is your choice",
+            state.display()
+        )
+    })
+}
+
+fn try_uninstall() -> Result<(), String> {
+    remove_hooks()?;
+    if let Some(line) = tidy(&settings_path(), &engine::state_dir()) {
+        println!("{line}");
     }
     Ok(())
 }

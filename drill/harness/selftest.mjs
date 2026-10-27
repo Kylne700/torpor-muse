@@ -6,6 +6,7 @@
 // --real adds a pre-flight with the REAL engine and adapter on the test disasters D00, D00e and D00i (the values seen
 // when the harness was built are printed next to the new ones; a difference is a NOTE, not a failure).
 import cp from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +16,11 @@ import { OUT_CAP, interpret, loadSettings } from './contract.mjs';
 import { expectedRed, parseDisasters, predictions, readMd } from './parse.mjs';
 import { LOCKED, refusal } from './run.mjs';
 import { GuardError, findBwrap, makeRunFolder, makeSandbox, reap, resolveInside, safeDelete, toolEnv } from './sandbox.mjs';
-import { analyze, cellOf, compare, render, slotsOf } from './tally.mjs';
+import { NO_HOME, clean, publish, publishFile } from './publish.mjs';
+import { appendOnly, build, dropSuperseded, fill } from './results.mjs';
+import { analyze, cellOf, compare, render, slotsOf, tapRows } from './tally.mjs';
+import * as LV from './live.mjs';
+import { readTap } from '../oracles/tap.mjs';
 
 if (process.platform !== 'linux') {
   console.log('drill harness self-test: SKIP (Linux only: bubblewrap and /proc)');
@@ -316,6 +321,106 @@ const cellFrom = (outs, o = {}) => cellOf([...slotsOf(outs.map((x, i) => rec('D9
   ok('control: NC2 CA makes the drill invalid', nc('NR', 'CA').drillInvalid && render(nc('NR', 'CA')).includes('DRILL INVALID'));
   ok('control: one bad repetition is enough', analyze([rec('D06', 4, 1, 'EX', { control: 'NC1' }), rec('D06', 4, 2, 'PV', { control: 'NC1' }), rec('D06', 4, 3, 'EX', { control: 'NC1' })], { reps: 3 }).drillInvalid);
 }
+{
+  // a live record keeps its tap in a side file and holds the rows per event; a replay record holds the rows inline
+  const liveTap = { 'SessionStart:in': 2, 'SessionStart:out': 2, 'Stop:in': 2, 'Stop:out': 2, 'PostCompact:in': 1, 'PostCompact:out': 1 };
+  const live = (outcome, o = {}) => ({ mode: 'live', side_files: 'runs/a4-r1-t1', tap_events: liveTap, ...o, outcome });
+  same('tapRows: a replay record counts its inline rows', tapRows({ tap: [{}, {}, {}], tap_events: { x: 9 } }), 3);
+  same('tapRows: a live record sums its rows per event', tapRows(live('PS')), 10);
+  same('tapRows: a record that says nothing is null', tapRows({}), null);
+  const out = (rec_) => render(analyze([rec('D15', 4, 1, 'INVALID', rec_)], { reps: 3 }));
+  ok('tally: an excluded live run shows its row count, not "?"', out(live('INVALID')).includes('runs/a4-r1-t1/tap.jsonl (10 rows)') && !out(live('INVALID')).includes('(? rows)'));
+  ok('tally: an excluded replay run still shows its inline rows', out({ side_files: 'runs/x', tap: [{}, {}] }).includes('runs/x/tap.jsonl (2 rows)'));
+  ok('tally: a record without any row count still shows "?"', out({ side_files: 'runs/x' }).includes('(? rows)'));
+  const lv = (rep, outcome) => ({ ...rec('D91', 4, rep, outcome), ...live(outcome) });
+  const liveOnly = analyze([...grid({ D91: 'NR EX EX' }, 3, { mode: 'live', tap_events: liveTap }), ...[1, 2, 3].map((r) => lv(r, 'PV'))], { reps: 3 });
+  same('tally: live cells with a side-file tap are read like replay cells', [liveOnly.cells.D91[3].state, liveOnly.cells.D91[3].value, liveOnly.cells.D91[3].modes, wtl(liveOnly.talliesLive)[0]], ['OK', 'PV', ['live'], [1, 0, 0]]);
+  const m = analyze(grid({ D91: 'NR EX EX EX' }), { predictions: { D91: { cls: 'files', arms: ['EX', 'EX', 'EX', 'EX'] } }, reps: 3 });
+  ok('render: the reason of a miss comes from meta.reasonOf, else it is "to be written"', render(m, { reasonOf: (x) => `why ${x.id} ${x.arm}.` }).includes('Reason: why D91 1.') && render(m).includes('Reason: to be written from the tap and the oracle line.'));
+}
+
+// ------------------------------------------------------------------ publishing the records and building RESULTS.md
+{
+  // publish.mjs: only absolute paths change; fixtures use made-up paths
+  const o = { root: '/srv/proj', home: '/srv/hm/alice', tmp: ['/tmp/zz'] };
+  const sbHome = `/tmp/drill.Ab12Cd${NO_HOME.slice(0, -1)}`; // a run's sandbox HOME, written so that this file holds no home path
+  const c = clean(`a /srv/proj/x b /srv/proj. /srv/project2 ${sbHome}/.m /tmp/drill.Ab12Cd/w /tmp/zz/r1 /srv/hm/alice/.c`, o);
+  same('publish: absolute paths become placeholders, a longer folder name is left alone', c.text, 'a $ROOT/x b $ROOT. /srv/project2 $HOME/.m $TMP/w $TMP/r1 $HOME/.c');
+  same('publish: the replacements are counted', c.counts, { $ROOT: 2, $HOME: 2, $TMP: 2 });
+  same('publish: a text without a path comes back as it was', publishFile('a.md', Buffer.from('plain $ROOT text\n'), o).text, 'plain $ROOT text\n');
+  raises('publish: a home path that was not given is refused', () => publishFile('a.md', Buffer.from(`x ${NO_HOME}/bob/y\n`), o));
+  raises('publish: the user name is refused', () => publishFile('a.md', Buffer.from('mail alice at x\n'), o));
+  raises('publish: text that is not UTF-8 is refused', () => publishFile('a.md', Buffer.from([0x41, 0xff, 0xfe]), o));
+  raises('publish: a JSONL line that is not JSON is refused', () => publishFile('r.jsonl', Buffer.from('{"a":1}\nnot json\n'), o));
+  const raw = path.join(W, 'raw', 'b1');
+  const pub = path.join(W, 'pub');
+  fs.mkdirSync(path.join(raw, 'runs', 'a'), { recursive: true });
+  fs.mkdirSync(path.join(raw, 'runs', 'b'));
+  const rawRuns = '{"cwd":"/srv/proj/w","home":"/tmp/drill.Ab12Cd/home"}\n{"n":2}\n';
+  fs.writeFileSync(path.join(raw, 'runs.jsonl'), rawRuns);
+  fs.writeFileSync(path.join(raw, 'run-log.json'), '{"root":"/srv/proj"}\n');
+  fs.writeFileSync(path.join(raw, 'runs', 'a', 'session.txt'), 'x');
+  const man = publish({ dirs: [raw], out: pub, ...o });
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const copy = fs.readFileSync(path.join(pub, 'b1', 'runs.jsonl'), 'utf8');
+  same('publish: the copy is the raw file with placeholders', copy, '{"cwd":"$ROOT/w","home":"$HOME"}\n{"n":2}\n');
+  ok('publish: the per-run folders are not copied', !fs.existsSync(path.join(pub, 'b1', 'runs')));
+  same('publish: a file the batch does not have is skipped', man.files.map((f) => f.file), ['runs.jsonl', 'run-log.json']);
+  ok('publish: SOURCES.json holds the sha256 of the raw file and of the copy', man.files[0].raw_sha256 === sha(rawRuns) && man.files[0].published_sha256 === sha(copy) && fs.readFileSync(path.join(pub, 'SOURCES.json'), 'utf8') === `${JSON.stringify(man, null, 2)}\n`);
+  same('publish: the per-run folders are counted, not copied', man.not_published.b1, { 'runs/': 2 });
+  raises('publish: a batch folder without runs.jsonl is refused', () => publish({ dirs: [path.join(W, 'raw', 'none')], out: pub, ...o }));
+
+  // results.mjs: the head template, the superseded D15 records, and the checks that stop a stale head
+  same('results: {{name}} is filled in', fill('a {{x}} b {{y}}', { x: 1, y: 'two' }), 'a 1 b two');
+  raises('results: a name that is not computed throws', () => fill('a {{z}}', { x: 1 }));
+  raises('results: a stray brace pair throws', () => fill('a {{ x }}', { x: 1 }));
+  const other = grid({ D91: 'NR EX EX EX' });
+  const notRun = grid({ D15: 'FL FL FL PS' }, 3, { outcome: 'NOT-RUN' });
+  const liveD15 = grid({ D15: 'PS PS PS PS' }, 3, { mode: 'live' });
+  const dr = dropSuperseded([...other, ...notRun], liveD15, 12);
+  same('results: the NOT-RUN records of the slots a live batch holds are dropped', [dr.kept.length, dr.dropped.length], [12, 12]);
+  raises('results: a record in a shared slot that is not NOT-RUN throws', () => dropSuperseded([...other, ...grid({ D15: 'FL FL FL PS' })], liveD15, 12));
+  raises('results: fewer live records than expected throws', () => dropSuperseded([...other, ...notRun], liveD15.slice(1), 12));
+  raises('results: nothing to drop throws', () => dropSuperseded(other, liveD15, 12));
+
+  const pred = Object.fromEntries(Object.entries({ D07: 'database', D11: 'regression', D12: 'regression', D15: 'memory' }).map(([id, cls]) => [id, { cls, arms: id === 'D15' ? ['FL', 'FL', 'FL', 'PS'] : ['NR', 'EX', 'NR', 'NR'] }]));
+  const steps = [{ cmd: 'torpor undo 1', exit: 0, output: 'Turn 1 changed no files, so there is nothing to undo.' }];
+  // PREREG.md: the runs used preBase (7 lines, the log line is line 5); preAdded is an entry added to the log after them
+  const preBase = 'Rules.\n\n## 10. Amendments\n\nAmendment log:\n\n- 2026-10-26, v2.\n';
+  const preAdded = '- 2026-10-27, a fix.\n  - No run is repeated.\n';
+  const preSha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+  const scored = { name: 's', records: [...grid({ D07: 'NR EX NR NR', D11: 'NR EX NR EX', D12: 'NR NR NR PA' }, 3, { recovery: { steps } }), ...notRun], runLog: { header: { prereg_sha256: preSha(preBase), disasters_sha256: 'd' }, created_at: '2026-10-27T03:00:00Z' }, method: null, tallyMd: '' };
+  const liveRec = (o_ = {}) => grid({ D15: 'PS PS PS PS' }, 3, { mode: 'live', tap_events: { 'Stop:in': 2 }, cost: { lo: 0.01, hi: 0.02 }, models: ['m'], started_at: '2026-10-27T04:00:00Z', ended_at: '2026-10-27T04:01:00Z', minutes: 0.5, muse: { version_line: 'Muse Code 9' }, method: { compaction: 'typed' }, summaryHasNonce: true, nonceInTail: true, engineContext: false, nonce: 'abc123def456ghi789', nonce_files_outside_ws: [], ...o_ });
+  const live = { name: 'l', records: liveRec(), runLog: { header: { prereg_sha256: preSha(preBase) }, cost: { counted: { hi: 0.24 }, calibration: { hi: 0.01 }, total_hi: 0.25, cap_hi: 3 }, overlap_with_main_1: { eval_runner_pids_seen: [1, 2] } }, method: { batch_label: 'lbl' }, tallyMd: '' };
+  const args = { scored, live, pred, expected: { red: ['D07'], other: [] }, head: 'vs1 {{vs1}}, ps {{d15_ps}}, {{valid}}\n', prereg: Buffer.from(preBase + preAdded), shas: { disasters: 'd' } };
+  const t1 = build(args);
+  ok('results: the same inputs give the same text', t1 === build(args));
+  ok('results: the head is filled from the records and the generated part follows', t1.startsWith('vs1 2 W, 2 T, 0 L, ps 12 of 12, VALID\n') && t1.includes('## Generated part') && !t1.includes('{{'));
+  ok('results: the D15 cells come from the live records (live label, 12 records dropped from scored)', t1.includes('| D15 | memory | live |') && t1.includes('12 records of scored-1 are NOT-RUN'));
+  raises('results: a fact of the head that the records no longer give throws', () => build({ ...args, expect: { d15_ps: '11 of 12' } }));
+  raises('results: a name in the head that is not computed throws', () => build({ ...args, head: '{{nope}}' }));
+  raises('results: a cited line that does not hold the text throws', () => build({ ...args, cites: [['f.md', 2, 'abc']], lineOf: () => 'xyz' }));
+  raises('results: a published copy whose sha256 differs from SOURCES.json throws', () => build({ ...args, sources: { files: [{ batch: 'l', file: 'runs.jsonl', published_sha256: 'aa' }], not_published: {} }, hashOf: () => 'bb' }));
+  const src = { files: [{ batch: 'l', file: 'runs.jsonl', published_sha256: 'aa', published_bytes: 1, raw_sha256: 'cc' }], not_published: { about: 'x', l: { 'runs/': 12 } } };
+  ok('results: cites and copies that hold are accepted and listed', build({ ...args, cites: [['f.md', 2, 'x']], lineOf: () => 'xyz', sources: src, hashOf: () => 'aa' }).includes('| `drill/results/l/runs.jsonl` | 1 | aa | cc |'));
+  raises('results: a different number of superseded records throws', () => build({ ...args, superseded: 11 }));
+  const strict = build({ ...args, head: '{{strict_d15}}|{{strict_same}}\n', live: { ...live, records: liveRec({ nonce_files_outside_ws: ['/srv/x/index.db'] }) } });
+  ok('results: the strict reading leaves D15 out and the tallies are those of scored alone', strict.startsWith('UNMEASURED, UNMEASURED, UNMEASURED, UNMEASURED|the same as those of scored-1 alone\n'));
+
+  // PREREG.md may only grow inside its amendment log: the sha256 the runs recorded must be that of its first n lines
+  const pre = (s) => Buffer.from(s);
+  same('results: lines added to the amendment log keep the proof', appendOnly(pre(preBase + preAdded), preSha(preBase)), { n: 7, m: 9, log: 5 });
+  same('results: a last line without a newline passes too', appendOnly(pre(`${preBase}x`), preSha(preBase)), { n: 7, m: 8, log: 5 });
+  same('results: an unchanged PREREG.md passes with nothing added', appendOnly(pre(preBase), preSha(preBase)), { n: 7, m: 7, log: 5 });
+  same('results: the proof hashes the bytes of the lines', appendOnly(pre('Café\nAmendment log:\n- a\n'), preSha(pre('Café\nAmendment log:\n'))), { n: 2, m: 3, log: 2 });
+  raises('results: a change inside the lines the runs used throws', () => appendOnly(pre((preBase + preAdded).replace('Rules', 'Ruled')), preSha(preBase)));
+  raises('results: lines added above the "Amendment log:" line throw', () => appendOnly(pre('Rules.\n\nAmendment log:\n- x\n'), preSha('Rules.\n')));
+  raises('results: a PREREG.md without an "Amendment log:" line throws', () => appendOnly(pre('Rules.\nMore.\n'), preSha('Rules.\n')));
+  raises('results: a build with PREREG.md changed inside the lines the runs used throws', () => build({ ...args, prereg: pre(preBase.replace('Rules', 'Ruled') + preAdded) }));
+  raises('results: run logs that record different PREREG.md sha256 throw', () => build({ ...args, live: { ...live, runLog: { ...live.runLog, header: { prereg_sha256: preSha('other') } } } }));
+  ok('results: the check names the lines the runs used and the lines added', t1.includes(`- PREREG.md lines 1-7 are the file every run used (sha256 ${preSha(preBase)}, as in both run-log headers). Lines 8-9 come after the "Amendment log:" line (PREREG.md:5)`));
+  ok('results: an unchanged PREREG.md says the file has no other line', build({ ...args, prereg: pre(preBase) }).includes('as in both run-log headers). The file has no other line.'));
+}
 
 // ------------------------------------------------------------------ the sandbox (bubblewrap)
 
@@ -476,6 +581,105 @@ if (argv.includes('--real')) {
     const r4 = recs('real-D00-4').at(-1);
     if (r4) ok('real arm 4: the adapter init wired the 13 events with the tool matcher', Object.keys(r4.arm_setup.settings.hooks).length === 13 && r4.arm_setup.settings.hooks.PreToolUse[0].matcher === 'bash|edit_file|write_file');
   }
+}
+
+// ------------------------------------------------------------------ live mode (D15 only): offline parts of live.mjs
+
+{
+  const NONCE = 'amber-falcon-4417';
+  same('live: nonce with a stub generator', LV.newNonce((n, m) => (m === undefined ? 0 : n)), 'amber-falcon-1000');
+  ok('live: nonce shape', /^[a-z]+-[a-z]+-\d{4}$/.test(LV.newNonce()));
+  same('live: batch label', LV.BATCH_LABEL, 'live, added after scored-1 because replay cannot play D15; list and predictions unchanged');
+
+  // the tap wrapper must be transparent: same stdout bytes, stderr and exit code as the real command, and one in row and one out row
+  const TAPTOOL = path.join(HERE, 'live-tap.mjs');
+  const payload = { cwd: '/w', hook_event_name: 'UserPromptSubmit', model: 'm', model_provider: 'p', permission_mode: 'default', session_id: 's', transcript_path: null, prompt: 'hello', turn_id: 't' };
+  const cmds = [
+    `printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"hi"}}'`, 'true', 'echo blocked >&2; exit 2', 'echo plain text', "head -c 100000 /dev/zero | tr '\\0' x", 'cat',
+  ];
+  const lvDir = fs.mkdtempSync(path.join(W, 'live.'));
+  const real = path.join(lvDir, 'real.json');
+  fs.writeFileSync(real, JSON.stringify({ UserPromptSubmit: ['true', ...cmds] })); // index 0 is not the one under test
+  cmds.forEach((c, i) => {
+    const tap = path.join(lvDir, `tap${i}.jsonl`);
+    const direct = cp.spawnSync('sh', ['-c', c], { input: JSON.stringify(payload) });
+    const wrapped = cp.spawnSync(process.execPath, [TAPTOOL, tap, 'UserPromptSubmit', real, String(i + 1)], { input: JSON.stringify(payload) });
+    ok(`live tap: transparent for "${c.slice(0, 28)}"`, wrapped.status === direct.status && wrapped.signal === direct.signal && wrapped.stdout.equals(direct.stdout) && wrapped.stderr.equals(direct.stderr),
+      `status ${wrapped.status}/${direct.status}, stdout ${wrapped.stdout.length}/${direct.stdout.length} bytes, stderr ${wrapped.stderr.length}/${direct.stderr.length}`);
+    const rows = readTap(tap).rows;
+    ok(`live tap: one in row and one out row for "${c.slice(0, 28)}"`, rows.length === 2 && rows[0].dir === 'in' && rows[1].dir === 'out' && rows.every((r) => r.event === 'UserPromptSubmit'));
+    same(`live tap: the in row holds the payload ("${c.slice(0, 28)}")`, rows[0]?.json, payload);
+    if (i === 0) same('live tap: the out row holds the parsed JSON answer', rows[1]?.json?.hookSpecificOutput?.additionalContext, 'hi');
+    if (i === 4) ok('live tap: a long stdout is cut in the row but not on the way back', rows[1].stdout_bytes === 100000 && rows[1].stdout.length < 20100 && wrapped.stdout.length === 100000);
+  });
+  const none = path.join(lvDir, 'tap-none.jsonl');
+  const idle = cp.spawnSync(process.execPath, [TAPTOOL, none, 'Stop'], { input: '{"hook_event_name":"Stop"}' });
+  ok('live tap: an event without a real hook prints nothing and exits 0', idle.status === 0 && idle.stdout.length === 0 && idle.stderr.length === 0);
+  same('live tap: ... and still leaves its two rows', readTap(none).rows.map((r) => `${r.event}:${r.dir}:${r.exit ?? '-'}`), ['Stop:in:-', 'Stop:out:0']);
+
+  // wrapSettings: the arm's own hooks stay behind the tap, the others get a record-only entry
+  const arm = JSON.stringify({ schema_version: 1, hooks: { SessionStart: [{ matcher: 'startup|compact', hooks: [{ type: 'command', command: 'echo a', timeout: 10 }, { type: 'command', command: 'echo b', timeout: 3 }] }], OtherEvent: [{ hooks: [{ type: 'command', command: 'echo c' }] }] } });
+  const wrapped = LV.wrapSettings(arm, { node: '/n/node', tool: '/t/live-tap.mjs', tap: '/t/tap.jsonl', realFile: '/t/real.json' });
+  const wh = JSON.parse(wrapped.text).hooks;
+  same('live wrap: every tap event plus the arm\'s own events', Object.keys(wh).sort(), [...new Set([...LV.TAP_EVENTS, 'OtherEvent'])].sort());
+  same('live wrap: real commands are kept in the side file, in order', wrapped.real.SessionStart, ['echo a', 'echo b']);
+  ok('live wrap: matcher and timeouts of real hooks are kept', wh.SessionStart[0].matcher === 'startup|compact' && wh.SessionStart[0].hooks.map((h) => h.timeout).join() === '10,3');
+  same('live wrap: a real hook points at its index', wh.SessionStart[0].hooks[1].command, '/n/node /t/live-tap.mjs /t/tap.jsonl SessionStart /t/real.json 1');
+  same('live wrap: an event the arm has no hook for is record-only', wh.Stop, [{ hooks: [{ type: 'command', command: '/n/node /t/live-tap.mjs /t/tap.jsonl Stop', timeout: 5 }] }]);
+  ok('live wrap: Muse would accept the file', loadSettings(wrapped.text).ok);
+  ok('live wrap: no settings (arms 1 and 2) gives the same 13 record-only events', Object.keys(JSON.parse(LV.wrapSettings(null, { node: '/n', tool: '/t', tap: '/p', realFile: '/r' }).text).hooks).length === 13);
+
+  // a session log in the shape of a recorded one (Muse 1.4.13): prompts, a manual compaction, a second prompt, usage
+  const rec = (seq, payload_type, p) => ({ schema_version: 1, id: `id-${seq}`, stream: { id: 's', kind: 'session' }, sequence: seq, recorded_at: 1793036239719032 + seq * 1e6, record_type: 'event', durability: 'durable', causation_id: null, payload_type, payload_schema_version: 1, payload: p });
+  const ev = (seq, event) => rec(seq, 'runtime.session', { kind: 'run', event });
+  const intent = (seq, text) => rec(seq, 'runtime.user_intent.accepted', { surface: 'main', model_messages: [{ role: 'user', content: [{ type: 'text', text }] }] });
+  const msg = (role, text) => ({ role, content: [{ type: 'text', text }] });
+  const build = ({ tailHas = false, leak = false, summary = 'The user wants a code word at the end of every answer.', extra = [] } = {}) => [
+    intent(1, `Always end every answer to me with the code word ${NONCE}. Now list the files in this folder.`),
+    ev(2, { kind: 'model_completed', model: 'muse-spark-1.3-contributor', usage: { input_tokens: 30000, cached_tokens: 0, output_tokens: 100, reasoning_tokens: 50 } }),
+    ev(3, { kind: 'goal_usage_attribution', record: { usage_family: 'provider', quantity: { input_tokens: 30000, output_tokens: 100 } } }),
+    ev(4, { kind: 'assistant_message_committed', text: 'Let me look.', phase: 'commentary', message_id: 'm1' }),
+    ev(5, { kind: 'assistant_message_committed', text: `README.md ${NONCE}`, message_id: 'm2' }),
+    ev(6, { kind: 'terminal', terminal: 'completed', reason: null }),
+    rec(7, 'context.compact.manual.outcome', { terminal_outcome: 'compacted', reason: null, candidate_id: 'c', command_id: 'k' }),
+    ev(8, { kind: 'goal_usage_attribution', record: { usage_family: 'compaction', quantity: { cached_tokens: 0, input_tokens: 2557, output_tokens: 998, reasoning_tokens: 0 } } }),
+    ev(9, {
+      kind: 'context_compaction_installed', strategy_id: 'summary-preserved-suffix/v1', trigger: 'manual_command', summarizer_usage: { duration_ms: 3057, input_tokens: 2557, output_tokens: 998 },
+      replacement: { kind: 'summary_text', text: summary },
+      replay_model_messages: [msg('developer', 'note'), msg('user', `summary: ${summary}`), msg('assistant', 'ok'), msg('user', tailHas ? `Always end every answer to me with the code word ${NONCE}.` : '[Previous turn ended without an assistant reply.]')],
+    }),
+    intent(10, 'Which code word did I tell you to end every answer with?'),
+    ev(11, { kind: 'tool_result_batch_committed', results: [{ tool_call_id: 'c1', text: leak ? `found ${NONCE} in history` : 'README.md' }] }),
+    ev(12, { kind: 'model_completed', model: 'muse-spark-1.3-contributor', usage: { input_tokens: 30500, cached_tokens: 30000, output_tokens: 60, reasoning_tokens: 0 } }),
+    ev(13, { kind: 'assistant_message_committed', text: `I do not know. ${NONCE}`, message_id: 'm3' }),
+    ev(14, { kind: 'terminal', terminal: 'completed', reason: null }),
+    ...extra,
+  ];
+  const text = (recs) => recs.map((r) => JSON.stringify(r)).join('\n');
+  const base = LV.inspect(LV.records(text(build())), NONCE);
+  same('live log: two prompts, both turns completed', [base.prompts.length, base.completed, base.compactions], [2, 2, 1]);
+  same('live log: manual outcome', base.manual, [{ outcome: 'compacted', reason: null }]);
+  same('live log: the answer is the last non-commentary assistant text', base.answer, `I do not know. ${NONCE}`);
+  same('live log: the summary is the installed replacement text', base.summary, 'The user wants a code word at the end of every answer.');
+  same('live log: no leak, nonce not in the kept tail', [base.turn2Leak, base.nonceInTail, base.rateLimited], [false, false, false]);
+  same('live log: a nonce in a turn-2 tool result is the extra INVALID rule', LV.inspect(LV.records(text(build({ leak: true }))), NONCE).turn2Leak, true);
+  same('live log: a nonce in the kept tail is reported', LV.inspect(LV.records(text(build({ tailHas: true }))), NONCE).nonceInTail, true);
+  same('live log: a nonce only in the summary is not "in the tail"', LV.inspect(LV.records(text(build({ summary: `Code word ${NONCE}.` }))), NONCE).nonceInTail, false);
+  same('live log: no nonce given means no nonce fields', [LV.inspect(LV.records(text(build())), null).turn2Leak, LV.inspect(LV.records(text(build())), null).nonceInTail], [null, null]);
+  ok('live log: a 429 in a failure event is seen', LV.inspect(LV.records(text(build({ extra: [ev(15, { kind: 'failed', error: 'HTTP 429 Too Many Requests' })] }))), NONCE).rateLimited);
+  ok('live log: a retained frame is unfolded, a copy of a record is not counted twice, a half-written last line is skipped',
+    LV.records(`${text(build().slice(0, 3))}\n${JSON.stringify({ retained_frame: true, children: [{ record_json: JSON.stringify(build()[2]) }, { record_json: JSON.stringify(build()[3]) }] })}\n{"half":`).length === 4);
+  const frame = LV.inspect(LV.records(fs.readFileSync(path.join(REPO, 'tests/fixtures/shim/manual.jsonl'), 'utf8')), null);
+  same('live log: a recorded session log (shim fixture) gives its compaction and summary', [frame.compactions, typeof frame.summary], [1, 'string']);
+
+  // money: the compaction call is in goal_usage_attribution only (summarizer_usage repeats it), the provider family repeats model_completed
+  const rows = LV.usageRows(LV.records(text(build())));
+  same('live usage: two model calls and one compaction call, in log order', rows.map((r) => r.call), ['model', 'compaction', 'model']);
+  same('live usage: the compaction call is priced at the session\'s model', rows[1].model, 'muse-spark-1.3-contributor');
+  const sum = LV.sumCost(rows);
+  ok('live usage: lo and hi from the contributor prices', Math.abs(sum.lo - 0.0035973) < 1e-9 && Math.abs(sum.hi - 0.0066073) < 1e-9, JSON.stringify(sum));
+  const led = LV.ledgerLines([{ label: 'x', rows }]);
+  ok('live ledger: one row per call, cumulative hi, first row format', led.lines.length === 3 && /^\| 1 \| x \| model \| \d\d:\d\d:\d\dZ \| muse-spark-1\.3-contributor \| 30000 \| 0 \| 100 \| 50 \| 0\.0030 \| 0\.0030 \| 0\.0030 \|$/.test(led.lines[0]) && led.lines[2].endsWith('| 0.0066 |'), led.lines.join(' / '));
 }
 
 // ------------------------------------------------------------------ clean up and report
