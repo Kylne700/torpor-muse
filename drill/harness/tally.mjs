@@ -22,6 +22,10 @@ const valueOf = (o) => (o === 'GATE-NOT-REACHED' ? 'MI' : RANK[o] !== undefined 
 const slotKey = (r) => `${r.disaster}|${r.arm}|${r.repetition}|${r.control ?? ''}`;
 const show = (r) => (r === undefined ? '-' : valueOf(r.outcome) !== null && r.outcome !== 'GATE-NOT-REACHED' ? r.outcome : SHORT[r.outcome] ?? r.outcome);
 
+// Rows of a run's tap. A replay record holds them inline (tap); a live record keeps them in a side file (side_files) and
+// holds the number of rows per event (tap_events), so their sum is the row count. null = the record says nothing.
+export const tapRows = (r) => (Array.isArray(r.tap) ? r.tap.length : r.tap_events && typeof r.tap_events === 'object' ? Object.values(r.tap_events).reduce((a, n) => a + n, 0) : null);
+
 // -> { slots: Map key -> { rec (final), attempts: [records], value }, warnings }
 export function slotsOf(records) {
   const by = new Map();
@@ -59,7 +63,7 @@ export function cellOf(list, reps) {
   return { ...base, state: 'SPLIT', value: null, counts };
 }
 
-const cellText = (c) => {
+export const cellText = (c) => {
   const per = c.per.join(' ');
   if (c.state === 'UNMEASURED') return `UNMEASURED (${per})`;
   if (c.state === 'SPLIT') return `SPLIT ${Object.keys(c.counts).join('/')} (${per})`;
@@ -177,7 +181,7 @@ export function analyze(records, opts) {
     if (s.value) continue;
     result.excluded.push({
       key: `${s.rec.disaster} arm ${s.rec.arm} rep ${s.rec.repetition} attempt ${s.rec.attempt}`, mode: s.rec.mode, outcome: s.rec.outcome === 'INFRA-FAILURE' ? 'INFRA-FAILURE (no later attempt recorded)' : s.rec.outcome,
-      reason: s.rec.outcome_reason ?? '', wouldBe: s.rec.would_be_outcome ?? null, tap: s.rec.side_files ? `${s.rec.side_files}/tap.jsonl` : null, rows: Array.isArray(s.rec.tap) ? s.rec.tap.length : null,
+      reason: s.rec.outcome_reason ?? '', wouldBe: s.rec.would_be_outcome ?? null, tap: s.rec.side_files ? `${s.rec.side_files}/tap.jsonl` : null, rows: tapRows(s.rec),
     });
   }
   result.gate = normal.filter((s) => s.rec.outcome === 'GATE-NOT-REACHED').map((s) => `${s.rec.disaster} arm ${s.rec.arm} rep ${s.rec.repetition}: ${s.rec.outcome_reason ?? ''}`);
@@ -236,7 +240,7 @@ export function render(res, meta = {}) {
 
   if (res.predicted) {
     out.push('', '## Predictions (DISASTERS.md section 3)', '', `The prediction held in ${res.hits.length} of ${res.hits.length + res.misses.length} measured cells; ${res.misses.length} missed; ${res.unmeasured.length} cell(s) UNMEASURED and not counted${res.unmeasured.length ? ` (${res.unmeasured.join(', ')})` : ''}.`);
-    for (const m of res.misses) out.push(`- MISS ${m.id} arm ${m.arm}: predicted ${m.predicted}, got ${m.got} (runs: ${m.per}). Oracle: ${m.oracle.length ? m.oracle.join(' | ') : 'none recorded'}. Reason: to be written from the tap and the oracle line.`);
+    for (const m of res.misses) out.push(`- MISS ${m.id} arm ${m.arm}: predicted ${m.predicted}, got ${m.got} (runs: ${m.per}). Oracle: ${m.oracle.length ? m.oracle.join(' | ') : 'none recorded'}. Reason: ${meta.reasonOf?.(m) ?? 'to be written from the tap and the oracle line.'}`);
   }
 
   out.push('', '## Red cells (arm 4 does not win against the better of arms 1 and 2, or is itself partial or did not help)', '');
@@ -272,15 +276,18 @@ export function readRecords(paths) {
   return { records, files };
 }
 
+// One provenance line from the `header` of a run-log.json.
+export function provenanceOf(label, h) {
+  const e = h.provenance?.engine;
+  const a = h.provenance?.adapter;
+  return `${label}: mode ${h.mode}; deny contract ${h.deny_contract?.name}; sandbox ${h.sandbox}; gate ${h.gate?.max_polls} polls x ${h.gate?.sleep_ms} ms${h.gate?.overridden ? ' (OVERRIDDEN)' : ''}; engine ${e ? `${e.version_line} sha256 ${e.sha256}` : 'none'}; adapter ${a ? `${a.version_line} sha256 ${a.sha256} git ${a.git_head}${a.source_dirty ? ' (dirty)' : ''}` : 'none'}; harness ${h.harness?.sha256?.slice(0, 12)}; prereg sha256 ${h.prereg_sha256?.slice(0, 12)}`;
+}
+
 function provenance(files) {
   const lines = [];
   for (const f of files) {
     const p = path.join(path.dirname(f), 'run-log.json');
-    if (!fs.existsSync(p)) continue;
-    const h = JSON.parse(fs.readFileSync(p, 'utf8')).header;
-    const e = h.provenance?.engine;
-    const a = h.provenance?.adapter;
-    lines.push(`${path.basename(path.dirname(f))}: mode ${h.mode}; deny contract ${h.deny_contract?.name}; sandbox ${h.sandbox}; gate ${h.gate?.max_polls} polls x ${h.gate?.sleep_ms} ms${h.gate?.overridden ? ' (OVERRIDDEN)' : ''}; engine ${e ? `${e.version_line} sha256 ${e.sha256}` : 'none'}; adapter ${a ? `${a.version_line} sha256 ${a.sha256} git ${a.git_head}${a.source_dirty ? ' (dirty)' : ''}` : 'none'}; harness ${h.harness?.sha256?.slice(0, 12)}; prereg sha256 ${h.prereg_sha256?.slice(0, 12)}`);
+    if (fs.existsSync(p)) lines.push(provenanceOf(path.basename(path.dirname(f)), JSON.parse(fs.readFileSync(p, 'utf8')).header));
   }
   return lines;
 }
