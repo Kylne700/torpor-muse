@@ -652,7 +652,7 @@ mod tests {
             &[
                 (
                     "server.js",
-                    "app.get('/api/login', a);\napp.post('/api/notes', b);\nconst k = '/hook/sk-0123456789abcdef0123456789abcdef';",
+                    "app.get('/api/login', a);\napp.post('/api/notes', b);\nconst k = '/hook/key-0123456789abcdef0123456789abcdef';",
                 ),
                 ("userStore.js", "module.exports = {};"),
                 ("README.md", "# Notes\nPOST '/readme/only'"), // not code: not read
