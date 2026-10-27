@@ -38,6 +38,8 @@ Checked once at the end of the work (S3a-finish): no `tbh-linux-helper-payload-*
 
 ### The harness (kept outside the repo, described here)
 
+These scripts are not in the repo, so the keyed runs recorded in this file cannot be repeated from it; `e2e/run.sh` repeats the 18 keyless checks (ECHO provider, no network).
+
 - `bw.sh` (v2.1): `bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --tmpfs <HOME> --tmpfs /run/user --ro-bind <muse install> --ro-bind <engine bin> --ro-bind <worktree> [--ro-bind <KEYFILE>] --bind <T> <T> --bind <T>/muse-share <HOME>/.local/share/muse --new-session --unshare-pid --die-with-parent [--unshare-net]`.
 - `mu-inner.sh`: clears the environment except `META_API_KEY`, `MUSE_*`, `TERM`, `LANG`; sets `HOME=<MHOME>`, `PATH=<T>/shim:/usr/local/bin:/usr/bin:/bin` (`shim/torpor` execs the pinned engine), `TORPOR_HOME=<T>/store`, `MUSE_NO_AUTO_UPDATE=1`, `TMPDIR=<T>/tmp`, `XDG_*` under `HOME`; then runs the Muse binary. `mu.sh` = `bw.sh` + `mu-inner.sh`.
 - `tm.sh` runs `torpor-muse` the way a user does (`env -i HOME=<MHOME> TORPOR_HOME=<T>/store TORPOR_BIN=<engine> torpor-muse ...`, inside `bw.sh`); `tp.sh <ws> ...` runs the engine in a workspace with no `CLAUDECODE` set; `mkws.sh <name>` makes a workspace (3 small files, one commit, `.synthetic`); `tmx.sh` drives the Muse TUI inside tmux (`tmux -L s3a`).
