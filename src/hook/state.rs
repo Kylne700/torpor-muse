@@ -26,6 +26,9 @@ pub struct Session {
     pub told: bool,
     /// (turn id, Stop blocks let through), oldest first, the last 8 turns.
     pub blocks: Vec<(String, u32)>,
+    /// For the model at the next prompt: how to put back a database the last turn changed (`hook::db_note`).
+    #[serde(default)]
+    pub db_note: Option<String>,
 }
 
 impl Session {

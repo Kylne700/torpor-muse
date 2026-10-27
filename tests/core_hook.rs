@@ -817,11 +817,12 @@ fn the_first_prompt_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on
         said.contains("check-writer is off") && said.contains("key_file"),
         "{said}"
     );
-    assert!(said.contains("chmod 600"), "{said}");
     assert!(
-        ctx.contains("Tell the user so") && ctx.contains("torpor-muse doctor"),
-        "{ctx}"
+        said.contains("chmod 600") && said.contains("torpor-muse doctor"),
+        "{said}"
     );
+    // the notice is for the user: the model's context gets nothing (an eval arm without a key sees what the others see)
+    assert!(ctx.is_empty(), "{ctx}");
     // once for this state folder: the same session, and another one, hear nothing more
     let again = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     assert!(again.out.is_empty(), "{}", again.out);
@@ -845,7 +846,7 @@ fn the_note_is_added_to_what_the_engine_printed() {
         "{said}"
     );
     assert!(
-        ctx.contains("engine says hello") && ctx.contains("Tell the user so"),
+        ctx.ends_with("\nengine says hello") && !ctx.contains("check-writer"),
         "{ctx}"
     );
 }
@@ -1080,6 +1081,109 @@ fn real_engine_a_file_made_and_deleted_in_one_turn_comes_back_only_with_the_pre_
         !c.cwd.join("created.txt").exists(),
         "no pre-image, no file: {text}"
     );
+}
+
+/// dogfood1 M1: a turn whose shell command rewrote a database (the app made a new, empty one). `torpor undo N` and a
+/// plain `torpor back` leave database content as it is, so the Stop line names the command that does put the data back,
+/// the next prompt gives the model that command with the engine's path, and each, run exactly as printed, brings the
+/// old bytes back. A turn that changed no database keeps today's text.
+#[test]
+fn real_engine_a_turn_that_rewrote_a_database_names_the_command_that_puts_it_back() {
+    let sh = |r: &Rig, cmd: &str, path: &str| {
+        let o = r
+            .command("/bin/sh", &["-c", cmd])
+            .env("PATH", path)
+            .env_remove("TORPOR_BIN")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        (o.status.code().unwrap_or(-1), text)
+    };
+    let turn = |r: &Rig, file: &str| {
+        r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+        let (mut pre, mut post) = (r.fixture("PreToolUse-bash"), r.fixture("PostToolUse-bash"));
+        for p in [&mut pre, &mut post] {
+            p["tool_input"]["command"] = json!(format!("rm -f {file} && node server.js"));
+            p["tool_use_id"] = json!("call_rm_db");
+        }
+        r.hook_ok("PreToolUse", &pre);
+        fs::write(r.cwd.join(file), b"SQLite format 3\0").unwrap();
+        r.hook_ok("PostToolUse", &post);
+        note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+    };
+    let next = |r: &Rig, n: u32| {
+        let mut f = r.fixture("UserPromptSubmit");
+        f["turn_id"] = json!(format!("00000000-0000-7000-8000-00000000000{n}"));
+        f
+    };
+    let old = b"SQLite format 3\0the user's notes".to_vec();
+
+    let r = Rig::real("real-db");
+    let db = r.cwd.join("notes.db");
+    fs::write(&db, &old).unwrap();
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    let said = turn(&r, "notes.db");
+    assert!(
+        said.contains("undo it: torpor undo 1"),
+        "the engine's line stays: {said}"
+    );
+    let user = said.rsplit_once("run: ").map_or("", |(_, c)| c).to_owned();
+    assert!(
+        user.starts_with("torpor back --id ") && user.ends_with(" --with-data"),
+        "{said}"
+    );
+    assert!(
+        said.contains("every other file"),
+        "it says what else it rewinds: {said}"
+    );
+    // the user's terminal finds the engine as `torpor` on its PATH
+    let path = format!("{}:/usr/bin:/bin", r.engine.parent().unwrap().display());
+    let (code, text) = sh(&r, &user, &path);
+    assert_eq!((code, fs::read(&db).unwrap()), (0, old.clone()), "{text}");
+
+    fs::write(&db, b"SQLite format 3\0").unwrap(); // broken again, for the model's copy of the command
+    let (_, ctx) = note_parts(&r.hook_ok("UserPromptSubmit", &next(&r, 3)).out);
+    let model = ctx
+        .rsplit_once("The command: ")
+        .map_or("", |(_, c)| c)
+        .to_owned();
+    assert_eq!(
+        model,
+        format!("{}{}", r.engine.display(), &user["torpor".len()..]),
+        "{ctx}"
+    );
+    assert!(ctx.contains("every other file"), "{ctx}");
+    let (code, text) = sh(&r, &model, "/usr/bin:/bin");
+    assert_eq!((code, fs::read(&db).unwrap()), (0, old), "{text}");
+    let again = r.hook_ok("UserPromptSubmit", &next(&r, 4)).out;
+    assert!(
+        !again.contains("--with-data"),
+        "the model is told once: {again}"
+    );
+    // with saving off the engine's last turn stays the database one: its line must not come back at every Stop
+    assert_eq!(engine_cli(&r, &["off"]).0, 0);
+    let stop = r.hook_ok("Stop", &r.fixture("Stop")).out;
+    assert!(!stop.contains("database"), "{stop}");
+
+    // control: the same turn on a file that is not a database keeps today's text, and the model hears nothing
+    let c = Rig::real("real-db-control");
+    fs::write(c.cwd.join("notes.txt"), &b"the user's notes"[..]).unwrap();
+    c.hook_ok("SessionStart", &c.fixture("SessionStart"));
+    let said = turn(&c, "notes.txt");
+    assert!(
+        said.starts_with("Torpor: save point ") && !said.contains('\n'),
+        "{said}"
+    );
+    assert!(
+        !said.contains("--with-data") && !said.contains("database"),
+        "{said}"
+    );
+    let out = c.hook_ok("UserPromptSubmit", &next(&c, 3)).out;
+    assert!(out.is_empty(), "{out}");
 }
 
 /// AD3 (research/60): a promise the AI adds through its bash tool must not count as the user's words. The engine knows

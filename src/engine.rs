@@ -112,7 +112,7 @@ pub fn verify(bin: &Path) -> Result<(), String> {
     if fs::read_to_string(&cache).is_ok_and(|s| s == stamp) {
         return Ok(());
     }
-    let out = exec(bin, &["version"], None, Duration::from_secs(5))?;
+    let out = exec(bin, &["version"], None, None, Duration::from_secs(5))?;
     let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if out.code != 0 || got != want {
         return Err(format!(
@@ -129,7 +129,7 @@ pub fn verify(bin: &Path) -> Result<(), String> {
 pub fn run(args: &[&str], stdin: Option<&[u8]>, timeout: Duration) -> Result<Output, String> {
     let bin = locate()?;
     verify(&bin)?;
-    exec(&bin, args, stdin, timeout)
+    exec(&bin, args, stdin, None, timeout)
 }
 
 /// One pipe read to the end in the background; the bytes collected so far stay readable even if it never ends.
@@ -166,14 +166,18 @@ impl Drain {
     }
 }
 
-/// Spawns `bin args` in its own process group, feeds `stdin`, and waits at most `timeout`.
-fn exec(
+/// Spawns `bin args` (in folder `dir`, if given) in its own process group, feeds `stdin`, and waits at most `timeout`.
+pub(crate) fn exec(
     bin: &Path,
     args: &[&str],
     stdin: Option<&[u8]>,
+    dir: Option<&Path>,
     timeout: Duration,
 ) -> Result<Output, String> {
     let mut cmd = Command::new(bin);
+    if let Some(d) = dir {
+        cmd.current_dir(d);
+    }
     cmd.args(args)
         .stdin(if stdin.is_some() {
             Stdio::piped()
@@ -280,6 +284,7 @@ mod tests {
             &s,
             &[pidfile.to_str().unwrap()],
             None,
+            None,
             Duration::from_millis(600),
         );
         assert!(r.is_err_and(|e| e.contains("timed out")));
@@ -300,7 +305,7 @@ mod tests {
         let d = scratch("io");
         let s = script(&d, "e", "cat >/dev/null\necho out\necho err >&2\nexit 3");
         let big = vec![b'x'; 3 << 20];
-        let o = exec(&s, &["a"], Some(&big), Duration::from_secs(20)).unwrap();
+        let o = exec(&s, &["a"], Some(&big), None, Duration::from_secs(20)).unwrap();
         assert_eq!(o.code, 3);
         assert_eq!(o.stdout, b"out\n");
         assert_eq!(o.stderr, b"err\n");
@@ -312,7 +317,7 @@ mod tests {
         let d = scratch("pipe");
         let s = script(&d, "p", "(sleep 3 &)\necho done");
         let t0 = Instant::now();
-        let o = exec(&s, &[], None, Duration::from_secs(20)).unwrap();
+        let o = exec(&s, &[], None, None, Duration::from_secs(20)).unwrap();
         assert_eq!(o.stdout, b"done\n");
         assert!(t0.elapsed() < Duration::from_secs(2));
         let _ = fs::remove_dir_all(&d);
@@ -340,7 +345,7 @@ mod tests {
             thread::sleep(Duration::from_millis(30));
             drop(writer);
         });
-        let o = exec(&s, &[], None, Duration::from_secs(20)).unwrap();
+        let o = exec(&s, &[], None, None, Duration::from_secs(20)).unwrap();
         assert_eq!(o.code, 0);
         closer.join().unwrap();
         let _ = fs::remove_dir_all(&d);

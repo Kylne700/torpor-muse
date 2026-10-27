@@ -13,7 +13,7 @@ use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
@@ -303,6 +303,7 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
         payload["transcript_path"] = Value::String(p);
     }
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    let started = Instant::now();
     let ran = engine::run(
         &["hook", event],
         Some(&bytes),
@@ -322,6 +323,8 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
                 done.stdout = writer_note(dir, event, done.stdout.take());
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
+            let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
+            done.stdout = db_note(dir, event, &sid, &cwd, &out.bin, left, done.stdout.take());
         }
     }
     if main && !cwd.is_empty() && turn_ended(event, done.stdout.as_deref()) {
@@ -408,9 +411,9 @@ fn engine_cmd(bin: &Path) -> String {
     }
 }
 
-/// A prompt the check-writer could not start on for want of a key: say so once per state folder, on both channels
-/// like `fail_open` (Muse's screen was not seen to show `systemMessage`). The marker is written only when the note
-/// really is in what gets printed.
+/// A prompt the check-writer could not start on for want of a key: tell the user once per state folder. The notice is
+/// for the user only (`systemMessage`; doctor says it too): the model's context stays as it is, so a run without a key
+/// gives the model the same text as one with a key. The marker is written only when the note really is printed.
 fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> {
     let Some(why) = suggest::writer_off(true) else {
         return body;
@@ -424,15 +427,92 @@ fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> 
              read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
              `torpor-muse doctor` shows this too."
         ),
-        &format!(
-            "[Torpor note] The Torpor check-writer is off: {why}. Tell the user so in your next reply, in one sentence, \
-             and that `torpor-muse doctor` shows how to fix it. Do not try to fix it yourself."
-        ),
+        "",
     );
     match merged {
         Some(m) if state::new_key(dir, event, "writer-off") => Some(m),
         _ => body,
     }
+}
+
+/// `torpor undo N` and a plain `torpor back` leave database content as it is, and the engine's own lines name only those
+/// (dogfood1 M1). So when a turn's own commands changed or deleted a database file, its Stop line names the command
+/// that does put the data back, and the next prompt gives the model that command (with the engine's path, see
+/// `engine_cmd`). Costs two engine calls at Stop, within `left` of the event's engine time; skipped when that is short.
+fn db_note(
+    dir: &Path,
+    event: &str,
+    sid: &str,
+    cwd: &str,
+    bin: &Path,
+    left: Duration,
+    body: Option<String>,
+) -> Option<String> {
+    if event == "UserPromptSubmit" {
+        return match state::with_session(dir, sid, |s| s.db_note.take()).flatten() {
+            Some(note) => schema::with_note(event, body.as_deref(), "", &note).or(body),
+            None => body,
+        };
+    }
+    let t = left.min(Duration::from_secs(4)) / 2;
+    if event != "Stop"
+        || cwd.is_empty()
+        || t < Duration::from_millis(250)
+        || !turn_ended(event, body.as_deref())
+    {
+        return body;
+    }
+    let json = |args: &[&str]| -> Option<Value> {
+        let o = engine::exec(bin, args, None, Some(Path::new(cwd)), t).ok()?;
+        serde_json::from_slice(&o.stdout)
+            .ok()
+            .filter(|_| o.code == 0)
+    };
+    // not saving (`torpor off`): the last turn is an old one, already told
+    let status = json(&["status", "--json"]).filter(|s| s["saving"] == true);
+    let Some(n) = status.and_then(|s| s["last_turn"]["n"].as_u64()) else {
+        return body;
+    };
+    let Some(show) = json(&["show", &n.to_string(), "--json"]) else {
+        return body;
+    };
+    // the engine's own test for a database file (its scan.rs): .db, .sqlite, .sqlite3, any case
+    let dbs: Vec<&str> = show["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|f| f["class"] != "outside" && f["change"] != "new")
+        .filter_map(|f| f["path"].as_str())
+        .filter(|p| {
+            [".db", ".sqlite", ".sqlite3"]
+                .iter()
+                .any(|x| p.to_lowercase().ends_with(x))
+        })
+        .collect();
+    let (Some(p), false) = (show["turn"]["start_point"].as_u64(), dbs.is_empty()) else {
+        return body;
+    };
+    let what = format!(
+        "changed the database{} {}, and `torpor undo` or a plain `torpor back` leave existing database files as \
+         they are",
+        if dbs.len() > 1 { "s" } else { "" },
+        dbs.join(", ")
+    );
+    let back = format!("back --id {p} --with-data");
+    let rewinds = format!(
+        "this puts every other file back to the start of turn {n} as well, so later changes are undone too"
+    );
+    let user = format!(
+        "Torpor: turn {n} {what}. To get the data back as it was before turn {n} ({rewinds}), stop your app, then run: \
+         torpor {back}"
+    );
+    let model = format!(
+        "[Torpor database note] Turn {n} {what}. The command below gets the data back as it was before turn {n} \
+         ({rewinds}); the app must be stopped first. Run it only when the user asks for it. The command: {} {back}",
+        engine_cmd(bin)
+    );
+    state::with_session(dir, sid, |s| s.db_note = Some(model));
+    schema::with_note(event, body.as_deref(), &user, "").or(body)
 }
 
 /// Engine stdout -> what Muse accepts (None = print nothing). `torpor`: see `engine_cmd`.
