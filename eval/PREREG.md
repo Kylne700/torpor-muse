@@ -61,9 +61,10 @@ The arms differ in these installs only. Everything else is the same: the Muse Co
 
 ## 6. Validity, exclusions and re-runs
 
-- An infra failure has nothing to do with the arm: the sandbox could not start, Muse Code crashed with no hook involved, the rate-limit retries ran out, the disk or memory ran out, the oracle exited 2, or an injection could not be applied. The row is written with `valid` false and an `invalid_reason`, and the episode is re-run in a fresh workspace, at most 2 times (3 attempts in all). Every attempt is counted and published.
+- An infra failure has nothing to do with the arm: the sandbox could not start, Muse Code crashed with no hook involved, the rate-limit retries ran out, the disk or memory ran out, or the oracle exited 2. The row is written with `valid` false and an `invalid_reason`, and the episode is re-run in a fresh workspace, at most 2 times (3 attempts in all). Every attempt is counted and published.
 - A failure of Torpor itself is not an infra failure: a hook that exits non-zero, times out or panics, an engine that cannot read Muse Code's payload, an adapter that gets a tool name wrong. These are results: the row stays valid, `hook_failures` counts them, and the oracle decides pass or fail.
 - A timeout is a result, not an infra failure: a fail in every arm.
+- An injection that could not be applied (the arm's agent rewrote the region in turns 1 to 3: `inject_failed`) is invalid, not re-run, counted and listed with its reason. Whether the region was rewritten depends on the arm's own work, so a re-run would pick episodes by what the arm did. The unit is excluded (section 7.1).
 - An injection that was applied but did not bite (the agent's code does not use the changed code) stays valid (draft default). Whether it bites depends on the arm's own work, so dropping those episodes would condition on something the arm influenced.
 - If the third attempt fails too, the unit is excluded and stays missing; nothing replaces it. Excluded units are counted per arm, with their reasons, next to the result.
 - No other episode is excluded or repeated. A bad-looking result is not a reason for a re-run.
@@ -80,7 +81,7 @@ Its markdown and JSON are published as written. Every output names the sha256 of
 ### 7.1 Reading rows
 
 - One JSON file per attempt, schema 1. A row with another schema, a missing key, or a value of the wrong type or outside its set makes the script refuse the whole folder, with one line per problem; nothing is analysed. A JSON file that holds none of `arm`, `task`, `rep`, `attempt`, `valid` and `final_pass` is not a row: it is skipped and listed.
-- A unit is (arm, task, repetition). Its row is its first valid attempt (lowest attempt number); later attempts of a unit that has a valid one are ignored and counted. A unit with 3 invalid attempts is excluded ("exhausted"). A unit with fewer attempts and none valid is excluded and flagged as pending (an unfinished run, or a unit the runner did not re-run). The script refuses more than 3 attempts for a unit, a duplicate attempt, and a task that appears with two kinds.
+- A unit is (arm, task, repetition). Its row is its first valid attempt (lowest attempt number); later attempts of a unit that has a valid one are ignored and counted. A unit with 3 invalid attempts, or with an invalid attempt the runner marked as not to be re-run (`retryable` false, section 6), is excluded ("exhausted"). A unit with fewer attempts and none valid is excluded and flagged as pending (an unfinished run). The script refuses more than 3 attempts for a unit, a duplicate attempt, and a task that appears with two kinds.
 - One model id per arm and per comparison. Mixed ids in a comparison are refused, so each model gets its own folder and its own analysis.
 - A timeout makes `final_pass` and `later_kept` false whatever the oracle says; `break_found` stays as recorded. The script warns when it changed a row this way.
 
