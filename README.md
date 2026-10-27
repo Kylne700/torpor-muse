@@ -66,9 +66,11 @@ install -m 755 "torpor-muse-$p" "$HOME/.local/bin/torpor-muse"
 EOF
 ```
 
+In a new terminal, if `torpor-muse` is not found, add `~/.local/bin` to your `PATH` (the block did that only for the shell it ran in).
+
 With the GitHub CLI you can also check that the binary was built by this repository's release workflow: `gh attestation verify ~/.local/bin/torpor-muse -R Kylne700/torpor-muse`.
 
-Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks them, and `torpor-muse uninstall` removes them.
+Then `torpor-muse init` adds the hooks to Muse Code, `torpor-muse doctor` checks them, and `torpor-muse uninstall` removes the hooks, the cache `init` wrote and every folder `init` made that is empty. It never deletes your data: the Torpor store (with your saved checks) and the spend ledger, results and logs in `~/.torpor/muse` stay, and uninstall says so when that folder still holds files; deleting it is your choice. The two programs in `~/.local/bin` stay too.
 <!-- INSTALL:end -->
 
 ## License

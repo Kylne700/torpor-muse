@@ -1,12 +1,18 @@
 #!/bin/sh
-# Clean-room check of the README install block. release.yml runs it on a bare Debian container and on a macOS runner.
+# Clean-room check of the README install block. release.yml runs it on a bare Debian container (x64 and arm64) and on
+# a macOS runner (Apple silicon, and the Intel build under Rosetta).
 #   cleanroom.sh <dir>      <dir> holds the release assets (torpor-muse-<platform>, four of them) and SHA256SUMS
+#   EXPECT_PLATFORM=<p>     the platform the block must pick on this machine (linux-x64, linux-arm64, darwin-x64,
+#                           darwin-arm64). The job's matrix entry sets it; GitHub Actions without it fails, so a runner
+#                           or a Rosetta that is not what the job says cannot pass as another platform.
 # 1. Takes the one sh block between <!-- INSTALL:start --> and <!-- INSTALL:end --> in README.md and checks it against
 #    engine.lock (engine commit and the four sha256) and Cargo.toml (the version in the release URL).
 # 2. Runs that block as written, in an empty HOME with a bare environment. Only its release base URL is changed, to
-#    <dir>, so the README cannot drift from what is tested. The pinned engine still comes from GitHub.
+#    <dir>, so the README cannot drift from what is tested. The pinned engine still comes from GitHub. Then asserts which
+#    platform the block picked: the installed torpor-muse is byte-identical to exactly one of the four assets.
 # 3. Does the offline first-run steps (version, init, doctor, uninstall) and asserts what each prints without Muse Code
-#    and without a key. What needs Muse Code or a Meta key is printed at the end as keyed, not faked.
+#    and without a key, and that HOME after uninstall is exactly as it was before init. What needs Muse Code or a Meta
+#    key is printed at the end as keyed, not faked.
 # Exit 0 = every assertion held, 1 = one failed, 2 = bad usage.
 set -eu
 export LC_ALL=C
@@ -68,6 +74,23 @@ P=$(env -i HOME="$H" PATH=/usr/bin:/bin:/usr/sbin:/sbin sh -c '. "$1" >&2 && pri
   fail "the README install block failed"
 case $P in "$H/.local/bin:"*) ok "the block put \$HOME/.local/bin first on PATH" ;; *) fail "PATH after the block is $P" ;; esac
 
+# ---- which platform did the block pick? The one whose asset the installed torpor-muse is byte-identical to.
+[ -z "${GITHUB_ACTIONS:-}" ] || [ -n "${EXPECT_PLATFORM:-}" ] || fail "EXPECT_PLATFORM is not set: nothing says which platform this job proves"
+picked=
+for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+  if cmp -s "$H/.local/bin/torpor-muse" "$art/torpor-muse-$p"; then picked="$picked $p"; fi
+done
+picked=${picked# }
+case $picked in
+  linux-x64 | linux-arm64 | darwin-x64 | darwin-arm64) ;;
+  *) fail "on $(uname -s)-$(uname -m) the installed torpor-muse matches '${picked:-none}' of the four assets, not exactly one" ;;
+esac
+[ -z "${EXPECT_PLATFORM:-}" ] || [ "$picked" = "$EXPECT_PLATFORM" ] ||
+  fail "this job expects $EXPECT_PLATFORM, but on $(uname -s)-$(uname -m) the block picked $picked"
+awk -v p="$picked" -v bin="$H/.local/bin/torpor" '$1 == p { print $2 "  " bin }' "$tmp/assets" > "$tmp/torpor.sha256"
+sums "$tmp/torpor.sha256" >/dev/null || fail "the installed torpor is not the engine.lock build for $picked"
+ok "on $(uname -s)-$(uname -m) the block picked $picked: torpor-muse is byte-identical to torpor-muse-$picked, torpor is its engine.lock build"
+
 # step <title> <expected exit code> <command...>: runs it in the bare environment (HOME and the PATH the block made);
 # stdout goes to $tmp/out, stderr to $tmp/err; only() asserts the stdout is exactly one text.
 step() {
@@ -81,7 +104,7 @@ step() {
   [ "$rc" -eq "$want" ] || fail "'$title' exited $rc, expected $want"
 }
 only() { [ "$(cat "$tmp/out")" = "$1" ] || fail "'$title' printed '$(cat "$tmp/out")', expected '$1'"; }
-snap() { (cd "$H" && find . | sort); }
+snap() { (cd "$H" && find . | sort && find . -type f -exec cksum {} + | sort); } # every path, then every file's checksum
 
 step "which torpor-muse" 0 sh -c 'command -v torpor-muse'
 only "$H/.local/bin/torpor-muse"
@@ -121,14 +144,11 @@ only "torpor-muse hooks removed; $s was created by init and is deleted"
 step "torpor-muse uninstall (again)" 0 torpor-muse uninstall
 only "nothing to do: $s does not exist"
 
-# HOME as it was? Not quite: the directories init made and the engine-ok cache (engine::verify) stay. Pinned, so a
-# third leftover fails here.
+# HOME exactly as before init: init made the engine-ok cache and the folders around it and the settings file, uninstall
+# takes back what it made (empty folders only), and nothing else may differ.
 snap > "$tmp/after"
-[ -z "$(comm -23 "$tmp/before" "$tmp/after")" ] || fail "uninstall removed something that was there before init"
-comm -13 "$tmp/before" "$tmp/after" > "$tmp/left"
-printf '%s\n' ./.config ./.config/muse ./.torpor ./.torpor/muse ./.torpor/muse/engine-ok | sort > "$tmp/known"
-[ -z "$(comm -23 "$tmp/left" "$tmp/known")" ] || fail "uninstall left more than the known leftovers: $(comm -23 "$tmp/left" "$tmp/known")"
-[ ! -s "$tmp/left" ] || echo "KNOWN leftover after init + uninstall (open problem, HOME is not exactly as it was): $(tr '\n' ' ' < "$tmp/left")"
+cmp -s "$tmp/before" "$tmp/after" || { diff "$tmp/before" "$tmp/after" >&2 || true; fail "HOME after uninstall is not as it was before init (< before, > after)"; }
+ok "HOME as before: after init + uninstall every path and every file's checksum equals what it was before init"
 ok "first run: version, init, doctor, uninstall print what is asserted above"
 
 cat <<'EOF'

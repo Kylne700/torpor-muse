@@ -130,13 +130,24 @@ jobs:
           subject-path: dist/*
 
   # The README install block on a machine that has nothing: scripts/cleanroom.sh runs it as written (only the release
-  # base URL points at this run's release-assets) and then the offline first run. Linux: a pristine Debian container
-  # (the block itself installs curl and ca-certificates). macOS: a fresh empty HOME on the runner, a CI replay.
+  # base URL points at this run's release-assets) and then the offline first run. Every entry sets EXPECT_PLATFORM, and
+  # the script fails unless the block installed exactly that platform's asset and HOME is as before init, so each
+  # platform is proven on its own kind of machine and none can pass as another.
+  #   Linux: a pristine Debian container (the block itself installs curl and ca-certificates), on x64 and on arm64.
+  #   macOS: a fresh empty HOME on the runner, a CI replay: Apple silicon native, and the Intel build under Rosetta.
   clean-room-linux:
-    name: Clean room (bare Debian)
+    name: Clean room (${{ matrix.platform }})
     needs: assemble
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, os: ubuntu-latest }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
     container: debian:stable-slim
+    env:
+      EXPECT_PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -148,9 +159,18 @@ jobs:
       - run: sh scripts/cleanroom.sh dist
 
   clean-room-macos:
-    name: Clean room (macOS replay)
+    name: Clean room (${{ matrix.platform }})
     needs: assemble
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: darwin-arm64, shell: /bin/sh }
+          - { platform: darwin-x64, shell: arch -x86_64 /bin/sh } # uname -m is x86_64 in there: the block picks darwin-x64
     runs-on: macos-latest
+    env:
+      EXPECT_PLATFORM: ${{ matrix.platform }}
+      CLEANROOM_SH: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,7 +179,12 @@ jobs:
         with:
           name: release-assets
           path: dist
-      - run: sh scripts/cleanroom.sh dist
+      - name: Rosetta is here (the Intel build runs on this Apple silicon runner only through it)
+        if: matrix.platform == 'darwin-x64'
+        run: |
+          [ "$(arch -x86_64 /usr/bin/uname -m)" = x86_64 ] ||
+            { echo "FAIL: no Rosetta on this runner ('arch -x86_64 /usr/bin/uname -m' did not print x86_64), so the Intel build cannot be proven here"; exit 1; }
+      - run: $CLEANROOM_SH scripts/cleanroom.sh dist
 
   release:
     name: GitHub Release

@@ -89,6 +89,9 @@ pub fn locate() -> Result<PathBuf, String> {
         .ok_or_else(|| "torpor not found: set TORPOR_BIN or put it on PATH".to_string())
 }
 
+/// The cache file of `verify`, in `state_dir()`; `uninstall` removes it.
+pub const ENGINE_OK: &str = "engine-ok";
+
 /// Ok when `bin` prints `torpor <version line of engine.lock>`. The answer is cached in `<state>/engine-ok` by path,
 /// size and mtime, so a hook normally spends one stat and one small read on it.
 pub fn verify(bin: &Path) -> Result<(), String> {
@@ -103,7 +106,7 @@ pub fn verify(bin: &Path) -> Result<(), String> {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
     let stamp = format!("{}\n{}\n{mtime}\n{want}\n", bin.display(), meta.len());
-    let cache = state_dir().join("engine-ok");
+    let cache = state_dir().join(ENGINE_OK);
     if fs::read_to_string(&cache).is_ok_and(|s| s == stamp) {
         return Ok(());
     }
