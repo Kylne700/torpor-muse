@@ -1,5 +1,6 @@
 ## Built during the hackathon (judge this)
-- In progress. A part is listed here only after it has run and the run was recorded. No part is listed yet.
+- In progress. A part is listed here only after it has run and the run was recorded.
+- Voice promises: `torpor-muse say <clip.wav>` sends a spoken claim to Meta's Voice Transcribe API and hands the words it heard to the check-writer as if they had been typed. A keyword measurement chose its default, and one live run (2026-10-27) is recorded in the README and in `docs/voice.md`.
 
 Every code commit in this repo is dated 2026-10-26 17:00 UTC or later.
 `scripts/new-work.sh` prints the event-work list from git.
