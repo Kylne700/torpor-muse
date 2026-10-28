@@ -7,8 +7,7 @@
 #   - the README block between the NEW-VS-OLD markers differs from NEW-VS-OLD.md;
 #   - a tracked file is byte-identical (same git blob) to a file in the engine tree at the commit pinned in
 #     engine.lock, or to a file in a --forbid directory.
-# Not counted as an engine copy: LICENSE-MIT and LICENSE-APACHE (the licence texts) and everything under
-# pre-event-engine/ (the labelled copy that scripts/vendor-engine.sh writes); --forbid still applies there.
+# Not counted as an engine copy: LICENSE-MIT and LICENSE-APACHE (the licence texts).
 # --engine DIR: a clone of the engine that has the pinned commit. Without it, the engine tree (no file
 # contents) is fetched from the repo named in engine.lock. A --forbid path is read from where you run the script.
 # Exit 2 = bad usage or lock.
@@ -58,7 +57,7 @@ bad() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 echo "Event work: commits dated $GATE or later (UTC)"
 git log --no-merges --reverse --date=format-local:%Y-%m-%dT%H:%M:%SZ --name-only --format='@@%h|%ad|%cd|%s' |
   awk -v gate="$GATE" '
-    function flush(   t, i, line, code, vend) {
+    function flush(   t, i, line, code) {
       if (hash == "") return
       t = (ad < cd) ? ad : cd
       for (i = 1; i <= nf; i++) if (files[i] != "README.md" && files[i] != "LICENSE-MIT" && files[i] != "LICENSE-APACHE") code = 1
@@ -69,9 +68,7 @@ git log --no-merges --reverse --date=format-local:%Y-%m-%dT%H:%M:%SZ --name-only
         for (i = 1; i <= nf; i++) line = line " " files[i]
         pre = pre line "\n"
       } else {
-        vend = 0
-        for (i = 1; i <= nf; i++) if (index(files[i], "pre-event-engine/") == 1) vend++; else line = line "    " files[i] "\n"
-        if (vend) line = line "    pre-event-engine/ (" vend " files, labelled copy of the engine, not judged)\n"
+        for (i = 1; i <= nf; i++) line = line "    " files[i] "\n"
         ev = ev line
       }
       hash = ""
@@ -130,7 +127,7 @@ while IFS= read -r d; do
 done < "$tmp/forbid-dirs"
 
 git ls-files -s | awk -F'\t' '{ split($1, a, " "); print a[2] "\t" $2 }' > "$tmp/tracked"
-awk -F'\t' '$2 != "LICENSE-MIT" && $2 != "LICENSE-APACHE" && index($2, "pre-event-engine/") != 1' "$tmp/tracked" > "$tmp/tracked-engine"
+awk -F'\t' '$2 != "LICENSE-MIT" && $2 != "LICENSE-APACHE"' "$tmp/tracked" > "$tmp/tracked-engine"
 
 hits() { # hits <blobs> <tracked>: prints "<label><TAB><tracked path>" for every equal blob id
   LC_ALL=C sort -t "$TAB" -k1,1 "$1" > "$tmp/s1"

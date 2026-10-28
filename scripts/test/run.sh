@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests for scripts/new-work.sh, scripts/verify-engine.sh and scripts/vendor-engine.sh, run on a temp clone of this
+# Tests for scripts/new-work.sh and scripts/verify-engine.sh, run on a temp clone of this
 # repo (its committed state, so commit before you run). Needs git and the network (GitHub).
 #   sh scripts/test/run.sh
 # Optional environment:
@@ -44,17 +44,7 @@ planted=$(find "$forbid" -type f | LC_ALL=C sort | head -n 1)
 
 nw() { sh "$c/scripts/new-work.sh" --engine "$engine" "$@"; }
 ve() { sh "$c/scripts/verify-engine.sh" "$@"; }
-vend() { sh "$c/scripts/vendor-engine.sh" --engine "$engine" "$@"; }
 fromdir() { d=$1; shift; (cd "$d" && "$@"); }
-snapshot() { (cd "$c" && git status --porcelain --ignored && ls -A && find . -path ./.git -prune -o -type f -exec sha256sum {} +); }
-identical() { # the folder $1 is the engine tree at the commit, plus LABEL.md
-  [ "$(find "$1" -type f | wc -l | tr -d ' ')" -eq $(($(git -C "$engine" ls-tree -r "$commit" | wc -l) + 1)) ] || return 1
-  git -C "$engine" ls-tree -r "$commit" | awk -F'\t' '{ split($1, a, " "); print a[1], a[3], $2 }' |
-    while read -r mode blob path; do
-      [ "$(git hash-object --no-filters "$1/$path")" = "$blob" ] || exit 1
-      if [ "$mode" = 100755 ]; then [ -x "$1/$path" ] || exit 1; else [ ! -x "$1/$path" ] || exit 1; fi
-    done
-}
 
 echo "== new-work.sh"
 t "passes on the branch (engine from a local clone)" ok "new-work: ok" nw
@@ -99,33 +89,6 @@ t "--tag: the remote tag resolves to the locked commit" ok "resolves to the lock
 sed "s/^commit .*/commit $(lockval base-commit)/" "$c/engine.lock" > "$tmp/l" && cp "$tmp/l" "$c/engine.lock"
 t "--tag fails when the lock pins another commit (a moved tag)" fail "now resolves to" ve --tag
 git -C "$c" checkout -q -- engine.lock
-
-echo "== vendor-engine.sh"
-before=$(snapshot)
-t "dry run prints the plan" ok "Dry run: nothing is written" vend
-t "dry run changes nothing" ok "" test "$before" = "$(snapshot)"
-tiny=$tmp/tiny
-git init -q "$tiny"
-echo x > "$tiny/a.txt"; echo y > "$tiny/skip.txt"; echo "skip.txt export-ignore" > "$tiny/.gitattributes"
-git -C "$tiny" add -A
-git -C "$tiny" -c user.name=t -c user.email=t commit -q -m t
-sed "s/^commit .*/commit $(git -C "$tiny" rev-parse HEAD)/" "$c/engine.lock" > "$tmp/l" && cp "$tmp/l" "$c/engine.lock"
-t "--apply fails on a copy that is not identical (git archive drops an export-ignore file)" fail "not byte-identical" \
-  sh "$c/scripts/vendor-engine.sh" --apply --engine "$tiny"
-t "... and removes the folder it made" ok "" test ! -e "$c/pre-event-engine"
-git -C "$c" checkout -q -- engine.lock
-t "--apply writes the folder" ok "is byte-identical to commit $commit" vend --apply
-t "the folder equals the engine tree at the commit, plus LABEL.md" ok "" identical "$c/pre-event-engine"
-t "LABEL.md says pre-event, not judged" ok "pre-event, not judged" cat "$c/pre-event-engine/LABEL.md"
-t "--apply refuses to overwrite" fail "exists" vend --apply
-git -C "$c" add -f pre-event-engine
-git -C "$c" commit -q -m "vendor the engine"
-t "git add -f tracks every file (dist/ included)" ok "" test "$(git -C "$c" ls-files pre-event-engine | wc -l | tr -d ' ')" = "$(($(git -C "$engine" ls-tree -r "$commit" | wc -l) + 1))"
-t "new-work passes with the vendored folder committed" ok "new-work: ok" nw
-t "... and lists the folder as one line" ok "pre-event-engine/ (" nw
-cp "$planted" "$c/pre-event-engine/planted-forbidden"
-git -C "$c" add -f pre-event-engine/planted-forbidden
-t "--forbid still applies inside the vendored folder" fail "pre-event-engine/planted-forbidden is byte-identical to" nw --forbid "$forbid"
 
 echo "$pass passed, $failed failed"
 [ "$failed" -eq 0 ]

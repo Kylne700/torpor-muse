@@ -1,6 +1,6 @@
 # engine.lock: the pre-event Torpor engine this repo depends on (declared open-source base, not judged).
-# One fact per line: a key, then its value(s), split on spaces. Read by scripts/verify-engine.sh,
-# scripts/new-work.sh and scripts/vendor-engine.sh. Facts read from GitHub on 2026-10-26 at about 18:30 UTC.
+# One fact per line: a key, then its value(s), split on spaces. Read by scripts/verify-engine.sh and
+# scripts/new-work.sh. Facts read from GitHub on 2026-10-26 at about 18:30 UTC.
 #
 # Why two tags: the GitHub release "pre-event-final" (id 424425907) has no release assets, and tag v2.3.1
 # has no GitHub release at all. The binaries are git blobs at dist/<platform>/torpor in the tree of the
