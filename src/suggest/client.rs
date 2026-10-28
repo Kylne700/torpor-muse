@@ -341,6 +341,16 @@ impl Bad {
         )
     }
 
+    /// The kind the hook tells the user about when a run ends on this fault: `key` (Meta refused the key or its
+    /// billing), `api` (the call itself failed). "" = the model's own fault, which is not the user's news.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Bad::Billing(_) | Bad::Auth(_) => "key",
+            _ if self.rejected() => "",
+            _ => "api",
+        }
+    }
+
     pub fn reason(&self) -> String {
         match self {
             Bad::Billing(c) => format!(
@@ -510,6 +520,33 @@ mod tests {
         match r.charge {
             Charge::Usage(u) => assert_eq!((u.input, u.cached, u.output), (1000, 200, 500)),
             c => panic!("{c:?}"),
+        }
+    }
+
+    #[test]
+    fn only_a_fault_around_the_model_has_a_kind_the_user_is_told() {
+        let code = |s: u16| {
+            interpret(&reply(s, r#"{"error":{"message":"m"}}"#), 0.05)
+                .outcome
+                .unwrap_err()
+                .code()
+        };
+        assert_eq!((code(401), code(402)), ("key", "key"));
+        assert_eq!(
+            (code(400), code(404), code(429), code(500)),
+            ("api", "api", "api", "api")
+        );
+        assert_eq!(
+            (Bad::Network("n".into()).code(), Bad::Timeout.code()),
+            ("api", "api")
+        );
+        for model_fault in [
+            Bad::Truncated,
+            Bad::Empty,
+            Bad::Refused("r".into()),
+            Bad::Malformed("m".into()),
+        ] {
+            assert_eq!(model_fault.code(), "", "{model_fault:?}");
         }
     }
 

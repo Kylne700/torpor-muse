@@ -65,6 +65,23 @@ pub fn gaps(root: &Path) -> Vec<Gap> {
         .unwrap_or_default()
 }
 
+/// The fields of the project's last `result.json` that the hook reads to tell the user a run failed (it writes none
+/// of them). A missing or unreadable file is None; a field a row lacks stays empty.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+pub struct Last {
+    pub saved: bool,
+    pub code: String,
+    pub outcome: String,
+    pub message: String,
+    pub session: Option<String>,
+}
+
+pub fn last_result(root: &Path) -> Option<Last> {
+    let bytes = fs::read(ws_path(root).ok()?.join("result.json")).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// The lock of one project: held while this value (the open file) lives.
 pub struct Lock {
     _file: File,

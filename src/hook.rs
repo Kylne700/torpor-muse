@@ -168,7 +168,9 @@ pub fn run(event: &str) -> u8 {
     if let Some((sid, cwd, prompt)) = done.prompt {
         // Muse waits for its pipe to close, and anything started now would inherit it: close ours first.
         close_stdio();
-        suggest::trigger(&sid, &cwd, &prompt);
+        if let Some(kind) = suggest::trigger(&sid, &cwd, &prompt) {
+            state::with_session(&engine::state_dir(), &sid, |s| s.writer_skip = kind.into());
+        }
     }
     0
 }
@@ -254,7 +256,7 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             let engine_out = edited.as_deref().unwrap_or(&out.stdout);
             done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), engine_out);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
-                done.stdout = writer_note(dir, event, done.stdout.take());
+                done.stdout = writer_note(dir, event, &sid, &cwd, done.stdout.take());
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
             done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
@@ -366,29 +368,97 @@ fn engine_cmd(bin: &Path) -> String {
     }
 }
 
-/// A prompt the check-writer could not start on for want of a key: tell the user once per state folder. The notice is
-/// for the user only (`systemMessage`; doctor says it too): the model's context stays as it is, so a run without a key
-/// gives the model the same text as one with a key. The marker is written only when the note really is printed.
-fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> {
-    let Some(why) = suggest::writer_off(true) else {
+/// What the check-writer has to tell the user at a prompt: one note at most, each kind once per session (`app`: once per
+/// folder). In this order: the key it lacks (`no-key`), why a run could not start on the last prompt (`busy`, `start`),
+/// why the last run of this session wrote no check (`key`, `cap`, `api`, `error`, `app`). The notes are for the user
+/// only (`systemMessage`; doctor says the first too): the model's context stays as it is, so a run without a key gives
+/// the model the same text as one with a key. A kind is recorded only when its note really is printed.
+fn writer_note(
+    dir: &Path,
+    event: &str,
+    sid: &str,
+    cwd: &str,
+    body: Option<String>,
+) -> Option<String> {
+    let Some((told, skip)) =
+        state::with_session(dir, sid, |s| (s.writer_told.clone(), s.writer_skip.clone()))
+    else {
         return body;
     };
-    let why = suggest::scrub(&why, 300);
-    let merged = schema::with_note(
-        event,
-        body.as_deref(),
-        &format!(
-            "Torpor's check-writer is off: {why}. To turn it on, put your Meta API key on one line in a file only you can \
-             read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
-             `torpor-muse doctor` shows this too."
-        ),
-        "",
-        false,
-    );
-    match merged {
-        Some(m) if state::new_key(dir, event, "writer-off") => Some(m),
-        _ => body,
+    let new = |kind: &str| match kind {
+        "app" => !state::marked(dir, "app", cwd),
+        _ => !told.iter().any(|t| t == kind),
+    };
+    let Some((kind, line)) = writer_news(sid, cwd, &skip)
+        .into_iter()
+        .find(|(kind, _)| new(kind))
+    else {
+        return body;
+    };
+    let Some(merged) = schema::with_note(event, body.as_deref(), &line, "", false) else {
+        return body;
+    };
+    if kind == "app" {
+        state::mark(dir, "app", cwd);
+    } else {
+        state::with_session(dir, sid, |s| {
+            s.writer_told.push(kind.into());
+            if s.writer_skip == kind {
+                s.writer_skip.clear();
+            }
+        });
     }
+    Some(merged)
+}
+
+/// The notes the check-writer could have for the user now, most pressing first: (kind, the words). `skip`: why the
+/// trigger could not start a run on the last prompt (`Session.writer_skip`).
+fn writer_news(sid: &str, cwd: &str, skip: &str) -> Vec<(&'static str, String)> {
+    const SAVING: &str = "Save points and undo are not affected.";
+    if let Some(why) = suggest::writer_off(true) {
+        let why = suggest::scrub(&why, 300);
+        return vec![(
+            "no-key",
+            format!(
+                "Torpor's check-writer is off: {why}. To turn it on, put your Meta API key on one line in a file only you \
+                 can read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
+                 `torpor-muse doctor` shows this too."
+            ),
+        )];
+    }
+    let mut news = Vec::new();
+    match skip {
+        "busy" => news.push((
+            "busy",
+            format!("Torpor's check-writer was still busy with an earlier prompt, so it did not look at your last one. {SAVING}"),
+        )),
+        "start" => news.push((
+            "start",
+            format!("Torpor could not start its check-writer on your last prompt. {SAVING}"),
+        )),
+        _ => {}
+    }
+    // the run of this session that finished last; its words are the run's own, made safe once more
+    let last = suggest::last_result(cwd).filter(|l| !l.saved && l.session.as_deref() == Some(sid));
+    if let Some(l) = last {
+        let kind = ["key", "cap", "api", "app"]
+            .into_iter()
+            .find(|k| *k == l.code)
+            .or((l.outcome == "error").then_some("error"));
+        let line = match kind {
+            None => return news,
+            Some("app") => "Torpor's check-writer needs an app it can start with a script (`start`, `dev`, `serve` or \
+                 `server` in package.json, or a server.js), and this folder has none, so it will write no checks here. \
+                 Save points and undo still work."
+                .to_string(),
+            Some(_) => format!(
+                "Torpor's check-writer wrote no check from an earlier prompt of yours: {}. {SAVING}",
+                suggest::scrub(&l.message, 300).trim_end_matches('.')
+            ),
+        };
+        news.extend(kind.map(|k| (k, line)));
+    }
+    news
 }
 
 /// L3 N4: what a check the writer saved does not cover (`suggest::gaps`). The user reads it short inside the engine's
@@ -586,7 +656,7 @@ fn db_line(n: u64, names: &[String], tail: &str) -> String {
 
 /// The engine's gate is ON in every folder it saves. The user chose hands-free (F4b): a broken check is told to the AI
 /// (`stop_note`) and stops it only after the user runs `torpor gate on` in their own terminal. So the first session start
-/// in a saved folder runs `torpor gate off` there; `state::gate_mark` then keeps it from running again, which is what lets
+/// in a saved folder runs `torpor gate off` there; `state::mark` (`gate`) then keeps it from running again, which is what lets
 /// a later `gate on` of the user's stay on. The model cannot undo either: the engine's PreToolUse refuses `torpor gate ...`
 /// from its Bash, and the mark is a file in the engine's store, where it refuses writes too. Nothing goes to the model;
 /// a failure is one line in problems.log (doctor shows it) and the next session start tries again.
@@ -604,7 +674,7 @@ fn gate_default(dir: &Path, sid: &str, cwd: &str, bin: &Path, left: Duration) {
         .unwrap_or(root)
         .to_string_lossy()
         .into_owned();
-    if state::gate_done(dir, &key) {
+    if state::marked(dir, "gate", &key) {
         return;
     }
     let end = Instant::now() + left;
@@ -654,7 +724,7 @@ fn gate_default(dir: &Path, sid: &str, cwd: &str, bin: &Path, left: Duration) {
             return;
         }
     }
-    if !state::gate_mark(dir, &key) {
+    if !state::mark(dir, "gate", &key) {
         let msg = "gate default set but not remembered: the next session start runs `torpor gate off` again here, which undoes a `torpor gate on` of the user's";
         state::problem(dir, "SessionStart", sid, msg);
     }

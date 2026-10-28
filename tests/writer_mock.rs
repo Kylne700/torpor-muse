@@ -216,16 +216,16 @@ fn the_ledger_names_the_files_that_were_sent() {
 
 #[test]
 fn every_fault_ends_rejected_or_advisory_with_the_reason() {
-    // (fixture, outcome, requests made, a piece of the reason)
+    // (fixture, outcome, requests made, a piece of the reason, the code the hook tells the user about: "" = none)
     let table = [
-        ("truncated", "rejected", 2, "ran out of room"),
-        ("refusal", "rejected", 2, "refused"),
-        ("empty", "rejected", 2, "no answer text"),
-        ("schema-400", "advisory", 1, "rejected the request"),
-        ("billing-402", "advisory", 1, "billing"),
-        ("server-500", "advisory", 2, "server error"),
+        ("truncated", "rejected", 2, "ran out of room", ""),
+        ("refusal", "rejected", 2, "refused", ""),
+        ("empty", "rejected", 2, "no answer text", ""),
+        ("schema-400", "advisory", 1, "rejected the request", "api"),
+        ("billing-402", "advisory", 1, "billing", "key"),
+        ("server-500", "advisory", 2, "server error", "api"),
     ];
-    for (fixture, outcome, calls, reason) in table {
+    for (fixture, outcome, calls, reason, code) in table {
         let sb = Sandbox::new("fault");
         let mock = Mock::start(&sb.dir, fixture, 0, &good_answer().to_string());
         let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
@@ -238,6 +238,7 @@ fn every_fault_ends_rejected_or_advisory_with_the_reason() {
         let res = sb.result();
         assert_eq!(res["outcome"], outcome, "{ctx}");
         assert_eq!(res["saved"], false, "{ctx}");
+        assert_eq!(res["code"], code, "{ctx}");
         assert_eq!(
             sb.ledger().len(),
             calls,
@@ -693,6 +694,11 @@ fn the_day_cap_stops_the_run_before_the_call() {
         r.out
     );
     assert!(r.out.contains("Nothing was sent"), "{}", r.out);
+    assert_eq!(
+        sb.result()["code"],
+        "cap",
+        "the hook tells the user about it"
+    );
     assert_eq!(mock.requests().len(), 0, "the call was never made");
     assert_eq!(sb.ledger().len(), 1, "no row for a call that was not made");
 
@@ -808,6 +814,11 @@ fn a_folder_without_a_start_script_is_advisory_and_costs_nothing() {
         "{}",
         r.out
     );
+    assert_eq!(
+        sb.result()["code"],
+        "app",
+        "the hook tells the user about it"
+    );
     assert_eq!(mock.requests().len(), 0);
 }
 
@@ -911,6 +922,11 @@ fn a_not_a_claim_verdict_is_advisory_and_makes_no_check() {
     );
     assert_eq!(mock.requests().len(), 1, "no retry for a clear answer");
     assert!(sb.adds().is_empty());
+    assert_eq!(
+        sb.result()["code"],
+        "",
+        "a normal outcome is not news for the user"
+    );
 
     let sb = Sandbox::new("nocheck");
     let answer = json!({"verdict": "cannot_check", "reason": "It needs a browser to click the button.", "name": "", "why": "",
@@ -923,6 +939,7 @@ fn a_not_a_claim_verdict_is_advisory_and_makes_no_check() {
         "{}",
         r.out
     );
+    assert_eq!(sb.result()["code"], "");
 }
 
 #[test]

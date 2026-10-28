@@ -73,20 +73,17 @@ struct Rig {
     cwd: PathBuf,
     fake: PathBuf,
     engine: PathBuf,
+    /// Tell each session's first prompt that its "check-writer is off" note was heard already (`hear_no_key`).
+    quiet: bool,
 }
 
 impl Rig {
-    /// Fake engine of the pinned version. The one-time "check-writer is off" note (there is no key file here) is marked
-    /// as shown already, so it does not turn up in every test; `unseeded` is the rig that still gets it.
+    /// Fake engine of the pinned version. The "check-writer is off" note (there is no key file here) is marked as
+    /// heard in every session before its prompt, so it does not turn up in every test; `unseeded` is the rig that
+    /// still gets it.
     fn new(name: &str) -> Rig {
-        let r = Rig::unseeded(name);
-        let muse = r.store().join("muse");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&muse)
-            .unwrap();
-        fs::write(muse.join("seen-keys"), "UserPromptSubmit.writer-off\n").unwrap();
+        let mut r = Rig::unseeded(name);
+        r.quiet = true;
         r
     }
 
@@ -102,6 +99,36 @@ impl Rig {
             cwd,
             fake,
             engine,
+            quiet: false,
+        }
+    }
+
+    /// Writes `no-key` into the told kinds of the session in `payload` (the real file format; `serde(default)` fills
+    /// in the rest), the way a session that heard the note would have it.
+    fn hear_no_key(&self, payload: &[u8]) {
+        let sid = serde_json::from_slice::<Value>(payload)
+            .ok()
+            .and_then(|v| v["session_id"].as_str().map(str::to_owned));
+        let Some(sid) = sid.filter(|s| s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        else {
+            return;
+        };
+        let dir = self.store().join("muse/session");
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)
+            .unwrap();
+        let file = dir.join(format!("{sid}.json"));
+        let mut s: Value = fs::read_to_string(&file)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_else(|| json!({"seq": 0, "told": false, "blocks": []}));
+        let mut heard = s["writer_told"].as_array().cloned().unwrap_or_default();
+        if !heard.contains(&json!("no-key")) {
+            heard.push(json!("no-key"));
+            s["writer_told"] = Value::Array(heard);
+            fs::write(&file, s.to_string()).unwrap();
         }
     }
 
@@ -141,6 +168,9 @@ impl Rig {
 
     /// `hook_bytes` with more variables in the hook's environment.
     fn hook_env(&self, event: &str, stdin: &[u8], env: &[(&str, &str)]) -> Run {
+        if self.quiet && event == "UserPromptSubmit" {
+            self.hear_no_key(stdin);
+        }
         let t0 = Instant::now();
         let mut child = self
             .command(EXE, &["hook", event])
@@ -840,7 +870,7 @@ fn note_parts(out: &str) -> (String, String) {
 }
 
 #[test]
-fn the_first_prompt_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on() {
+fn the_first_prompt_of_a_session_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on() {
     let r = Rig::unseeded("writer-note");
     let first = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     let (said, ctx) = note_parts(&first.out);
@@ -854,11 +884,13 @@ fn the_first_prompt_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on
     );
     // the notice is for the user: the model's context gets nothing (an eval arm without a key sees what the others see)
     assert!(ctx.is_empty(), "{ctx}");
-    // once for this state folder: the same session, and another one, hear nothing more
+    // once for this session: its next prompt hears nothing more; another session hears it again
     let again = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     assert!(again.out.is_empty(), "{}", again.out);
     let mut other = r.fixture("UserPromptSubmit");
     other["session_id"] = json!("00000000-0000-7000-8000-0000000000aa");
+    let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", &other).out);
+    assert!(said.contains("check-writer is off"), "{said}");
     assert!(r.hook_ok("UserPromptSubmit", &other).out.is_empty());
     assert!(r.problems().is_empty(), "{}", r.problems());
 }
@@ -921,6 +953,213 @@ fn no_note_when_a_private_key_file_is_configured_and_the_reason_is_named_when_it
     key_setup(&r, "keyfile = ~/key.txt\n", 0o600);
     let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", &short_prompt(&r)).out);
     assert!(said.contains("unknown or empty setting"), "{said}");
+}
+
+/// The rig's project folder in the check-writer's state, where its `result.json` and `lock` live (named by the
+/// FNV-1a hash of the folder's real path, as `suggest::state` does).
+fn writer_ws(r: &Rig) -> PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    let root = fs::canonicalize(&r.cwd).unwrap();
+    let h = root
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    let ws = r.store().join(format!("muse/suggest/ws/{h:016x}"));
+    fs::create_dir_all(&ws).unwrap();
+    ws
+}
+
+const OTHER: &str = "00000000-0000-7000-8000-0000000000aa";
+
+/// What a finished run of session `sid` left in `result.json` (the row `suggest::finish` writes).
+fn leave_result(r: &Rig, sid: &str, outcome: &str, code: &str, message: &str) {
+    let row = json!({"v": 1, "at": "2026-01-01T00:00:00Z", "outcome": outcome, "saved": outcome == "proven",
+        "promise": null, "message": message, "code": code, "session": sid, "model": "muse-spark-1.3",
+        "calls": 1, "usd": 0.0, "ms": 5});
+    fs::write(writer_ws(r).join("result.json"), row.to_string()).unwrap();
+}
+
+/// A prompt of session `sid` too short for a run to start; what the user is told in answer ("" = nothing).
+fn told_at_prompt(r: &Rig, sid: &str) -> String {
+    let mut p = short_prompt(r);
+    p["session_id"] = json!(sid);
+    let run = r.hook_ok("UserPromptSubmit", &p);
+    if run.out.is_empty() {
+        return String::new();
+    }
+    let (said, ctx) = note_parts(&run.out);
+    assert!(ctx.is_empty(), "the model is told nothing: {ctx}");
+    said
+}
+
+#[test]
+fn a_run_that_failed_is_told_to_the_user_once_per_kind_and_session_at_the_next_prompt() {
+    let r = Rig::new("writer-news");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let cases = [
+        (
+            "key",
+            "advisory",
+            "Meta refused the API key (HTTP 401). Check the key file.",
+        ),
+        (
+            "cap",
+            "advisory",
+            "the daily spend cap would be passed: $1.99 spent today (UTC), the next call could cost up to $0.05, cap $2.00. Nothing was sent. Raise the cap with TORPOR_MUSE_DAY_CAP_USD or day_cap_usd in the config.",
+        ),
+        ("api", "advisory", "the Meta API did not answer in time"),
+        (
+            "",
+            "error",
+            "cannot read the key file: Permission denied (os error 13)",
+        ),
+    ];
+    for (code, outcome, message) in cases {
+        leave_result(&r, SID, outcome, code, message);
+        let said = told_at_prompt(&r, SID);
+        let why = message.trim_end_matches('.');
+        assert!(
+            said.starts_with(
+                "Torpor's check-writer wrote no check from an earlier prompt of yours: "
+            ) && said.ends_with(&format!("{why}. Save points and undo are not affected.")),
+            "{code}: {said}"
+        );
+        // the same kind again, in this session: nothing more
+        leave_result(&r, SID, outcome, code, message);
+        assert_eq!(told_at_prompt(&r, SID), "", "{code}");
+        // another session hears it again, once
+        leave_result(&r, OTHER, outcome, code, message);
+        assert!(told_at_prompt(&r, OTHER).contains(why), "{code}");
+        assert_eq!(told_at_prompt(&r, OTHER), "", "{code}");
+    }
+    // the last run was another session's: this one is told nothing about it
+    leave_result(
+        &r,
+        OTHER,
+        "advisory",
+        "key",
+        "Meta refused the API key (HTTP 403). Check the key file.",
+    );
+    assert_eq!(
+        told_at_prompt(&r, "00000000-0000-7000-8000-0000000000cc"),
+        ""
+    );
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn what_is_normal_for_the_check_writer_is_not_told() {
+    let r = Rig::new("writer-normal");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let normal = [
+        ("proven", "Promise #1 saved. Proof: passed 5 of 5."),
+        (
+            "advisory",
+            "nothing to check: not a statement that something works (it is a question)",
+        ),
+        (
+            "advisory",
+            "cannot check this with HTTP requests (it needs a browser)",
+        ),
+        (
+            "advisory",
+            "no check saved: the check needs a record already in your data",
+        ),
+        (
+            "advisory",
+            "the engine turned the check down: the proof failed",
+        ),
+        ("advisory", "the run took too long and was stopped"),
+        (
+            "rejected",
+            "the model ran out of room before it finished its answer",
+        ),
+        ("skipped", "Torpor is not saving in this folder"),
+    ];
+    for (outcome, message) in normal {
+        leave_result(&r, SID, outcome, "", message);
+        assert_eq!(told_at_prompt(&r, SID), "", "{outcome}: {message}");
+    }
+    // no result at all, and a result file that is not a result
+    fs::remove_file(writer_ws(&r).join("result.json")).unwrap();
+    assert_eq!(told_at_prompt(&r, SID), "");
+    fs::write(writer_ws(&r).join("result.json"), "{not json").unwrap();
+    assert_eq!(told_at_prompt(&r, SID), "");
+}
+
+#[test]
+fn a_folder_that_is_not_an_app_with_a_start_script_is_told_once_per_folder() {
+    let r = Rig::new("writer-app");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let message = "cannot make a check: package.json has no start, dev, serve or server script to start the app with";
+    leave_result(&r, SID, "advisory", "app", message);
+    let said = told_at_prompt(&r, SID);
+    assert!(
+        said.contains("needs an app it can start with a script") && said.contains("`start`"),
+        "{said}"
+    );
+    assert!(said.ends_with("this folder has none, so it will write no checks here. Save points and undo still work."), "{said}");
+    // once for the folder: this session and any other stay quiet, whatever the run says
+    leave_result(&r, SID, "advisory", "app", message);
+    assert_eq!(told_at_prompt(&r, SID), "");
+    leave_result(&r, OTHER, "advisory", "app", message);
+    assert_eq!(told_at_prompt(&r, OTHER), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+/// A run that never started leaves no result: the hook itself notes why, and tells at the next prompt.
+#[test]
+fn a_prompt_the_check_writer_could_not_take_up_is_told_at_the_next_prompt_once() {
+    let r = Rig::new("writer-busy");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    // another run holds the folder: this test holds its lock. The API base is a closed loopback port, so that even a
+    // run that did start could reach nothing.
+    let held = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(writer_ws(&r).join("lock"))
+        .unwrap();
+    held.try_lock().unwrap();
+    let env = [("TORPOR_MUSE_API_BASE", "http://127.0.0.1:9")];
+    let prompt = r.fixture("UserPromptSubmit").to_string();
+    let hear = || r.hook_env("UserPromptSubmit", prompt.as_bytes(), &env).out;
+    assert_eq!(
+        hear(),
+        "",
+        "the prompt that found the writer busy hears nothing yet"
+    );
+    let out = hear();
+    let (said, ctx) = note_parts(&out);
+    assert!(
+        said.contains("still busy with an earlier prompt, so it did not look at your last one. Save points and undo are not affected."),
+        "{said}"
+    );
+    assert!(ctx.is_empty(), "{ctx}");
+    assert_eq!(hear(), "", "once");
+
+    // a run that cannot get its state folder: told the same way, as another kind
+    let r = Rig::new("writer-start");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    fs::create_dir_all(r.store().join("muse")).unwrap();
+    fs::write(
+        r.store().join("muse/suggest"),
+        "a file where the folder should be",
+    )
+    .unwrap();
+    assert_eq!(
+        r.hook_env("UserPromptSubmit", prompt.as_bytes(), &env).out,
+        ""
+    );
+    let said = note_parts(&r.hook_env("UserPromptSubmit", prompt.as_bytes(), &env).out).0;
+    assert!(
+        said.starts_with(
+            "Torpor could not start its check-writer on your last prompt. Save points"
+        ),
+        "{said}"
+    );
 }
 
 #[test]
@@ -1463,18 +1702,8 @@ fn the_engine_lines_stay_apart_on_the_one_line_muse_shows() {
 /// announces the promise, and in full to the model of the session that asked for it, once, at its next prompt.
 #[test]
 fn what_a_new_promise_does_not_cover_reaches_the_user_and_the_model() {
-    use std::os::unix::ffi::OsStrExt;
     let r = Rig::new("gap-note");
-    let root = fs::canonicalize(&r.cwd).unwrap();
-    let h = root
-        .as_os_str()
-        .as_bytes()
-        .iter()
-        .fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
-            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-        });
-    let ws = r.store().join(format!("muse/suggest/ws/{h:016x}"));
-    fs::create_dir_all(&ws).unwrap();
+    let ws = writer_ws(&r);
     let gap = "editing a note, and that the notes survive a restart of the server";
     let gaps = json!([{"promise": 2, "session": SID, "gap": gap}, {"promise": 1, "session": SID, "gap": "older"}]);
     fs::write(ws.join("gaps.json"), gaps.to_string()).unwrap();

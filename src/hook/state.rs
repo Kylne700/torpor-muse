@@ -2,7 +2,8 @@
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
 //! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
 //! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
-//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept).
+//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept) and `app/<hash of folder>.json`
+//! (the user was told once that the check-writer needs an app with a start script; never swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -37,6 +38,12 @@ pub struct Session {
     /// The turn whose end Torpor blocked once for a broken check or a risky turn (`hook::stop_note`).
     #[serde(default)]
     pub noted: String,
+    /// The kinds of check-writer news the user of this session was told, one note each (`hook::writer_note`).
+    #[serde(default)]
+    pub writer_told: Vec<String>,
+    /// Why the check-writer could not start on the last prompt (`busy`, `start`), to tell at the next prompt.
+    #[serde(default)]
+    pub writer_skip: String,
 }
 
 /// A turn whose own commands changed or deleted a database file: its number, its start save point, the files.
@@ -259,25 +266,26 @@ pub fn sweep(dir: &Path) {
     }
 }
 
-/// A folder whose engine gate `hook::gate_default` has switched off once; stored inside and compared whole. Kept without an
-/// end (`sweep` leaves `gate/` alone): the file is what lets a later `torpor gate on` of the user's stay on.
+/// A folder marked once for `sub`: `gate` (`hook::gate_default` switched its engine gate off) or `app` (the user was
+/// told the check-writer needs an app with a start script); stored inside and compared whole. Kept without an end
+/// (`sweep` leaves `gate/` and `app/` alone): the `gate` file is what lets a later `torpor gate on` of the user's stay on.
 #[derive(Serialize, Deserialize)]
-struct GateDone {
+struct Mark {
     cwd: String,
 }
 
-/// Was the gate default set for folder `cwd`?
-pub fn gate_done(dir: &Path, cwd: &str) -> bool {
-    fs::read(folder_file(dir, "gate", cwd))
+/// Was folder `cwd` marked for `sub`?
+pub fn marked(dir: &Path, sub: &str, cwd: &str) -> bool {
+    fs::read(folder_file(dir, sub, cwd))
         .ok()
-        .and_then(|b| serde_json::from_slice::<GateDone>(&b).ok())
+        .and_then(|b| serde_json::from_slice::<Mark>(&b).ok())
         .is_some_and(|d| d.cwd == cwd)
 }
 
-/// Marks `cwd`; false when that could not be written.
-pub fn gate_mark(dir: &Path, cwd: &str) -> bool {
-    serde_json::to_vec(&GateDone { cwd: cwd.into() })
-        .is_ok_and(|b| crate::engine::write_private(&folder_file(dir, "gate", cwd), &b).is_ok())
+/// Marks `cwd` for `sub`; false when that could not be written.
+pub fn mark(dir: &Path, sub: &str, cwd: &str) -> bool {
+    serde_json::to_vec(&Mark { cwd: cwd.into() })
+        .is_ok_and(|b| crate::engine::write_private(&folder_file(dir, sub, cwd), &b).is_ok())
 }
 
 /// The main turn open in a folder. Muse gives a subagent's tool events no parent id (its session id and turn id are its
@@ -463,18 +471,22 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_default_is_marked_per_folder_and_the_mark_is_never_swept() {
+    fn a_folder_is_marked_per_kind_and_the_mark_is_never_swept() {
         let dir = scratch("state-gate");
-        assert!(!gate_done(&dir, "/w/a"));
-        assert!(gate_mark(&dir, "/w/a"));
-        assert!(gate_done(&dir, "/w/a"));
-        assert!(!gate_done(&dir, "/w/b"), "another folder");
-        // 15 days untouched: `sweep` takes the other kinds of file, not this one
+        assert!(!marked(&dir, "gate", "/w/a"));
+        assert!(mark(&dir, "gate", "/w/a"));
+        assert!(marked(&dir, "gate", "/w/a"));
+        assert!(!marked(&dir, "gate", "/w/b"), "another folder");
+        assert!(!marked(&dir, "app", "/w/a"), "another kind");
+        // 15 days untouched: `sweep` takes the other kinds of file, not these
         let stale = UNIX_EPOCH + Duration::from_secs(crate::util::now_secs() - 15 * 86_400);
-        let f = folder_file(&dir, "gate", "/w/a");
-        fs::File::open(&f).unwrap().set_modified(stale).unwrap();
+        assert!(mark(&dir, "app", "/w/a"));
+        for sub in ["gate", "app"] {
+            let f = folder_file(&dir, sub, "/w/a");
+            fs::File::open(&f).unwrap().set_modified(stale).unwrap();
+        }
         sweep(&dir);
-        assert!(gate_done(&dir, "/w/a"));
+        assert!(marked(&dir, "gate", "/w/a") && marked(&dir, "app", "/w/a"));
     }
 
     #[test]
