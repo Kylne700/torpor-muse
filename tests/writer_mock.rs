@@ -112,6 +112,7 @@ fn a_step_on_a_record_the_check_did_not_create_is_left_out_and_named() {
         "{ctx}"
     );
     assert!(sb.adds().is_empty(), "{ctx}");
+    assert_eq!(sb.result()["code"], "nosave", "{ctx}");
 }
 
 /// L3 N3: the engine's client drops a cookie the server clears, so a refusal after a logout step comes whether or not
@@ -264,6 +265,59 @@ fn what_the_engine_hands_back_is_told_apart() {
     assert_eq!(r.code, 3, "out={:?} err={:?}", r.out, r.err);
     assert_eq!(mock.requests().len(), 1);
     assert!(r.out.contains("no version to call good"), "{}", r.out);
+}
+
+/// The hook tells the user how a run ended only through the `code` in result.json (src/hook/writer_note.rs): every end
+/// without a saved check, except "no claim" and "cannot be checked", leaves one.
+#[test]
+fn an_end_without_a_saved_check_leaves_the_code_the_user_is_told_it_under() {
+    // (tag, what the engine answers: exit and stderr, the code left, the calls to the model)
+    let cases = [
+        (
+            "code-fails",
+            1,
+            "Not saved: it fails on the version from the start of turn 2 in 5 of 5 runs (POST /api/login answered 200, expected 201).\n",
+            "fails",
+            2,
+        ),
+        (
+            "code-norun",
+            1,
+            "Not saved: the check could not run (the app did not start in 90 s).\n",
+            "nosave",
+            2,
+        ),
+        (
+            "code-nogood",
+            1,
+            "Not saved: there is no version to call good.\n",
+            "nosave",
+            1,
+        ),
+        (
+            "code-lint",
+            3,
+            "Rejected: step 1 expects a long number, which changes on every run\n",
+            "nosave",
+            2,
+        ),
+        ("code-odd", 2, "boom\n", "engine", 1),
+    ];
+    for (tag, exit, err, code, calls) in cases {
+        let sb = Sandbox::new(tag);
+        sb.engine_says(exit, "", err);
+        let mock = Mock::ok(&sb.dir, &good_answer());
+        let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+        let ctx = format!("{tag}: out={:?} err={:?}", r.out, r.err);
+        assert_eq!(r.code, 3, "{ctx}");
+        assert_eq!(mock.requests().len(), calls, "{ctx}");
+        let res = sb.result();
+        assert_eq!(
+            (res["saved"].as_bool(), res["code"].as_str()),
+            (Some(false), Some(code)),
+            "{ctx}"
+        );
+    }
 }
 
 #[test]

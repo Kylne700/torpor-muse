@@ -221,6 +221,9 @@ pub enum Added {
     Failed(String),
 }
 
+/// How the engine's `Not saved:` reason starts when the check fails on the version it should pass on.
+pub const FAILS_NOW: &str = "it fails on";
+
 /// Text of the engine, safe to show and to quote back to the model.
 fn tidy(s: &str) -> String {
     let flat: String = s
@@ -259,8 +262,7 @@ pub fn classify(r: &Run) -> Added {
         Some(3) => Added::Lint(tidy(&r.err)),
         Some(1) if r.err.contains("Not saved: ") => {
             let why = tidy(r.err.split("Not saved: ").nth(1).unwrap_or(""));
-            let retry =
-                why.starts_with("the check could not run") || why.starts_with("it fails on");
+            let retry = why.starts_with("the check could not run") || why.starts_with(FAILS_NOW);
             Added::NotSaved { why, retry }
         }
         code => Added::Failed(format!(

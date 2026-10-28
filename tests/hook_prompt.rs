@@ -70,6 +70,61 @@ fn the_off_note_is_told_once_per_session_where_the_folder_is_unknown_or_cannot_b
 }
 
 #[test]
+fn the_off_note_is_told_once_per_folder_and_reason() {
+    let r = Rig::unseeded("writer-note-reasons");
+    let sid = |n: u32| format!("00000000-0000-7000-8000-0000000000{n:02x}");
+    // no key_file line: the first reason, told once for the folder (not again in a new session)
+    let said = told_at_prompt(&r, &sid(1));
+    assert!(
+        said.contains("there is no `key_file = <path>` line"),
+        "{said}"
+    );
+    assert_eq!(told_at_prompt(&r, &sid(1)), "", "same session");
+    assert_eq!(told_at_prompt(&r, &sid(2)), "", "new session, same reason");
+    // another reason in the same folder: told once more, once
+    key_setup(&r, "key_file = ~/key.txt\n", 0o644);
+    let said = told_at_prompt(&r, &sid(3));
+    assert!(said.contains("only you can read"), "{said}");
+    assert_eq!(told_at_prompt(&r, &sid(4)), "");
+    // and a third one
+    key_setup(&r, "keyfile = ~/key.txt\n", 0o600);
+    let said = told_at_prompt(&r, &sid(5));
+    assert!(said.contains("unknown or empty setting"), "{said}");
+    assert_eq!(told_at_prompt(&r, &sid(6)), "");
+    // back to the first reason: this folder was told that one already
+    fs::remove_file(r.dir.join("home/.config/torpor-muse/config")).unwrap();
+    assert_eq!(told_at_prompt(&r, &sid(7)), "", "a reason told before");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+/// An earlier version marked a folder for `no-key` by the folder alone. Such a mark does not stand for any reason now,
+/// so the note is told once more (not told silently for a reason it was never written for).
+#[test]
+fn a_mark_from_before_the_reason_was_part_of_it_is_told_once_more() {
+    let r = Rig::unseeded("writer-note-old-mark");
+    // the `app` mark has the old shape (a file named by the folder alone, holding the folder), and the hook writes it
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    leave_result(&r, SID, "advisory", "app", "no start script");
+    let said = told_at_prompt(&r, SID);
+    assert!(said.contains("needs an app"), "{said}");
+    let marks = r.store().join("muse");
+    let old = fs::read_dir(marks.join("app"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::create_dir_all(marks.join("no-key")).unwrap();
+    fs::copy(&old, marks.join("no-key").join(old.file_name().unwrap())).unwrap();
+    // the key goes: the off note is told despite that mark, once
+    fs::remove_file(r.dir.join("home/.config/torpor-muse/config")).unwrap();
+    let said = told_at_prompt(&r, OTHER);
+    assert!(said.contains("check-writer is off"), "{said}");
+    assert_eq!(told_at_prompt(&r, SID), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
 fn the_note_is_added_to_what_the_engine_printed() {
     let r = Rig::unseeded("writer-note-merged");
     r.set(
@@ -237,6 +292,52 @@ fn an_answer_the_check_writer_could_not_use_is_told_once_per_session_without_the
     assert!(r.problems().is_empty(), "{}", r.problems());
 }
 
+/// A run of session `SID` that ended with `code` is told in `said` at the next prompt, once; the same end again is not
+/// told, and another session of the folder hears it once.
+fn told_once(name: &str, code: &str, message: &str, said: &str) {
+    let r = Rig::new(name);
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    leave_result(&r, SID, "advisory", code, message);
+    assert_eq!(told_at_prompt(&r, SID), said);
+    leave_result(&r, SID, "advisory", code, message);
+    assert_eq!(told_at_prompt(&r, SID), "");
+    leave_result(&r, OTHER, "advisory", code, message);
+    assert_eq!(told_at_prompt(&r, OTHER), said);
+    assert_eq!(told_at_prompt(&r, OTHER), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn a_check_that_fails_on_the_code_as_it_is_is_told_once_per_session_in_one_fixed_sentence() {
+    told_once(
+        "writer-fails",
+        "fails",
+        "the engine turned the check down: it fails on the version from the start of turn 2 in 5 of 5 runs (POST /api/login answered 200, expected 201)",
+        "The check Torpor's check-writer wrote for an earlier claim of yours fails on the code as it is now, which can mean that what you claimed does not work yet or that the check is wrong, so no check was saved. Save points and undo are not affected.",
+    );
+}
+
+#[test]
+fn an_engine_that_did_not_finish_is_told_once_per_session_in_one_fixed_sentence() {
+    told_once(
+        "writer-engine",
+        "engine",
+        "the Torpor engine ended with exit Some(2): boom",
+        "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not finish saving it (it timed out or ended with an error), so no check was saved. Save points and undo are not affected.",
+    );
+}
+
+#[test]
+fn any_other_end_without_a_saved_check_is_told_once_per_session_in_the_runs_own_words_made_safe() {
+    // a key-shaped string in the words is masked
+    told_once(
+        "writer-nosave",
+        "nosave",
+        "the engine turned the check down: Rejected: step 1 expects a long number sk-FAKECANARY1234",
+        "Torpor's check-writer wrote no check from an earlier prompt of yours: the engine turned the check down: Rejected: step 1 expects a long number [redacted]. Save points and undo are not affected.",
+    );
+}
+
 #[test]
 fn what_is_normal_for_the_check_writer_is_not_told() {
     let r = Rig::new("writer-normal");
@@ -250,14 +351,6 @@ fn what_is_normal_for_the_check_writer_is_not_told() {
         (
             "advisory",
             "cannot check this with HTTP requests (it needs a browser)",
-        ),
-        (
-            "advisory",
-            "no check saved: the check needs a record already in your data",
-        ),
-        (
-            "advisory",
-            "the engine turned the check down: the proof failed",
         ),
         ("skipped", "Torpor is not saving in this folder"),
     ];

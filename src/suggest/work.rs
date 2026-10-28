@@ -110,7 +110,8 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             );
             let why = c.safe(&why, 300);
             if answer.steps.is_empty() {
-                return Outcome::new(Kind::Advisory, format!("no check saved: {why}"));
+                return Outcome::new(Kind::Advisory, format!("no check saved: {why}"))
+                    .code("nosave");
             }
             gaps.push(why);
         }
@@ -145,32 +146,38 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             Ok(a) => a,
             Err(e) => return Outcome::new(Kind::Error, e),
         };
-        let turned_down = match said {
+        // what the engine said, and the code the user is told it under (`fails`: the check fails on the code as it is)
+        let (turned_down, code) = match said {
             attach::Added::Proven { id, line } => {
                 return saved(c, p, Kind::Proven, id, &line, &gap);
             }
             attach::Added::Advisory { id, line } => {
                 return saved(c, p, Kind::Advisory, id, &line, &gap);
             }
-            attach::Added::Lint(m) => m,
-            attach::Added::NotSaved { why, retry: true } => why,
+            attach::Added::Lint(m) => (m, "nosave"),
+            attach::Added::NotSaved { why, retry: true } if why.starts_with(attach::FAILS_NOW) => {
+                (why, "fails")
+            }
+            attach::Added::NotSaved { why, retry: true } => (why, "nosave"),
             attach::Added::NotSaved { why, retry: false } => {
                 return Outcome::new(
                     Kind::Advisory,
                     format!("Torpor did not save the check: {why}"),
-                );
+                )
+                .code("nosave");
             }
-            attach::Added::Failed(m) => return Outcome::new(Kind::Advisory, m),
+            attach::Added::Failed(m) => return Outcome::new(Kind::Advisory, m).code("engine"),
         };
         if last || c.time_left() < MIN_TIME_FOR_RETRY {
             return Outcome::new(
                 Kind::Advisory,
                 format!("the engine turned the check down: {turned_down}"),
-            );
+            )
+            .code(code);
         }
         retry = Some((c.safe(&text, 3000), turned_down));
     }
-    Outcome::new(Kind::Advisory, "no check was made")
+    Outcome::new(Kind::Advisory, "no check was made").code("nosave")
 }
 
 /// A saved check. What it does not cover also goes to `gaps.json`, for the hook to tell the user and the model.

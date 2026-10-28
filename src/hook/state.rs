@@ -272,7 +272,8 @@ pub fn sweep(dir: &Path) {
 /// A folder marked once for `sub`: `gate` (`hook::gate::gate_default` switched its engine gate off), `app` (the user
 /// was told the check-writer needs an app with a start script) or `no-key` (told it is off for lack of a key); stored
 /// inside and compared whole. Kept without an end (`sweep` leaves `gate/`, `app/` and `no-key/` alone): the `gate` file
-/// is what lets a later `torpor gate on` of the user's stay on.
+/// is what lets a later `torpor gate on` of the user's stay on. What the caller passes as `cwd` is the folder; for
+/// `no-key` it is the folder and the reason (`hook::writer_note`), so a different reason is a different mark.
 #[derive(Serialize, Deserialize)]
 struct Mark {
     cwd: String,
