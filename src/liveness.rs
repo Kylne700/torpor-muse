@@ -4,31 +4,15 @@
 //! cannot tear it). Nothing here fails the hook or writes to stdout: an error goes to `<vault>/muse/shim-errors.log`,
 //! or to stderr when even that cannot be written. The counters are derived from the file when `doctor` asks, so the
 //! hook path does no reading.
-#![allow(dead_code)] // hook.rs calls `beat` only; the rest is read by doctor.rs and the tests
 
+use crate::util::private_dir;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// `cmd.spawn()`, tried again for a moment while the program is still open for writing somewhere (ETXTBSY, 26: an
-/// engine being replaced, or a script just written while another thread's forked child still holds its write fd).
-/// Everything that starts the engine, a hook command or the writer goes through this and keeps its own error text.
-/// It lives here because every test crate that compiles doctor.rs also compiles this file.
-pub(crate) fn spawn_retry(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
-    for _ in 0..6 {
-        match cmd.spawn() {
-            Err(e) if e.raw_os_error() == Some(26) => {
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            r => return r,
-        }
-    }
-    cmd.spawn()
-}
 
 /// A session's heartbeat file is moved to `.1` once it passes this size; `read_beats` reads both.
 /// shortcut: a session keeps its last 256-512 KiB of beats (a few thousand events), enough for doctor; raise if it is not.
@@ -64,18 +48,11 @@ pub fn now_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
-pub fn mkdir_private(dir: &Path) -> std::io::Result<()> {
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-}
-
 /// Best effort, never fails: the line goes to `shim-errors.log` (cut when it passes 64 KiB), else to stderr.
 pub fn log_error(vault: &Path, what: &str) {
     let dir = shim_dir(vault);
     let put = || -> std::io::Result<()> {
-        mkdir_private(&dir)?;
+        private_dir(&dir)?;
         let f = dir.join("shim-errors.log");
         if fs::metadata(&f).is_ok_and(|m| m.len() > ERRORS_MAX) {
             fs::write(&f, b"")?;
@@ -113,7 +90,7 @@ pub fn beat_in(
         return Err(std::io::Error::other("session id is not a plain name"));
     }
     let dir = shim_dir(vault).join("beats");
-    mkdir_private(&dir)?;
+    private_dir(&dir)?;
     let f = dir.join(format!("{session_id}.jsonl"));
     if fs::metadata(&f).is_ok_and(|m| m.len() > BEATS_MAX) {
         let _ = fs::rename(&f, dir.join(format!("{session_id}.jsonl.1")));
@@ -240,9 +217,8 @@ pub fn gate_live(beats: &[Beat]) -> bool {
     turns(beats).closed >= 1
 }
 
-const PAIRS: [(&str, &[&str]); 3] = [
+const PAIRS: [(&str, &[&str]); 2] = [
     ("PreToolUse", &["PostToolUse", "PostToolUseFailure"]),
-    ("PreLLMCall", &["PostLLMCall"]),
     ("SubagentStart", &["SubagentStop"]),
 ];
 

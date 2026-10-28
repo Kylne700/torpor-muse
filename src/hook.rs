@@ -19,16 +19,16 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
-    /// Registered in the Muse settings; the payload goes to `torpor hook <Event>`.
+    /// The payload goes to `torpor hook <Event>`.
     Engine,
-    /// Registered; only the heartbeat is recorded (`liveness::beat`), the engine is not called.
+    /// Only the heartbeat is recorded (`liveness::beat`); the engine is not called.
     Beat,
-    /// Not registered.
-    Off,
 }
 
-/// One Muse hook event: what we do with it and why. `install` writes the settings from this table, so the table is
-/// the event coverage list (every event research/59 section 4 names, none blank).
+/// One Muse hook event we register: `install` writes the settings from this table. Muse events we do not register:
+/// PreLLMCall and PostLLMCall (8-9 KB of payload per model step, the engine has no use for it) and PermissionRequest,
+/// Notification, Interrupt, SessionFork (never fired in G0; an interrupted tool call arrives as PostToolUseFailure, a
+/// fork as SessionStart `fork`).
 pub struct Ev {
     pub name: &'static str,
     pub act: Act,
@@ -38,11 +38,13 @@ pub struct Ev {
     pub timeout_s: u32,
     /// We kill the engine after this many ms: its own deadline for the event plus 1.5 s.
     pub engine_ms: u64,
-    #[allow(dead_code)] // the coverage list for people and tests; no code reads it
-    pub why: &'static str,
 }
 
 const TOOLS: Option<&str> = Some("bash|edit_file|write_file");
+
+/// Events earlier versions registered for a heartbeat only. `init` and `uninstall` remove their rows; a settings file
+/// that still has them is answered with exit 0 and no output, and nothing is recorded.
+pub const RETIRED: &[&str] = &["PostToolBatch", "PostCompact"];
 
 pub const EVENTS: &[Ev] = &[
     Ev {
@@ -51,7 +53,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: Some("startup|resume|clear|compact|fork"),
         timeout_s: 10,
         engine_ms: 4_500,
-        why: "engine opens the session and hands its records back after clear, resume or compact; the matcher has `fork` (D1)",
     },
     Ev {
         name: "UserPromptSubmit",
@@ -59,7 +60,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 10,
         engine_ms: 6_500,
-        why: "engine starts the turn (save point, promise words, state note); then suggest::trigger runs",
     },
     Ev {
         name: "PreToolUse",
@@ -67,7 +67,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "engine saves a point before a destructive bash command, records an agent-run `torpor` call (AD3), denies edits of its own files",
     },
     Ev {
         name: "PostToolUse",
@@ -75,7 +74,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "engine records the call and captures the files an edit touched",
     },
     Ev {
         name: "PostToolUseFailure",
@@ -83,15 +81,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "a non-zero bash exit fires only this event (D11); same handling as PostToolUse, error reshaped to `Exit code N`",
-    },
-    Ev {
-        name: "PostToolBatch",
-        act: Act::Beat,
-        matcher: None,
-        timeout_s: 5,
-        engine_ms: 0,
-        why: "heartbeat only: every call of a batch also fires its own Pre/PostToolUse (42 of 42 in G0), so the engine saved per call; it has no batch entry point and nothing depends on PreCompact (D4)",
     },
     Ev {
         name: "Stop",
@@ -99,7 +88,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 35,
         engine_ms: 31_500,
-        why: "engine saves the end-of-turn point and runs the promise gate; at most 2 blocks per turn (engine and ours) against Muse's 8 (D8)",
     },
     Ev {
         name: "StopFailure",
@@ -107,7 +95,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 10,
         engine_ms: 6_500,
-        why: "engine closes the turn that a model or auth error ended",
     },
     Ev {
         name: "SessionEnd",
@@ -115,7 +102,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_700,
-        why: "engine closes the session (and its cleanup when due); our session state file is deleted",
     },
     Ev {
         name: "PreCompact",
@@ -123,15 +109,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_500,
-        why: "engine notes the compaction; no save depends on it, Muse does not fire it on a manual /compact (D4)",
-    },
-    Ev {
-        name: "PostCompact",
-        act: Act::Beat,
-        matcher: None,
-        timeout_s: 3,
-        engine_ms: 0,
-        why: "heartbeat only: the engine ignores it; the SessionStart with source compact brings its records back",
     },
     Ev {
         name: "SubagentStart",
@@ -139,7 +116,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 3,
         engine_ms: 0,
-        why: "heartbeat only: the engine ignores it; a child session's own events are ignored after the heartbeat (D10)",
     },
     Ev {
         name: "SubagentStop",
@@ -147,55 +123,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_500,
-        why: "engine ends a subagent's work in the parent session (main sessions only; real shape not seen, K13 not run)",
-    },
-    Ev {
-        name: "PreLLMCall",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: 8 KB or more of payload per model step and the engine has no use for it",
-    },
-    Ev {
-        name: "PostLLMCall",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: 9 KB or more of payload per model step and the engine has no use for it",
-    },
-    Ev {
-        name: "PermissionRequest",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0 (contract unknown) and a Muse hook cannot ask the user anyway",
-    },
-    Ev {
-        name: "Notification",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0, contract unknown, nothing to save",
-    },
-    Ev {
-        name: "Interrupt",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0; an interrupted tool call arrives as PostToolUseFailure with is_interrupt",
-    },
-    Ev {
-        name: "SessionFork",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0; a fork starts with SessionStart source fork, which is registered (D1)",
     },
 ];
 
@@ -241,7 +168,9 @@ pub fn run(event: &str) -> u8 {
     if let Some((sid, cwd, prompt)) = done.prompt {
         // Muse waits for its pipe to close, and anything started now would inherit it: close ours first.
         close_stdio();
-        suggest::trigger(&sid, &cwd, &prompt);
+        if let Some(kind) = suggest::trigger(&sid, &cwd, &prompt) {
+            state::with_session(&engine::state_dir(), &sid, |s| s.writer_skip = kind.into());
+        }
     }
     0
 }
@@ -262,6 +191,9 @@ fn close_stdio() {
 }
 
 fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
+    if RETIRED.contains(&event) {
+        return Done::default();
+    }
     let Some(ev) = EVENTS.iter().find(|e| e.name == event) else {
         state::problem(dir, event, "", "unknown event name on the command line");
         return Done::default();
@@ -324,7 +256,7 @@ fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             let engine_out = edited.as_deref().unwrap_or(&out.stdout);
             done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), engine_out);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
-                done.stdout = writer_note(dir, event, done.stdout.take());
+                done.stdout = writer_note(dir, event, &sid, &cwd, done.stdout.take());
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
             done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
@@ -431,34 +363,102 @@ fn engine_cmd(bin: &Path) -> String {
     let named = bin.file_name().is_some_and(|n| n == "torpor")
         && bin.parent().is_some_and(|p| !p.as_os_str().is_empty());
     match std::path::absolute(bin) {
-        Ok(p) if named => p.to_str().map_or("torpor".into(), crate::doctor::quote),
+        Ok(p) if named => p.to_str().map_or("torpor".into(), crate::util::quote),
         _ => "torpor".into(),
     }
 }
 
-/// A prompt the check-writer could not start on for want of a key: tell the user once per state folder. The notice is
-/// for the user only (`systemMessage`; doctor says it too): the model's context stays as it is, so a run without a key
-/// gives the model the same text as one with a key. The marker is written only when the note really is printed.
-fn writer_note(dir: &Path, event: &str, body: Option<String>) -> Option<String> {
-    let Some(why) = suggest::writer_off(true) else {
+/// What the check-writer has to tell the user at a prompt: one note at most, each kind once per session (`app`: once per
+/// folder). In this order: the key it lacks (`no-key`), why a run could not start on the last prompt (`busy`, `start`),
+/// why the last run of this session wrote no check (`key`, `cap`, `api`, `error`, `app`). The notes are for the user
+/// only (`systemMessage`; doctor says the first too): the model's context stays as it is, so a run without a key gives
+/// the model the same text as one with a key. A kind is recorded only when its note really is printed.
+fn writer_note(
+    dir: &Path,
+    event: &str,
+    sid: &str,
+    cwd: &str,
+    body: Option<String>,
+) -> Option<String> {
+    let Some((told, skip)) =
+        state::with_session(dir, sid, |s| (s.writer_told.clone(), s.writer_skip.clone()))
+    else {
         return body;
     };
-    let why = suggest::scrub(&why, 300);
-    let merged = schema::with_note(
-        event,
-        body.as_deref(),
-        &format!(
-            "Torpor's check-writer is off: {why}. To turn it on, put your Meta API key on one line in a file only you can \
-             read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
-             `torpor-muse doctor` shows this too."
-        ),
-        "",
-        false,
-    );
-    match merged {
-        Some(m) if state::new_key(dir, event, "writer-off") => Some(m),
-        _ => body,
+    let new = |kind: &str| match kind {
+        "app" => !state::marked(dir, "app", cwd),
+        _ => !told.iter().any(|t| t == kind),
+    };
+    let Some((kind, line)) = writer_news(sid, cwd, &skip)
+        .into_iter()
+        .find(|(kind, _)| new(kind))
+    else {
+        return body;
+    };
+    let Some(merged) = schema::with_note(event, body.as_deref(), &line, "", false) else {
+        return body;
+    };
+    if kind == "app" {
+        state::mark(dir, "app", cwd);
+    } else {
+        state::with_session(dir, sid, |s| {
+            s.writer_told.push(kind.into());
+            if s.writer_skip == kind {
+                s.writer_skip.clear();
+            }
+        });
     }
+    Some(merged)
+}
+
+/// The notes the check-writer could have for the user now, most pressing first: (kind, the words). `skip`: why the
+/// trigger could not start a run on the last prompt (`Session.writer_skip`).
+fn writer_news(sid: &str, cwd: &str, skip: &str) -> Vec<(&'static str, String)> {
+    const SAVING: &str = "Save points and undo are not affected.";
+    if let Some(why) = suggest::writer_off(true) {
+        let why = suggest::scrub(&why, 300);
+        return vec![(
+            "no-key",
+            format!(
+                "Torpor's check-writer is off: {why}. To turn it on, put your Meta API key on one line in a file only you \
+                 can read (chmod 600) and add `key_file = ~/path/to/that/file` to ~/.config/torpor-muse/config (chmod 600). \
+                 `torpor-muse doctor` shows this too."
+            ),
+        )];
+    }
+    let mut news = Vec::new();
+    match skip {
+        "busy" => news.push((
+            "busy",
+            format!("Torpor's check-writer was still busy with an earlier prompt, so it did not look at your last one. {SAVING}"),
+        )),
+        "start" => news.push((
+            "start",
+            format!("Torpor could not start its check-writer on your last prompt. {SAVING}"),
+        )),
+        _ => {}
+    }
+    // the run of this session that finished last; its words are the run's own, made safe once more
+    let last = suggest::last_result(cwd).filter(|l| !l.saved && l.session.as_deref() == Some(sid));
+    if let Some(l) = last {
+        let kind = ["key", "cap", "api", "app"]
+            .into_iter()
+            .find(|k| *k == l.code)
+            .or((l.outcome == "error").then_some("error"));
+        let line = match kind {
+            None => return news,
+            Some("app") => "Torpor's check-writer needs an app it can start with a script (`start`, `dev`, `serve` or \
+                 `server` in package.json, or a server.js), and this folder has none, so it will write no checks here. \
+                 Save points and undo still work."
+                .to_string(),
+            Some(_) => format!(
+                "Torpor's check-writer wrote no check from an earlier prompt of yours: {}. {SAVING}",
+                suggest::scrub(&l.message, 300).trim_end_matches('.')
+            ),
+        };
+        news.extend(kind.map(|k| (k, line)));
+    }
+    news
 }
 
 /// L3 N4: what a check the writer saved does not cover (`suggest::gaps`). The user reads it short inside the engine's
@@ -526,7 +526,7 @@ fn gap_note(dir: &Path, event: &str, sid: &str, cwd: &str, body: Option<String>)
 }
 
 /// What the model is told at the start of every session (F4): the plain words a user says, the Torpor command for each
-/// (a dry run first), and the commands that are the user's own. At most about 700 characters with the engine's path,
+/// (a dry run first), and the commands that are the user's own. At most about 730 characters with the engine's path,
 /// which stands once for the word `torpor` in it. It goes in front of the database note (`db_note`).
 fn guide(bin: &Path) -> String {
     let at = engine_cmd(bin);
@@ -543,7 +543,8 @@ fn guide(bin: &Path) -> String {
          undoes it.\n\
          what broke ...: torpor find-break --promise ID (or --check -).\n\
          lost database data: the database note's command, app stopped first.\n\
-         Never run off, on, gate, retain, forget, promise ok/drop/block, runner install: the user's own."
+         Never run off, on, gate, retain, forget, undo --force, promise ok/drop/block/show --spec, runner install: the \
+         user's own."
     )
 }
 
@@ -655,7 +656,7 @@ fn db_line(n: u64, names: &[String], tail: &str) -> String {
 
 /// The engine's gate is ON in every folder it saves. The user chose hands-free (F4b): a broken check is told to the AI
 /// (`stop_note`) and stops it only after the user runs `torpor gate on` in their own terminal. So the first session start
-/// in a saved folder runs `torpor gate off` there; `state::gate_mark` then keeps it from running again, which is what lets
+/// in a saved folder runs `torpor gate off` there; `state::mark` (`gate`) then keeps it from running again, which is what lets
 /// a later `gate on` of the user's stay on. The model cannot undo either: the engine's PreToolUse refuses `torpor gate ...`
 /// from its Bash, and the mark is a file in the engine's store, where it refuses writes too. Nothing goes to the model;
 /// a failure is one line in problems.log (doctor shows it) and the next session start tries again.
@@ -673,7 +674,7 @@ fn gate_default(dir: &Path, sid: &str, cwd: &str, bin: &Path, left: Duration) {
         .unwrap_or(root)
         .to_string_lossy()
         .into_owned();
-    if state::gate_done(dir, &key) {
+    if state::marked(dir, "gate", &key) {
         return;
     }
     let end = Instant::now() + left;
@@ -723,7 +724,7 @@ fn gate_default(dir: &Path, sid: &str, cwd: &str, bin: &Path, left: Duration) {
             return;
         }
     }
-    if !state::gate_mark(dir, &key) {
+    if !state::mark(dir, "gate", &key) {
         let msg = "gate default set but not remembered: the next session start runs `torpor gate off` again here, which undoes a `torpor gate on` of the user's";
         state::problem(dir, "SessionStart", sid, msg);
     }
@@ -736,6 +737,34 @@ fn project_root(cwd: &str) -> PathBuf {
         .map_or_else(|| PathBuf::from(cwd), PathBuf::from)
 }
 
+/// A Stop at which the engine's `status --json` says it is not saving, told to the user alone, once per session
+/// (`Session.told`, shared with `fail_open`; set only when the line goes out). The engine's reasons are about Claude
+/// Code (its settings, its sessions' hooks) except one, and Muse's hooks make save points without those, so only the
+/// disk that is almost full is told, and nothing after `torpor off`.
+fn not_saving(e: &Ended, status: &Value, body: Option<String>) -> Option<String> {
+    let disk = status["problems"].as_array().and_then(|p| {
+        p.iter()
+            .filter_map(Value::as_str)
+            .find(|p| p.starts_with("Save points are paused"))
+    });
+    let Some(why) = disk.filter(|_| status["off"] != true) else {
+        return body;
+    };
+    let line = format!(
+        "Torpor is not saving this folder: {}",
+        suggest::scrub(why, 200)
+    );
+    let Some(note) = schema::with_note("Stop", body.as_deref(), &line, "", true) else {
+        return body;
+    };
+    let first = |s: &mut state::Session| !std::mem::replace(&mut s.told, true);
+    if state::with_session(e.dir, e.sid, first).unwrap_or(false) {
+        Some(note)
+    } else {
+        body
+    }
+}
+
 /// What the turn that just ended did, from the engine's own records, told to the user and to the model. Only when the
 /// engine did not block the turn itself (its reason says the same), and not after `torpor off`.
 /// - The user's line (L3 N2), when the turn's own commands changed or deleted a database file: it starts with the command
@@ -745,7 +774,7 @@ fn project_root(cwd: &str) -> PathBuf {
 ///   the turn on with the reason (`stop::reason`), which makes the model say to the user in its reply what is broken or
 ///   what was deleted, and what to run. For a promise that failed after this turn (the engine's own fail line in its Stop
 ///   text, `stop::fails`: advisory or shadow; the engine has no other form of it) and for a turn that deleted a file that
-///   existed before it or changed or deleted a database (`stop::rows`).
+///   existed before it or deleted a database (`stop::rows`: a changed one only gets the user's line).
 ///
 /// Costs the `status` and `show` calls of L3, plus up to 3 dry runs of `back` to find a save point that has a database
 /// that was in use when the turn began and is gone now (`stop::restoring_point`): all within 4 s and `left`. A call that
@@ -780,9 +809,9 @@ fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<Strin
     let json =
         |args: &[&str]| ask(args).and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok());
     let status = json(&["status", "--json"]);
-    // not saving (`torpor off`): the last turn is an old one, already told
-    if status.as_ref().is_some_and(|s| s["saving"] != true) {
-        return body;
+    // not saving: the last turn is an old one, already told
+    if let Some(s) = status.as_ref().filter(|s| s["saving"] != true) {
+        return not_saving(e, s, body);
     }
     // shortcut: `last_turn` is the folder's, so with two sessions in one folder it can be the other session's turn, and this
     // Stop then tells about that one; upgrade when the engine can name the last turn of a session.
@@ -997,21 +1026,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_muse_event_is_in_the_table_once_with_a_reason() {
+    fn every_registered_event_is_in_the_table_once_and_a_retired_one_is_not() {
         let mut names: Vec<&str> = EVENTS.iter().map(|e| e.name).collect();
         names.sort();
         let mut want = schema::EVENT_NAMES.to_vec();
         want.sort();
-        assert_eq!(names, want, "table and schema must name the same 19 events");
-        assert_eq!(names.len(), 19);
-        for e in EVENTS {
-            assert!(e.why.len() >= 20, "{} has no real reason", e.name);
+        assert_eq!(names, want, "table and schema must name the same 11 events");
+        assert_eq!(names.len(), 11);
+        for r in RETIRED {
+            assert!(!names.contains(r), "{r} is retired and registered");
         }
     }
 
     #[test]
     fn settings_timeouts_are_whole_seconds_and_outlast_the_engine_kill_time() {
-        for e in EVENTS.iter().filter(|e| e.act != Act::Off) {
+        for e in EVENTS {
             assert!(e.timeout_s >= 1, "{}", e.name);
             if e.act == Act::Engine {
                 // the kill time, plus the pipe grace (0.3 s), the state lock (0.5 s) and the transcript step
@@ -1057,11 +1086,11 @@ mod tests {
 
     #[test]
     fn the_guide_names_each_plain_word_command_and_the_ones_that_are_the_users() {
-        // 62 characters of path: the guide stays within about 700 characters, and the path is said once
+        // 62 characters of path: the guide stays within about 730 characters, and the path is said once
         let long = "/data/someone/with/a/rather/long/folder/name/for/engine/torpor";
         assert_eq!(long.len(), 62);
         let g = guide(Path::new(long));
-        assert!(g.chars().count() <= 700, "{} characters", g.chars().count());
+        assert!(g.chars().count() <= 730, "{} characters", g.chars().count());
         assert_eq!(g.matches(long).count(), 1, "{g}");
         for want in [
             "torpor log -n 5",
@@ -1072,7 +1101,7 @@ mod tests {
             "the database note's command, app stopped first",
             "--dry-run first, tell them in one sentence",
             "Ask first if it also undoes later work, a database or unnamed files",
-            "Never run off, on, gate, retain, forget, promise ok/drop/block, runner install",
+            "Never run off, on, gate, retain, forget, undo --force, promise ok/drop/block/show --spec, runner install",
         ] {
             assert!(g.contains(want), "{want:?} missing from {g}");
         }

@@ -1,10 +1,10 @@
 //! Spend ledger: every Meta API response (failed and retried too), day cap, abort before a call that would pass it.
 //! Owner: S3b-writer.
-use std::fs::{DirBuilder, File, OpenOptions};
+use crate::util::{iso, now_secs, private_dir};
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_CAP_USD: f64 = 2.0;
 
@@ -59,32 +59,6 @@ pub fn worst_case(model: &str, input_bytes: usize, max_output: u32) -> f64 {
     (input_bytes as f64 * fresh + f64::from(max_output) * out) / 1e6
 }
 
-/// "2026-10-26T19:25:46Z" from Unix seconds (UTC, no leap seconds).
-pub fn iso(secs: u64) -> String {
-    let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
-}
-
-pub fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// The ledger file, held under an exclusive lock until dropped: the read of today's total, the decision and the
 /// write of the row happen without another run in between, so two runs cannot both pass the cap.
 pub struct Ledger {
@@ -98,11 +72,7 @@ impl Ledger {
     }
 
     pub fn open_at(dir: &Path, now: u64) -> Result<Self, String> {
-        DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)
-            .map_err(|e| format!("cannot create the ledger folder: {e}"))?;
+        private_dir(dir).map_err(|e| format!("cannot create the ledger folder: {e}"))?;
         let file = OpenOptions::new()
             .read(true)
             .append(true)
@@ -188,14 +158,6 @@ mod tests {
         let d = std::env::temp_dir().join(format!("tm-ledger-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         d
-    }
-
-    #[test]
-    fn dates_come_out_right() {
-        assert_eq!(iso(0), "1970-01-01T00:00:00Z");
-        assert_eq!(iso(951_782_400), "2000-02-29T00:00:00Z");
-        assert_eq!(iso(1_000_000_000), "2001-09-09T01:46:40Z");
-        assert_eq!(iso(1_793_041_603), "2026-10-26T19:06:43Z");
     }
 
     #[test]

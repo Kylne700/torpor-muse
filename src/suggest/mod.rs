@@ -3,7 +3,8 @@
 //!
 //! Exit codes of `run`: 0 a promise was saved (proven or advisory), 3 nothing saved (the reason is printed),
 //! 1 the run could not work (no key, no engine, no state folder, another run holds the lock), 2 wrong use.
-//! Every run that got past the lock leaves `<state>/ws/<project>/result.json` (written whole, mode 0600).
+//! Every run that got past the lock leaves `<state>/ws/<project>/result.json` (written whole, mode 0600). Its `code`
+//! (key, cap, api, app; empty for the rest) names the failures hook.rs tells the user at the next prompt.
 mod attach;
 mod client;
 mod prompt;
@@ -15,8 +16,8 @@ mod voice;
 use client::{Bad, Key};
 use schema::Start;
 use serde_json::{Value, json};
-pub use state::Gap;
 use state::env;
+pub use state::{Gap, Last};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -65,6 +66,8 @@ struct Outcome {
     saved: bool,
     promise: Option<u32>,
     message: String,
+    /// What the hook may tell the user at the next prompt: `key`, `cap`, `api`, `app` ("" = nothing to tell).
+    code: &'static str,
 }
 
 impl Outcome {
@@ -74,7 +77,13 @@ impl Outcome {
             saved: false,
             promise: None,
             message: message.into(),
+            code: "",
         }
+    }
+
+    fn code(mut self, code: &'static str) -> Self {
+        self.code = code;
+        self
     }
 }
 
@@ -243,7 +252,8 @@ fn local_checks(root: &Path) -> Result<Vec<Start>, Outcome> {
         return Err(Outcome::new(
             Kind::Advisory,
             "cannot make a check: package.json has no start, dev, serve or server script to start the app with",
-        ));
+        )
+        .code("app"));
     }
     attach::present(root).map_err(|m| Outcome::new(Kind::Error, m))?;
     Ok(starts)
@@ -269,7 +279,7 @@ fn plan(
     }
     let cfg = client::load_config().map_err(fail)?;
     let cap = client::day_cap(&cfg).map_err(fail)?;
-    let starts = local_checks(root)?;
+    // first: where Torpor is not saving, nothing about the folder (no start script) is news for the user
     if hook {
         let turn = attach::hook_turn(root).map_err(|why| Outcome::new(Kind::Skipped, why))?;
         if attach::promised_at(root, turn.n) {
@@ -279,7 +289,8 @@ fn plan(
             ));
         }
     }
-    let key = client::load_key(&cfg).map_err(fail)?;
+    let starts = local_checks(root)?;
+    let key = client::load_key(&cfg).map_err(|m| fail(m).code("key"))?;
     c.key = Some(key.clone());
     Ok(Plan {
         root: root.to_path_buf(),
@@ -322,7 +333,7 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
                     } else {
                         Kind::Advisory
                     };
-                    return Outcome::new(kind, bad.reason());
+                    return Outcome::new(kind, bad.reason()).code(bad.code());
                 };
                 std::thread::sleep(wait);
                 retry = None;
@@ -449,6 +460,7 @@ fn saved(c: &Ctx, p: &Plan, kind: Kind, promise: Option<u32>, line: &str, gap: &
         saved: true,
         promise,
         message,
+        code: "",
     }
 }
 
@@ -459,7 +471,7 @@ fn ask(c: &mut Ctx, p: &Plan, body: &str, attempt: u32) -> Result<client::Readin
     let mut ledger = crate::ledger::Ledger::open(&p.ledger_dir).map_err(err)?;
     let worst = ledger
         .preflight(&p.model, body.len(), MAX_OUT, p.cap)
-        .map_err(|m| Outcome::new(Kind::Advisory, m))?;
+        .map_err(|m| Outcome::new(Kind::Advisory, m).code("cap"))?;
     c.calls += 1;
     let timeout = p.http.min(c.time_left());
     let sent = Instant::now();
@@ -505,7 +517,7 @@ fn watchdog(c: &Ctx) {
         attach::kill_running();
         let message = "the run took too long and was stopped";
         if let Some(p) = result {
-            let row = json!({"v": 1, "at": crate::ledger::iso(crate::ledger::now_secs()), "outcome": Kind::Advisory.word(),
+            let row = json!({"v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": Kind::Advisory.word(),
                 "saved": false, "promise": null, "message": message, "session": session});
             let _ = state::write_atomic(&p, row.to_string().as_bytes());
         }
@@ -524,8 +536,8 @@ fn finish(c: &Ctx, o: Outcome) -> u8 {
     let message = c.safe(&o.message, 1500);
     if let Some(p) = &c.result {
         let row = json!({
-            "v": 1, "at": crate::ledger::iso(crate::ledger::now_secs()), "outcome": o.kind.word(), "saved": o.saved,
-            "promise": o.promise, "message": message, "session": c.session, "model": c.model, "calls": c.calls,
+            "v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": o.kind.word(), "saved": o.saved,
+            "promise": o.promise, "message": message, "code": o.code, "session": c.session, "model": c.model, "calls": c.calls,
             "usd": (c.usd * 1e6).round() / 1e6, "ms": u64::try_from(c.started.elapsed().as_millis()).unwrap_or(u64::MAX),
         });
         if let Err(e) = state::write_atomic(p, row.to_string().as_bytes()) {
@@ -549,16 +561,38 @@ pub fn gaps(cwd: &str) -> Vec<Gap> {
     repo::resolve_root(Some(cwd)).map_or_else(|_| Vec::new(), |r| state::gaps(&r))
 }
 
+/// What the last run in the project of `cwd` left in `result.json` (hook.rs tells the user when it failed).
+pub fn last_result(cwd: &str) -> Option<Last> {
+    state::last_result(&repo::resolve_root(Some(cwd)).ok()?)
+}
+
 /// hook.rs calls this on UserPromptSubmit (main session) after the engine call; returns at once (detached run).
-pub fn trigger(session_id: &str, cwd: &str, prompt: &str) {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = trigger_with(&exe, session_id, cwd, prompt);
-    }
+/// Some(kind) = no run started and the user should hear it at the next prompt (`Skip::news`).
+pub fn trigger(session_id: &str, cwd: &str, prompt: &str) -> Option<&'static str> {
+    let exe = std::env::current_exe().ok()?;
+    trigger_with(&exe, session_id, cwd, prompt).err()?.news()
 }
 
 /// Why the trigger did not start a run (it never says more than that, and never fails the hook).
 #[derive(Debug, PartialEq)]
 struct Skip(&'static str);
+
+const BUSY: &str = "a run is already under way here";
+const NO_STATE: &str = "no state folder";
+const NO_START: &str = "cannot start the run";
+
+impl Skip {
+    /// The skips the user is told about: `busy` (the run of an earlier prompt holds the folder) and `start` (a run
+    /// could not be started). A short prompt has nothing to check; no project folder, an unusable config or no key
+    /// are the "check-writer is off" note.
+    fn news(&self) -> Option<&'static str> {
+        match self.0 {
+            BUSY => Some("busy"),
+            NO_STATE | NO_START => Some("start"),
+            _ => None,
+        }
+    }
+}
 
 /// Why a prompt in Muse Code would not start the check-writer for want of a key (None = it would, or the cause is
 /// another). `env`: a `META_API_KEY` in this process's environment counts, as for the hook; `doctor` runs in a shell,
@@ -593,10 +627,10 @@ fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result
     if !file_ok && !client::env_key_ok() {
         return Err(Skip("no key file in the config, and no META_API_KEY"));
     }
-    let ws = state::ws_dir(&root).map_err(|_| Skip("no state folder"))?;
+    let ws = state::ws_dir(&root).map_err(|_| Skip(NO_STATE))?;
     match state::try_lock(&ws) {
         Ok(Some(_free)) => {}
-        _ => return Err(Skip("a run is already under way here")),
+        _ => return Err(Skip(BUSY)),
     }
     let mut cmd = Command::new(exe);
     cmd.args(["suggest", "-"])
@@ -611,7 +645,7 @@ fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result
     if file_ok {
         cmd.env_remove("META_API_KEY");
     }
-    crate::liveness::spawn_retry(&mut cmd).map_err(|_| Skip("cannot start the run"))
+    crate::util::spawn_retry(&mut cmd).map_err(|_| Skip(NO_START))
 }
 
 #[cfg(test)]
@@ -774,6 +808,21 @@ mod tests {
             std::env::remove_var("TORPOR_MUSE_STATE");
         }
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn only_a_busy_folder_or_a_run_that_would_not_start_is_news_for_the_user() {
+        assert_eq!(Skip(BUSY).news(), Some("busy"));
+        assert_eq!(Skip(NO_STATE).news(), Some("start"));
+        assert_eq!(Skip(NO_START).news(), Some("start"));
+        for quiet in [
+            "the prompt is too short",
+            "no usable project folder",
+            "the config file is not usable",
+            "no key file in the config, and no META_API_KEY",
+        ] {
+            assert_eq!(Skip(quiet).news(), None, "{quiet}");
+        }
     }
 
     #[test]

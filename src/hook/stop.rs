@@ -277,10 +277,7 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
         ));
     }
     if !risk.dbs.is_empty() {
-        did.push(format!(
-            "changed or deleted {} (database files)",
-            list(&risk.dbs)
-        ));
+        did.push(format!("deleted {} (database files)", list(&risk.dbs)));
     }
     if !did.is_empty() {
         let mut s = format!(
@@ -660,7 +657,7 @@ mod tests {
         };
         let r = reason(e, &[], &db).unwrap();
         for want in [
-            "This turn changed or deleted data/app.db (database files).",
+            "This turn deleted data/app.db (database files).",
             "stop the app that uses it first, then run `/opt/torpor back --id 5 --with-data`",
             "so later changes are undone too",
             "Run it only if the user asks.",

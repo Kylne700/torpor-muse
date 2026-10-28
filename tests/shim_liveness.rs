@@ -1,6 +1,11 @@
 //! Heartbeats and the turn counter (src/liveness.rs).
+// Each test crate compiles these src files on its own: what only the binary or another test crate calls looks unused.
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
+#[allow(dead_code)]
+#[path = "../src/util.rs"]
+mod util;
 
 #[path = "shim_common.rs"]
 mod common;
@@ -271,8 +276,6 @@ fn events_that_arrived_without_their_pair_are_listed() {
         all,
     );
     assert_eq!(sub, ["3 SubagentStart without SubagentStop"]);
-    let llm = unpaired(&seq(&["PostLLMCall"]), all);
-    assert_eq!(llm, ["1 PostLLMCall without PreLLMCall"]);
 }
 
 #[test]

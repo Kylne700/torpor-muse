@@ -4,16 +4,16 @@
 //! that is not its own probe process.
 //! Every line starts with `ok`, `info`, `warn` or `FIX`; a problem line is followed by a `do:` line that says how.
 //! Exit 0 = nothing to fix (warnings may remain), 1 = at least one FIX.
-#![allow(dead_code)] // tests/shim_doctor.rs reaches the parts
 
+use crate::hook::EVENTS;
 use crate::liveness::{self, PROBE_SID};
+use crate::util::{quote, spawn_retry};
 use crate::{install, transcript};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -24,22 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const MUSE_TESTED: &str = "1.4.13";
 /// Without these three the gate cannot work.
 const REQUIRED: [&str; 3] = ["SessionStart", "UserPromptSubmit", "Stop"];
-/// How long the engine lets itself run per event, in ms (Torpor 2.3.1 hook.rs `own_deadline_ms`). A Muse timeout
-/// shorter than this (plus 1 s for our own start-up) can kill the hook before the engine has answered.
-const ENGINE_MS: [(&str, u64); 10] = [
-    ("SessionStart", 3000),
-    ("UserPromptSubmit", 5000),
-    ("PreToolUse", 2000),
-    ("PostToolUse", 2000),
-    ("PostToolUseFailure", 2000),
-    ("Stop", 30000),
-    ("StopFailure", 5000),
-    ("SubagentStop", 1000),
-    ("PreCompact", 1000),
-    ("SessionEnd", 1200),
-];
 const LOGS_SCANNED: usize = 6;
-const ORPHAN_AGE_S: u64 = 120;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Muse keeps at most this much of a hook's stdout or stderr (it fails the hook beyond it); so does the probe.
 const PIPE_CAP: usize = 16 * 1024;
@@ -66,9 +51,6 @@ impl Report {
     }
     pub fn fixes(&self) -> usize {
         self.0.iter().filter(|(l, _)| *l == Level::Fix).count()
-    }
-    pub fn has(&self, l: Level, needle: &str) -> bool {
-        self.0.iter().any(|(k, s)| *k == l && s.contains(needle))
     }
     pub fn text(&self) -> String {
         let tag = |l: &Level| match l {
@@ -176,7 +158,6 @@ pub fn examine(c: &Ctx) -> Report {
         check_writer(&mut r);
     }
     check_xdg(c, &mut r);
-    check_orphans(c, &vault, &mut r);
     r
 }
 
@@ -295,15 +276,6 @@ pub fn words(s: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-pub fn quote(s: &str) -> String {
-    let plain = |c: char| c.is_ascii_alphanumeric() || "_-./=:@%+,".contains(c);
-    if !s.is_empty() && s.chars().all(plain) {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
-    }
-}
-
 /// A handler that runs `.../torpor-muse hook <Event>`, which is what `init` writes.
 pub fn is_ours(command: &str) -> bool {
     words(command).is_some_and(|w| {
@@ -399,10 +371,11 @@ fn check_hooks(c: &Ctx, ours: &[&Hook], r: &mut Report) {
                 "torpor-muse init",
             );
         }
-        let need = ENGINE_MS
+        // `engine_ms` is the engine's own limit plus 1.5 s of grace; Muse's timeout has to cover the limit plus 1 s.
+        let need = EVENTS
             .iter()
-            .find(|(e, _)| *e == h.event)
-            .map(|(_, ms)| ms + 1000);
+            .find(|e| e.name == h.event && e.engine_ms > 0)
+            .map(|e| e.engine_ms.saturating_sub(500));
         if let (Some(t), Some(need)) = (h.timeout, need)
             && t * 1000 < need
         {
@@ -531,7 +504,6 @@ struct LogEvent {
     hook_key: Option<String>,
     status: Option<String>,
     error: Option<String>,
-    exit_code: Option<i64>,
     stdout: Option<String>,
 }
 
@@ -1085,8 +1057,7 @@ fn run_shell(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    let mut child =
-        crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
+    let mut child = spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
     if let Some(mut si) = child.stdin.take() {
         let _ = si.write_all(stdin); // small; a hook that does not read it is fine
     }
@@ -1189,14 +1160,15 @@ fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {
     if !env.iter().any(|(k, _)| k == "PATH") {
         env.push(("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into()));
     }
+    // SubagentStart: a registered event that only records a heartbeat (in the probe vault), so the engine is not called.
     let payload = json!({
-        "hook_event_name": "Notification", "session_id": PROBE_SID, "cwd": c.cwd,
+        "hook_event_name": "SubagentStart", "session_id": PROBE_SID, "cwd": c.cwd,
         "transcript_path": null, "model": "probe", "model_provider": "probe", "permission_mode": "default",
     })
     .to_string();
     let cmds: BTreeSet<String> = ours
         .iter()
-        .filter_map(|h| probe_command(&h.command, &probe_vault, "Notification"))
+        .filter_map(|h| probe_command(&h.command, &probe_vault, "SubagentStart"))
         .collect();
     for cmd in cmds {
         let ran = match run_shell(
@@ -1225,7 +1197,7 @@ fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {
         if ran.timed_out {
             r.problem(Level::Fix, format!("probe: `{shell} -c` did not finish in {}s (the hook command, or the shell's start-up files, hang)", c.probe_timeout.as_secs()), "run the same command by hand and see where it stops");
         } else if ran.code != Some(0) {
-            r.problem(Level::Fix, format!("probe: the hook command exits with {:?}: {}", ran.code, clip(&err, 200)), "run `torpor-muse hook Notification < /dev/null` by hand; if the shell cannot find torpor-muse, run torpor-muse init again");
+            r.problem(Level::Fix, format!("probe: the hook command exits with {:?}: {}", ran.code, clip(&err, 200)), "run `torpor-muse hook SubagentStart < /dev/null` by hand; if the shell cannot find torpor-muse, run torpor-muse init again");
         } else if !out.trim().is_empty() && !object {
             r.problem(
                 Level::Fix,
@@ -1298,146 +1270,6 @@ fn check_xdg(c: &Ctx, r: &mut Report) {
     );
 }
 
-// ---------------------------------------------------------------- orphans of killed checks
-
-struct Proc {
-    pid: u32,
-    pgid: u32,
-    args: String,
-}
-
-fn processes() -> Vec<Proc> {
-    let Ok(out) = Command::new("ps")
-        .args(["-A", "-ww", "-o", "pid=,pgid=,command="])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let (pid, rest) = l.trim_start().split_once(' ')?;
-            let (pgid, args) = rest.trim_start().split_once(' ')?;
-            Some(Proc {
-                pid: pid.parse().ok()?,
-                pgid: pgid.parse().ok()?,
-                args: args.trim_start().to_string(),
-            })
-        })
-        .collect()
-}
-
-fn ms_of(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
-}
-
-/// A killed check can leave its app, its runner, its browser and a `tp-...` folder behind (README:213). The engine's
-/// scratch folders are `<vault>/<workspace>/scratch/<run>` (with `*.pgid` files naming the process groups) and the
-/// browser's is `tp-*` in the temp folder.
-fn check_orphans(c: &Ctx, vault: &Path, r: &mut Report) {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    for w in fs::read_dir(vault).into_iter().flatten().flatten() {
-        let name = w.file_name().to_string_lossy().into_owned();
-        if (name.len() == 16 || name.len() == 20) && name.bytes().all(|b| b.is_ascii_hexdigit()) {
-            dirs.extend(
-                fs::read_dir(w.path().join("scratch"))
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .map(|e| e.path()),
-            );
-        }
-    }
-    let me = fs::metadata(&c.home).map(|m| m.uid()).ok();
-    for t in &c.temps {
-        for e in fs::read_dir(t).into_iter().flatten().flatten() {
-            let owned = me.is_none_or(|u| e.metadata().is_ok_and(|m| m.uid() == u));
-            if e.file_name().to_string_lossy().starts_with("tp-") && owned {
-                dirs.push(e.path());
-            }
-        }
-    }
-    dirs.retain(|d| {
-        d.is_dir()
-            && fs::metadata(d)
-                .and_then(|m| m.modified())
-                .is_ok_and(|m| c.now_ms.saturating_sub(ms_of(m)) > ORPHAN_AGE_S * 1000)
-    });
-    dirs.sort();
-    dirs.dedup();
-    if dirs.is_empty() {
-        return;
-    }
-    let procs = processes();
-    let own_pgid = procs
-        .iter()
-        .find(|p| p.pid == std::process::id())
-        .map(|p| p.pgid);
-    let have_proc = Path::new("/proc/self").exists();
-    for d in dirs {
-        let ds = d.to_string_lossy().into_owned();
-        let holders: Vec<&Proc> = procs
-            .iter()
-            .filter(|p| p.pid != std::process::id())
-            .filter(|p| {
-                p.args.contains(&ds)
-                    || (have_proc
-                        && fs::read_link(format!("/proc/{}/cwd", p.pid))
-                            .is_ok_and(|w| w.starts_with(&d)))
-            })
-            .collect();
-        let listed: BTreeSet<u32> = fs::read_dir(&d)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with(".pgid"))
-            .filter_map(|e| fs::read_to_string(e.path()).ok()?.trim().parse().ok())
-            .collect();
-        let mut cmds: Vec<String> = Vec::new();
-        // A group is killed only when a process that works in this folder belongs to it (a recycled number is not ours).
-        let groups: BTreeSet<u32> = holders
-            .iter()
-            .map(|p| p.pgid)
-            .filter(|g| listed.contains(g) && *g > 1 && Some(*g) != own_pgid)
-            .collect();
-        cmds.extend(groups.iter().map(|g| format!("kill -9 -- -{g}")));
-        let loose: Vec<String> = holders
-            .iter()
-            .filter(|p| !groups.contains(&p.pgid) && Some(p.pgid) != own_pgid)
-            .map(|p| p.pid.to_string())
-            .collect();
-        if !loose.is_empty() {
-            cmds.push(format!("kill -9 {}", loose.join(" ")));
-        }
-        cmds.push(format!("rm -rf {}", quote(&ds)));
-        let age = fs::metadata(&d)
-            .and_then(|m| m.modified())
-            .map_or("?".into(), |m| ago(c.now_ms, ms_of(m)));
-        let (l, what) = if holders.is_empty() {
-            (
-                Level::Warn,
-                format!(
-                    "leftover folder of a killed check: {ds} ({age} old, no process works in it)"
-                ),
-            )
-        } else {
-            let list: Vec<String> = holders
-                .iter()
-                .map(|p| format!("{} {}", p.pid, clip(&p.args, 60)))
-                .collect();
-            (
-                Level::Fix,
-                format!(
-                    "a killed check left processes running for {ds} ({age} old): {}",
-                    list.join("; ")
-                ),
-            )
-        };
-        r.problem(l, what, cmds.join("; "));
-    }
-}
-
 // ---------------------------------------------------------------- small helpers
 
 fn ago(now_ms: u64, t_ms: u64) -> String {
@@ -1466,4 +1298,9 @@ fn clip(s: &str, n: usize) -> String {
 
 fn short(id: &str) -> String {
     id.chars().take(13).collect()
+}
+
+fn ms_of(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }

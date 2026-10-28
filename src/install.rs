@@ -6,10 +6,11 @@
 //! the file before and the result after, writes through a temp file and a rename, and refuses rather than guesses.
 
 use crate::engine;
-use crate::hook::{Act, EVENTS, Ev};
+use crate::hook::{EVENTS, Ev, RETIRED};
+use crate::util::{self, quote};
 use serde_json::{Map, Value, json};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -27,18 +28,6 @@ fn backup_path(settings: &Path) -> PathBuf {
     let mut s = settings.as_os_str().to_owned();
     s.push(".torpor-muse.bak");
     PathBuf::from(s)
-}
-
-/// Single quotes only when the shell needs them. Works in sh, bash, zsh and fish.
-fn quote(s: &str) -> String {
-    let plain = !s.is_empty()
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"_-./:=+,@%".contains(&b));
-    if plain {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
-    }
 }
 
 /// Muse runs hooks with a cleared environment (D5/AD8), so the store and the engine are baked into the command.
@@ -72,14 +61,15 @@ fn group(ev: &Ev, cmd: String) -> Value {
     Value::Object(g)
 }
 
-/// Removes our handlers; a group or event that only we filled goes with them. Returns how many handlers went.
+/// Removes our handlers, also those an earlier version registered for an event we no longer use (RETIRED); a group or
+/// event that only we filled goes with them. Returns how many handlers went.
 fn prune(doc: &mut Value) -> usize {
     let mut removed = 0;
     let Some(hooks) = doc.get_mut("hooks").and_then(Value::as_object_mut) else {
         return 0;
     };
-    for ev in EVENTS {
-        let Some(groups) = hooks.get_mut(ev.name).and_then(Value::as_array_mut) else {
+    for name in EVENTS.iter().map(|e| e.name).chain(RETIRED.iter().copied()) {
+        let Some(groups) = hooks.get_mut(name).and_then(Value::as_array_mut) else {
             continue;
         };
         let before = removed;
@@ -88,7 +78,7 @@ fn prune(doc: &mut Value) -> usize {
             let mut here = 0;
             if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
                 let n = hs.len();
-                hs.retain(|h| !is_ours(h, ev.name));
+                hs.retain(|h| !is_ours(h, name));
                 here = n - hs.len();
                 if here > 0 && hs.is_empty() {
                     removed += here;
@@ -100,7 +90,7 @@ fn prune(doc: &mut Value) -> usize {
         }
         *groups = kept;
         if removed > before && groups.is_empty() {
-            hooks.remove(ev.name);
+            hooks.remove(name);
         }
     }
     if removed > 0 && hooks.is_empty() {
@@ -207,6 +197,23 @@ pub fn refusal(path: &Path) -> Option<String> {
     }
 }
 
+/// Our (group, handler) pairs under one event name.
+fn ours_in<'a>(doc: &'a Value, name: &str) -> Vec<(&'a Value, &'a Value)> {
+    doc["hooks"][name]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|g| {
+            g["hooks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |h| (g, h))
+        })
+        .filter(|(_, h)| is_ours(h, name))
+        .collect()
+}
+
 /// The finished document must hold exactly our entries, as Muse reads them, and leave everything else as it was.
 fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     let mut rest = new.clone();
@@ -217,29 +224,15 @@ fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     if rest != old {
         return Err("internal check failed: the edit would change more than our entries".into());
     }
-    for ev in EVENTS {
-        let ours: Vec<(&Value, &Value)> = new["hooks"][ev.name]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|g| {
-                g["hooks"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(move |h| (g, h))
-            })
-            .filter(|(_, h)| is_ours(h, ev.name))
-            .collect();
-        if ev.act == Act::Off {
-            if !ours.is_empty() {
-                return Err(format!(
-                    "internal check failed: {} must not be registered",
-                    ev.name
-                ));
-            }
-            continue;
+    for name in RETIRED {
+        if !ours_in(new, name).is_empty() {
+            return Err(format!(
+                "internal check failed: {name} must not be registered"
+            ));
         }
+    }
+    for ev in EVENTS {
+        let ours = ours_in(new, ev.name);
         let [(g, h)] = ours[..] else {
             return Err(format!(
                 "internal check failed: {} entries for {}",
@@ -274,8 +267,8 @@ fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Writes `bytes` to `path` through a temp file in the same directory: write, fsync, `before_rename`, rename.
-/// A failure (or a crash) before the rename leaves `path` as it was. `mode` is for a new file.
+/// `util::write_atomic` with the folder made, the mode of an existing file kept (`mode` is for a new one) and the
+/// folder fsynced after the rename.
 fn write_atomic(
     path: &Path,
     bytes: &[u8],
@@ -284,28 +277,12 @@ fn write_atomic(
 ) -> io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir)?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let tmp = dir.join(format!(".{name}.tmp{}", std::process::id()));
-    let _ = fs::remove_file(&tmp); // left over from a crash of an earlier run with the same process id
-    let put = || -> io::Result<()> {
-        let mode = fs::metadata(path).map_or(mode, |m| m.permissions().mode() & 0o777);
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        before_rename()?;
-        fs::rename(&tmp, path)
-    };
-    let r = put();
-    if r.is_err() {
-        let _ = fs::remove_file(&tmp);
-    } else if let Ok(d) = fs::File::open(dir) {
+    let mode = fs::metadata(path).map_or(mode, |m| m.permissions().mode() & 0o777);
+    util::write_atomic(path, bytes, mode, true, before_rename)?;
+    if let Ok(d) = fs::File::open(dir) {
         let _ = d.sync_all();
     }
-    r
+    Ok(())
 }
 
 fn pretty(doc: &Value) -> Vec<u8> {
@@ -352,7 +329,7 @@ fn try_init() -> Result<(), String> {
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or("hooks is not an object")?;
-    for ev in EVENTS.iter().filter(|e| e.act != Act::Off) {
+    for ev in EVENTS {
         let list = hooks.entry(ev.name).or_insert_with(|| json!([]));
         list.as_array_mut()
             .ok_or_else(|| format!("hooks.{} is not a list", ev.name))?
@@ -518,7 +495,7 @@ mod tests {
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .unwrap();
-        for ev in EVENTS.iter().filter(|e| e.act != Act::Off) {
+        for ev in EVENTS {
             let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", ev.name);
             hooks
                 .entry(ev.name)
@@ -533,10 +510,7 @@ mod tests {
     #[test]
     fn prune_removes_exactly_our_entries() {
         let mut doc = ours_doc(foreign());
-        assert_eq!(
-            prune(&mut doc),
-            EVENTS.iter().filter(|e| e.act != Act::Off).count()
-        );
+        assert_eq!(prune(&mut doc), EVENTS.len());
         assert_eq!(doc, foreign());
         let mut fresh = ours_doc(json!({"schema_version": 1}));
         prune(&mut fresh);
@@ -545,6 +519,32 @@ mod tests {
             json!({"schema_version": 1}),
             "an empty hooks object goes too"
         );
+    }
+
+    #[test]
+    fn retired_rows_are_removed_and_never_written_but_a_foreign_one_stays() {
+        let mut before = foreign();
+        before["hooks"]["PostCompact"] = json!([{"hooks": [{"type": "command", "command": "echo foreign-compact", "timeout": 3}]}]);
+        let mut doc = ours_doc(before.clone());
+        for name in RETIRED {
+            let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", name);
+            let row = json!({"hooks": [{"type": "command", "command": cmd, "timeout": 5}]});
+            doc["hooks"]
+                .as_object_mut()
+                .unwrap()
+                .entry(*name)
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .unwrap()
+                .push(row);
+        }
+        let err = check_result(&doc, &before).unwrap_err();
+        assert!(
+            err.contains("PostToolBatch must not be registered"),
+            "{err}"
+        );
+        assert_eq!(prune(&mut doc), EVENTS.len() + RETIRED.len());
+        assert_eq!(doc, before);
     }
 
     #[test]

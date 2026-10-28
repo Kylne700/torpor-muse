@@ -11,6 +11,7 @@ mod liveness;
 mod schema;
 mod suggest;
 mod transcript;
+mod util;
 
 use std::process::ExitCode;
 

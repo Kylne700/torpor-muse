@@ -232,9 +232,32 @@ pub(super) fn net(e: ureq::Error) -> Net {
     }
 }
 
-/// One POST to `/v1/responses`. Redirects are not followed (the key must not travel on), and a status of 4xx or 5xx
-/// is a reply, not an error, so that its body and Retry-After can be read.
+/// One POST to `/v1/responses`.
 pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Reply, Net> {
+    let json = [("Content-Type", "application/json")];
+    post_to(
+        base,
+        "/v1/responses",
+        key,
+        &json,
+        body.as_bytes(),
+        MAX_BODY,
+        timeout,
+    )
+}
+
+/// One POST to `path` under `base`, with the key and `headers`. Redirects are not followed (the key must not travel
+/// on), and a status of 4xx or 5xx is a reply, not an error, so that its body and Retry-After can be read. A body
+/// longer than `limit` bytes is an error.
+pub(super) fn post_to(
+    base: &Base,
+    path: &str,
+    key: &Key,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    limit: u64,
+    timeout: Duration,
+) -> Result<Reply, Net> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .max_redirects(0)
@@ -243,12 +266,13 @@ pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Rep
         .user_agent(concat!("torpor-muse/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
-    let mut resp = agent
-        .post(format!("{}/v1/responses", base.url))
-        .header("Authorization", key.bearer())
-        .header("Content-Type", "application/json")
-        .send(body)
-        .map_err(net)?;
+    let mut req = agent
+        .post(format!("{}{path}", base.url))
+        .header("Authorization", key.bearer());
+    for (name, value) in headers {
+        req = req.header(*name, *value);
+    }
+    let mut resp = req.send(body).map_err(net)?;
     let status = resp.status().as_u16();
     let retry_after = resp
         .headers()
@@ -258,7 +282,7 @@ pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Rep
     let body = resp
         .body_mut()
         .with_config()
-        .limit(MAX_BODY)
+        .limit(limit)
         .read_to_string()
         .map_err(net)?;
     Ok(Reply {
@@ -315,6 +339,16 @@ impl Bad {
             self,
             Bad::Truncated | Bad::Refused(_) | Bad::Empty | Bad::Malformed(_)
         )
+    }
+
+    /// The kind the hook tells the user about when a run ends on this fault: `key` (Meta refused the key or its
+    /// billing), `api` (the call itself failed). "" = the model's own fault, which is not the user's news.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Bad::Billing(_) | Bad::Auth(_) => "key",
+            _ if self.rejected() => "",
+            _ => "api",
+        }
     }
 
     pub fn reason(&self) -> String {
@@ -486,6 +520,33 @@ mod tests {
         match r.charge {
             Charge::Usage(u) => assert_eq!((u.input, u.cached, u.output), (1000, 200, 500)),
             c => panic!("{c:?}"),
+        }
+    }
+
+    #[test]
+    fn only_a_fault_around_the_model_has_a_kind_the_user_is_told() {
+        let code = |s: u16| {
+            interpret(&reply(s, r#"{"error":{"message":"m"}}"#), 0.05)
+                .outcome
+                .unwrap_err()
+                .code()
+        };
+        assert_eq!((code(401), code(402)), ("key", "key"));
+        assert_eq!(
+            (code(400), code(404), code(429), code(500)),
+            ("api", "api", "api", "api")
+        );
+        assert_eq!(
+            (Bad::Network("n".into()).code(), Bad::Timeout.code()),
+            ("api", "api")
+        );
+        for model_fault in [
+            Bad::Truncated,
+            Bad::Empty,
+            Bad::Refused("r".into()),
+            Bad::Malformed("m".into()),
+        ] {
+            assert_eq!(model_fault.code(), "", "{model_fault:?}");
         }
     }
 

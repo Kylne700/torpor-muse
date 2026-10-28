@@ -32,18 +32,6 @@ pub struct Common {
     pub turn_id: Option<String>,
 }
 
-/// One entry of PostToolBatch `tool_calls[]`.
-#[allow(dead_code)] // the fields document the payload
-#[derive(Deserialize, Debug, Clone, Default)]
-pub struct ToolCall {
-    pub tool_name: Option<String>,
-    pub tool_input: Value,
-    pub tool_response: Value,
-    pub tool_use_id: Option<String>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
 /// One struct per event (common keys + the event's own keys + every key we do not know yet in `extra`), an enum over
 /// them, and the list of event names.
 macro_rules! payloads {
@@ -80,7 +68,7 @@ macro_rules! payloads {
             }
         }
 
-        /// Every Muse hook event kind (research/59 section 4, binary strings of 1.4.13).
+        /// The events we register (`hook::EVENTS`).
         #[cfg(test)]
         pub const EVENT_NAMES: &[&str] = &[$($event),*];
     };
@@ -98,7 +86,6 @@ payloads! {
         tool_name: Option<String>, tool_input: Value, tool_use_id: Option<String>,
         error: Option<String>, duration_ms: Value, is_interrupt: Option<bool>,
     }
-    PostToolBatch: "PostToolBatch" { tool_calls: Vec<ToolCall> }
     Stop: "Stop" { last_assistant_message: Option<String>, stop_hook_active: Option<bool> }
     StopFailure: "StopFailure" { error: Option<String>, last_assistant_message: Option<String> }
     SubagentStart: "SubagentStart" { subagent_id: Option<String>, child_session_id: Option<String> }
@@ -107,21 +94,6 @@ payloads! {
         last_assistant_message: Option<String>, stop_hook_active: Option<bool>,
     }
     PreCompact: "PreCompact" { trigger: Option<String> }
-    PostCompact: "PostCompact" { trigger: Option<String> }
-    PreLLMCall: "PreLLMCall" {
-        attempt: Value, message_count: Value, messages: Value, options: Value, provider: Option<String>,
-        request_id: Option<String>, step: Value, tool_count: Value, tools: Value,
-    }
-    PostLLMCall: "PostLLMCall" {
-        attempt: Value, message_count: Value, messages: Value, options: Value, provider: Option<String>,
-        request_id: Option<String>, step: Value, tool_count: Value, tools: Value,
-        error: Value, finish_reason: Option<String>, output_text_preview: Option<String>,
-        response_id: Option<String>, status: Option<String>, tool_call_count: Value, usage: Value,
-    }
-    PermissionRequest: "PermissionRequest" {}
-    Notification: "Notification" {}
-    Interrupt: "Interrupt" {}
-    SessionFork: "SessionFork" {}
 }
 
 /// True when the event comes from an observer child session (research/59 D10): in every one of the 1,329 hook payloads
@@ -150,9 +122,6 @@ const CONTEXT_OK: &[&str] = &[
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
-    "PostToolBatch",
-    "PreLLMCall",
-    "PostLLMCall",
 ];
 const DEFAULT_REASON: &str =
     "Torpor stopped this turn from ending but gave no reason. Run `torpor status` to see why.";
@@ -430,6 +399,58 @@ fn runnable(text: &str, cmd: &str) -> String {
     out
 }
 
+/// What the engine tells the AI to ask the person for, said as it is true under Muse: the AI runs `recover` itself (it
+/// is not on the engine's list of the person's own commands).
+const ASK_RECOVER: &str = "Ask the user to run torpor recover before editing.";
+const RUN_RECOVER: &str = "Run torpor recover yourself before editing; it is safe.";
+
+/// The engine nudges the AI to run a check after each edit of a file the check covers. With the gate off (Muse's
+/// default) nothing waits for it, so the line is not passed on.
+const TOUCH_NUDGE: &str = "Torpor: edit touches promise";
+
+/// One line of the engine's systemMessage as the person should read it. Under Muse they talk to the AI and do not type
+/// `torpor`, so the engine's "type this" tails are dropped or made into something to ask the AI, and a failed check no
+/// longer says it "would have stopped the AI" (the gate is off). The engine's texts are frozen: only this rewords them.
+fn for_user(line: &str) -> String {
+    const UNDO_TAIL: &str = " · undo it: torpor undo ";
+    let mut s = line
+        .replace(" See the turns: torpor log. Undo one: torpor undo N.", "")
+        .replace(
+            " not saved (torpor status)",
+            " not saved (ask the AI to run torpor status)",
+        );
+    if let Some(i) = s.find(UNDO_TAIL) {
+        let end = i + UNDO_TAIL.len();
+        let digits = s[end..].bytes().take_while(u8::is_ascii_digit).count();
+        if digits > 0 {
+            s.replace_range(i..end + digits, "");
+        }
+    }
+    failed_check(&s).unwrap_or(s)
+}
+
+/// gate.rs `fail_line`, `Torpor: promise #3 (name) failed after this turn (3 of 3 runs; it passed on ...). <tail> torpor
+/// promise show 3`, as `Torpor: check #3 (name) failed after this turn (...). (ask the AI: torpor promise show 3)`. Any
+/// other line is None.
+fn failed_check(line: &str) -> Option<String> {
+    const MID: &str = ") failed after this turn (";
+    const SHOW: &str = " torpor promise show ";
+    let rest = line.strip_prefix("Torpor: promise #")?;
+    // the last MID: the words are the person's and may hold anything, the rest of the line is the engine's
+    let (head, tail) = rest.rsplit_once(MID)?;
+    let (what, id) = tail.rsplit_once(SHOW)?;
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let what = what.replace(
+        " It would have stopped the AI, but it is in shadow mode.",
+        "",
+    );
+    Some(format!(
+        "Torpor: check #{head}{MID}{what} (ask the AI: torpor promise show {id})"
+    ))
+}
+
 /// The engine's Claude-style stdout turned into what Muse accepts, plus a note for everything dropped or changed.
 /// `header` makes the "latest supersedes earlier" line (research/59 D9) for the notes that carry state. None = print
 /// nothing (the hook then exits 0 and the turn goes on).
@@ -463,10 +484,17 @@ pub fn sanitise(
             .map(|s| s.replace("Claude Code", "Muse Code")) // the engine's text names another product
     };
     // What the model reads names the engine by `torpor` (the path of the engine that ran, see `runnable`).
-    let for_model = |m: &Map<String, Value>, k: &str| text(m, k).map(|s| runnable(&s, torpor));
+    let for_model = |m: &Map<String, Value>, k: &str| {
+        text(m, k).map(|s| runnable(&s.replace(ASK_RECOVER, RUN_RECOVER), torpor))
+    };
     let mut out = Output {
         system_message: text(&map, "systemMessage").map(|m| {
-            let lines: Vec<&str> = m.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+            let lines: Vec<String> = m
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(for_user)
+                .collect();
             cut_chars(&lines.join(JOIN), SYSTEM_MESSAGE_MAX)
         }),
         ..Output::default()
@@ -487,7 +515,16 @@ pub fn sanitise(
             hook_event_name: event.to_string(),
             ..Specific::default()
         };
-        if let Some(c) = for_model(h, "additionalContext") {
+        let context = for_model(h, "additionalContext").map(|c| match event {
+            "PostToolUse" | "PostToolUseFailure" => {
+                let keep = c
+                    .lines()
+                    .filter(|l| !l.trim_start().starts_with(TOUCH_NUDGE));
+                keep.collect::<Vec<_>>().join("\n")
+            }
+            _ => c,
+        });
+        if let Some(c) = context.filter(|c| !c.trim().is_empty()) {
             if !CONTEXT_OK.contains(&event) {
                 notes.push(format!("additionalContext dropped: not allowed on {event}"));
             } else if matches!(event, "SessionStart" | "UserPromptSubmit") {
@@ -729,6 +766,100 @@ mod tests {
         assert!(clean("Stop", "hello").0.is_none());
         assert!(clean("Stop", "[1]").0.is_none());
         assert!(clean("Stop", "").0.is_none());
+    }
+
+    /// The person under Muse talks to the AI and never types `torpor`: these are the engine's own lines (engine
+    /// a2289f4, hook.rs 675 and 1338-1361, gate.rs 241-258 and 683-693) as the person, or the model, reads them.
+    #[test]
+    fn what_the_engine_tells_a_person_to_type_is_not_passed_on() {
+        let user = |event: &str, msg: &str| {
+            let engine = json!({ "systemMessage": msg });
+            let (o, n) = clean(event, &engine.to_string());
+            assert!(n.is_empty(), "{n:?}");
+            let o: Value = serde_json::from_str(&o.unwrap()).unwrap();
+            o["systemMessage"].as_str().unwrap().to_string()
+        };
+        // the Stop line loses the undo command, and what is not saved is for the AI to look up
+        assert_eq!(
+            user(
+                "Stop",
+                "Torpor: save point 31 · turn 5 changed 1 file (1 edit) · undo it: torpor undo 5 · saved before npm test · 2 files not saved (torpor status)"
+            ),
+            "Torpor: save point 31 · turn 5 changed 1 file (1 edit) · saved before npm test · 2 files not saved (ask the AI to run torpor status)"
+        );
+        let one = "Torpor: save point 3 · turn 1 changed 2 files (2 edits) · undo it: torpor undo 1 · 1 file not saved (torpor status)";
+        assert_eq!(
+            user("Stop", one),
+            "Torpor: save point 3 · turn 1 changed 2 files (2 edits) · 1 file not saved (ask the AI to run torpor status)"
+        );
+        // a line that only looks like it is left as it is (a tail with no number)
+        let odd = "Torpor: save point 3. undo it: torpor undo x";
+        assert_eq!(user("Stop", odd), odd);
+        // the welcome
+        assert_eq!(
+            user(
+                "SessionStart",
+                "Torpor is saving this folder at the start and end of every turn. See the turns: torpor log. Undo one: torpor undo N."
+            ),
+            "Torpor is saving this folder at the start and end of every turn."
+        );
+        // a failed check: "check", no "shadow mode" sentence, the command is something to ask the AI for
+        assert_eq!(
+            user(
+                "Stop",
+                "Torpor: promise #1 (proof page answers) failed after this turn (3 of 3 runs; it passed on the kept version (save point 3)). It would have stopped the AI, but it is in shadow mode. torpor promise show 1"
+            ),
+            "Torpor: check #1 (proof page answers) failed after this turn (3 of 3 runs; it passed on the kept version (save point 3)). (ask the AI: torpor promise show 1)"
+        );
+        assert_eq!(
+            user(
+                "Stop",
+                "Torpor: promise #12 (a (b) failed after this turn (x) c) failed after this turn (3 of 3 runs; it passed on the version from the end of turn 4). The AI was not stopped. torpor promise show 12"
+            ),
+            "Torpor: check #12 (a (b) failed after this turn (x) c) failed after this turn (3 of 3 runs; it passed on the version from the end of turn 4). The AI was not stopped. (ask the AI: torpor promise show 12)"
+        );
+        // the other promise lines, a "new promise" line and a failure line cut short are the engine's own words
+        for same in [
+            "Torpor: promise #2 (api answers) passed and failed on the same version, so it is flaky and advisory only. torpor promise show 2",
+            "Torpor: promise #6 (w) failed after this turn (3 of 3 runs). torpor promise show six",
+            "Torpor: new promise #1 \"x\" (shadow), from your words at turn 1. Drop it: torpor promise drop 1",
+        ] {
+            assert_eq!(user("Stop", same), same);
+        }
+        // what the model reads: it runs `recover` itself
+        let (o, _) = clean(
+            "UserPromptSubmit",
+            r#"{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Torpor: a restore was interrupted and some files are mixed. Ask the user to run torpor recover before editing."}}"#,
+        );
+        let o = o.unwrap();
+        assert!(
+            o.contains("Run torpor recover yourself before editing; it is safe.")
+                && !o.contains("Ask the user"),
+            "{o}"
+        );
+        // the nudge to run a check after an edit is not passed on; nothing else is lost, and nothing is noted
+        let nudge = "Torpor: edit touches promises #1, #2; `torpor check 1 2` before finishing";
+        for event in ["PostToolUse", "PostToolUseFailure"] {
+            let engine = json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": nudge}});
+            assert_eq!(clean(event, &engine.to_string()), (None, vec![]));
+            let engine = json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": format!("Torpor: first\n{nudge}\nTorpor: last")}});
+            let (o, n) = clean(event, &engine.to_string());
+            assert!(n.is_empty());
+            assert_eq!(
+                o.unwrap(),
+                format!(
+                    r#"{{"hookSpecificOutput":{{"hookEventName":"{event}","additionalContext":"Torpor: first\nTorpor: last"}}}}"#
+                )
+            );
+        }
+        // on the other events that text is not touched
+        let engine = json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": nudge}});
+        assert!(
+            clean("PreToolUse", &engine.to_string())
+                .0
+                .unwrap()
+                .contains("edit touches promises")
+        );
     }
 
     #[test]
