@@ -6,7 +6,7 @@
 //   node run.mjs hashes                                 sha256 of both binaries, Muse, the wrapper and the driver files
 //   node run.mjs prompts                                every fixed prompt and script, as the model gets it
 //   node run.mjs wrapcost [--n 400]                     the wrapper's own cost on a no-op command
-//   node run.mjs run --session ID [--echo] [--locked]   one session (--echo = free echo provider, no key, no network)
+//   node run.mjs run --session ID [--echo] [--locked]   one session (--echo = free echo provider, no key, no network; --turns N = only the first N turns, echo only)
 //   node run.mjs ledger --file F                        the spend ledger from the recorded usage
 // Common options: --root DIR (project root; keys/, scratch/ below it) --tmp-base DIR --out DIR (private records) --adapter F --engine F
 //   --hookwrap F --muse-dir DIR --key-file F --cap 5 --run-cap 0.30 --label NAME --calibration
@@ -15,6 +15,7 @@
 import cp from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +23,8 @@ import { egressRead, epProcs, killEp } from '../../eval/run/sandbox.mjs';
 import * as A from '../../drill/harness/arms.mjs';
 import { MODEL, MUSE_ENV, inspect, priceRow, records, usageRows } from '../../drill/harness/live.mjs';
 import { GuardError, InfraError, NODE_BIN, NODE_EXEC, findBwrap, makeRunFolder, makeSandbox, safeDelete, toolEnv } from '../../drill/harness/sandbox.mjs';
-import { diffManifest, estAware, ledgerRows, manifest, parseWrapLog, stats, sumBy, wrapHooks } from './lib.mjs';
-import { ASSETS, HOLDER_JS, SESSIONS, fill, promptsText } from './scripts.mjs';
+import { compactionFacts, diffManifest, estAware, ledgerRows, manifest, parseWrapLog, stats, sumBy, wrapHooks } from './lib.mjs';
+import { ASSETS, E9_PACKAGE_JSON, E9_TEST_JS, HOLDER_JS, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
@@ -38,6 +39,7 @@ const sumCost = (rows) => sumBy(rows, priceOf);
 const utc = () => new Date().toISOString();
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const round = (x, n = 6) => Math.round(x * 10 ** n) / 10 ** n;
+const hashDir = (dir) => { try { return Object.fromEntries(fs.readdirSync(dir).sort().map((n) => [n, fs.statSync(path.join(dir, n)).isFile() ? sha(path.join(dir, n)) : 'not-a-file'])); } catch { return null; } };
 const freeGiB = (p) => { const s = fs.statfsSync(p); return (s.bavail * s.bsize) / GIB; };
 const TMUX_ENV = { PATH: '/usr/local/bin:/usr/bin:/bin', TERM: 'xterm-256color', LANG: 'C.UTF-8' };
 
@@ -133,6 +135,23 @@ const isSub = (p) => p.includes(`${path.sep}subagent${path.sep}`);
 const sessionFiles = (T) => walkFiles(path.join(T, 'home/.local/share/muse/sessions'), (p) => path.basename(p) === 'session.jsonl').sort();
 const writerLedger = (T) => walkFiles(path.join(T, 'torpor-home'), (p) => path.basename(p) === 'ledger.jsonl').flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }));
 
+// The engine's own records, copied read-only (E1b: which Stop ran a saved check; the receipt check: which save point ends which turn). In promise_runs a row
+// of kind gate is a saved check run by a Stop; `at` (ns since the epoch, kept as text) is when its batch finished.
+async function engineRecords(T) {
+  const file = walkFiles(path.join(T, 'torpor-home'), (p) => path.basename(p) === 'torpor.db')[0];
+  if (!file) return null;
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(file, { readOnly: true });
+  try {
+    const all = (sql) => d.prepare(sql).all();
+    return {
+      promise_runs: all('select id, promise_id, kind, verdict, failed_step, ms, cast(at as text) as at_ns from promise_runs order by id'),
+      turns: all('select id, n, start_point, end_point, end_kind, origin, cast(started_at as text) as started_ns, cast(ended_at as text) as ended_ns, bash_count from turns order by id'),
+      points: all('select id, kind, visible, turn_id, partial, dropped, note, cast(created_at as text) as created_ns from points order by id'),
+    };
+  } finally { d.close(); }
+}
+
 class Stop extends Error { constructor(msg, why, stage = false) { super(msg); this.why = why; this.stage = stage; } }
 let active = null;
 function killActive() { if (active) { tm(active.S, 'kill-server'); killEp(active.T); } }
@@ -148,7 +167,8 @@ function buildWorkspace(ctx, sb, T, spec) {
     const ws = path.join(T, 'ws');
     fs.mkdirSync(ws);
     fs.copyFileSync(path.join(REPO, 'demo/app/server.js'), path.join(ws, 'server.js'));
-    fs.writeFileSync(path.join(ws, 'package.json'), `${JSON.stringify({ name: 'login-demo', version: '1.0.0', private: true, scripts: { start: 'node server.js' } }, null, 2)}\n`);
+    fs.writeFileSync(path.join(ws, 'package.json'), spec.tests ? E9_PACKAGE_JSON : `${JSON.stringify({ name: 'login-demo', version: '1.0.0', private: true, scripts: { start: 'node server.js' } }, null, 2)}\n`);
+    if (spec.tests) { fs.mkdirSync(path.join(ws, 'test')); fs.writeFileSync(path.join(ws, 'test/login.test.js'), E9_TEST_JS); }
     fs.writeFileSync(path.join(ws, 'README.md'), '# Login demo\n\nA small login page. Start it with `npm start` (port 3000, or `--port N`).\n');
     fs.writeFileSync(path.join(ws, '.synthetic'), 'synthetic workspace for the L4 proof\n');
     fs.mkdirSync(path.join(T, 'home'), { recursive: true });
@@ -204,15 +224,30 @@ async function runSession(ctx, spec, o) {
     for (const d of ['home/.config', 'tmp', 'torpor-home', 'muse-share', 'bin', 'live', 'shared']) fs.mkdirSync(path.join(T, d), { recursive: true });
     fs.writeFileSync(path.join(T, '.drill-run'), `${JSON.stringify({ id: spec.id, mode: rec.mode })}\n`);
     if (!fs.existsSync(path.join(T, 'home/.gitconfig'))) fs.writeFileSync(path.join(T, 'home/.gitconfig'), '[user]\n\tname = drill\n\temail = drill.invalid\n[core]\n\thooksPath = /dev/null\n[commit]\n\tgpgsign = false\n');
+    if (spec.decoy) { // E8: the folder the AI is asked to delete, in this run's own home (HOME=<run>/home inside the sandbox). Never the real home.
+      const dd = path.join(T, 'home', spec.decoy.dir);
+      fs.mkdirSync(dd);
+      for (const [name, text] of Object.entries(spec.decoy.files)) fs.writeFileSync(path.join(dd, name), text);
+      const real = fs.realpathSync(dd), here = fs.realpathSync(T), realHome = os.userInfo().homedir;
+      if (!real.startsWith(`${here}${path.sep}`) || real.startsWith(`${realHome}${path.sep}`)) throw new GuardError(`the decoy folder is not inside this run's own folder: ${real}`);
+      rec.decoy = { dir: spec.decoy.dir, realpath: real, before: hashDir(real) };
+    }
+    if (spec.tests) { // E9: the app's own test, run once before Muse starts; the case only counts if it passes before the edit
+      const r = sb.exec({ argv: ['sh', '-c', 'node --test 2>&1; echo exit=$?; git status --porcelain'], cwd: ws, env: toolEnv(T), merge: true, timeoutMs: 120000 });
+      rec.pretest = { ok: `\n${r.stdout}`.includes('\nexit=0\n'), tail: r.stdout.slice(-700) };
+      if (!rec.pretest.ok) throw new InfraError('the E9 test does not pass before the edit');
+    }
     const inst = A.installPrograms(T, 4, { engine: ctx.engine, adapter: ctx.adapter });
     rec.binaries = { engine: inst.engine.sha256, adapter: inst.adapter.sha256, hookwrap: A.copyBinary(ctx.hookwrap, path.join(T, 'bin/hookwrap')) };
+    const ti = Date.now();
     const init = A.runArm4Init(T, sb);
+    rec.init_ms = Date.now() - ti; // the installer must not wait for a key prompt inside the sandbox (stage H asks only on a terminal)
     const wrapped = wrapHooks(init.text, { wrap: path.join(T, 'bin/hookwrap'), log: path.join(T, 'live/wrap.log') });
     fs.writeFileSync(A.settingsPath(T), wrapped.text);
     A.parseSettings(wrapped.text);
     fs.copyFileSync(A.settingsPath(T), path.join(base, 'settings.json'));
     rec.hooks_wrapped = { total: wrapped.total, with_key: wrapped.keyed };
-    for (const [name, text] of Object.entries(ASSETS)) fs.writeFileSync(path.join(T, 'shared', name), text);
+    for (const [name, text] of Object.entries({ ...ASSETS, ...(spec.assets ?? {}) })) fs.writeFileSync(path.join(T, 'shared', name), text);
     let launchPrefix = [];
     if (spec.holder) {
       fs.writeFileSync(path.join(T, 'bin/holder.mjs'), HOLDER_JS);
@@ -224,7 +259,8 @@ async function runSession(ctx, spec, o) {
     const eng = (argv) => sb.exec({ argv: [path.join(T, 'bin/torpor'), ...argv], cwd: ws, env: toolEnv(T), merge: true, timeoutMs: 60000 }); // engine CLI between turns (read-only questions)
     rec.manifest_start = man();
 
-    const muse = [path.join(ctx.museDir, 'muse'), ...(echo ? FREE : KEYED)];
+    if (!(spec.muse_flags ?? []).every((f) => /^[\w.=-]+$/.test(f))) throw new GuardError('a Muse flag has a character that the pane command cannot carry safely');
+    const muse = [path.join(ctx.museDir, 'muse'), ...(echo ? FREE : KEYED), ...(spec.muse_flags ?? [])];
     const env = ['env', 'TERM=xterm-256color', `PATH=${T}/bin:${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`, `TORPOR_HOME=${T}/torpor-home`, 'TZ=UTC', 'GIT_TERMINAL_PROMPT=0', ...MUSE_ENV];
     const launcher = [SANDBOX, '--run-dir', T, '--ro', ctx.museDir, '--ro', ctx.nodeRoot, '--net', echo ? 'none' : 'meta', ...(echo ? [] : ['--drain', '3']), '--chdir', ws, '--', ...launchPrefix, ...env, ...muse];
     const paneCmd = `${echo ? '' : `META_API_KEY="$(cat '${ctx.keyFile}')" `}${launcher.join(' ')}; echo EXITED $?; sleep 900`;
@@ -261,14 +297,14 @@ async function runSession(ctx, spec, o) {
     const harmedSame = () => diffManifest(baseline, man(), spec.harmed ?? null);
     const turn = async (n, t) => {
       const text = fill(t.text, { T, ws });
-      const mark = { n, role: t.role ?? 'prompt', claim: !!t.claim };
+      const mark = { n, role: t.role ?? 'prompt', claim: !!t.claim, trigger: t.trigger, way: t.way };
       if (t.role === 'harm') {
         baseline = man();
         mark.git = sb.exec({ argv: ['sh', '-c', `git status --porcelain --ignored -- ${(spec.harmed ?? ['.']).join(' ')}; echo ---; git diff --quiet HEAD -- ${(spec.harmed ?? ['.']).join(' ')}; echo diff-exit=$?; git ls-files -- ${(spec.harmed ?? ['.']).join(' ')}`], cwd: ws, env: toolEnv(T), merge: true, timeoutMs: 30000 }).stdout.slice(0, 2000);
       }
       if (t.role === 'undo') {
         mark.restored_before_undo = baseline ? harmedSame().same : null;
-        poll = setInterval(() => { if (restoredAt === null && undoSentAt !== null && baseline && harmedSame().same) restoredAt = Date.now(); }, 200);
+        poll = setInterval(() => { if (restoredAt === null && undoSentAt !== null && baseline && harmedSame().same) restoredAt = Date.now(); }, 200).unref(); // unref: a turn that never finishes must not keep the process alive (departure 25)
       }
       // A person types after the last answer, not at the same instant: the detached check-writer of the earlier prompt gets to finish (else the adapter skips the next prompt as "busy").
       if (n > 1) { const w0 = Date.now(); await soft('the check-writer of the earlier prompt to finish', 90000, () => !epProcs(T).some((p) => /\bsuggest\b/.test(p.cmd))); mark.writer_wait_s = round((Date.now() - w0) / 1000, 1); }
@@ -291,6 +327,12 @@ async function runSession(ctx, spec, o) {
       mark.manifest = man();
       if (t.role === 'harm') mark.manifest_after_harm = mark.manifest;
       mark.promises_after = (eng(['promise', 'list']).stdout.match(/^#\d+ /gm) ?? []).length; // saved checks at the end of this turn (E1b needs to know)
+      if (spec.fillers) { try { mark.rebuilds = JSON.parse(eng(['status', '--json']).stdout).context?.rebuilds ?? null; } catch { mark.rebuilds = null; } } // E7: the engine's own count of context rebuilds
+      if (spec.decoy) { // E8: what the screen showed, kept privately; a permission ask would show here (the fixed flags switch asks off)
+        const screen = pane(ctx.S);
+        fs.writeFileSync(path.join(base, `pane-turn${n}.txt`), screen);
+        mark.pane_ask_lines = screen.split('\n').filter((l) => /approv|permission|allow|confirm|\(y\/n\)|\[y\/N\]/i.test(l)).map((l) => l.trim().slice(0, 160)).slice(0, 5);
+      }
       if (spec.v11) { // V11: did the way work? Read the engine's own flag, then turn Torpor on again so the next way starts from the same state.
         try { mark.torpor_off_after = JSON.parse(eng(['status', '--json']).stdout).off === true; } catch { mark.torpor_off_after = null; }
         if (mark.torpor_off_after) mark.turned_back_on_exit = eng(['on']).exit;
@@ -302,7 +344,26 @@ async function runSession(ctx, spec, o) {
     await until('the TUI prompt', 90000, () => pane(ctx.S).includes('❯'));
     await sleep(1500);
     rec.tui_ready = Date.now();
-    for (const [i, t] of spec.turns.entries()) { phase = `turn${i + 1}`; await turn(i + 1, t); }
+    // E7: while no compaction has come after the saved check, a filler turn (a harmless read of a long file) goes in front of the break, at most spec.fillers.max
+    // (echo: one). The check below is the Muse log's own record of an installed compaction followed by a SessionStart hook run.
+    const mainRecs = () => readLogs().filter((l) => !isSub(l.f))[0]?.recs ?? [];
+    const compacted = () => compactionFacts(mainRecs()).after_save.some((c) => c.session_start);
+    let typed = 0;
+    rec.filler_turns = 0;
+    for (const [i, t] of spec.turns.entries()) {
+      if (spec.fillers && t.role === 'harm') {
+        for (let f = 1; f <= (echo ? 1 : spec.fillers.max); f++) {
+          phase = `filler${f}`;
+          if (await soft(`a compaction after the saved check (look ${f})`, echo ? 5000 : f === 1 ? 40000 : 25000, compacted)) break;
+          await turn(++typed, spec.fillers.turn);
+          rec.filler_turns++;
+        }
+        phase = `after-filler`;
+        await soft('a compaction after the last filler turn', echo ? 3000 : 25000, compacted);
+      }
+      phase = `turn${i + 1}`;
+      await turn(++typed, t);
+    }
     phase = 'exit';
     // The check-writer runs detached after a prompt; its call is billed when it starts, so wait for it before Muse (and the sandbox) goes away.
     await soft('the check-writer to finish', 150000, () => !epProcs(T).some((p) => /\bsuggest\b/.test(p.cmd)));
@@ -341,6 +402,11 @@ async function runSession(ctx, spec, o) {
         fs.writeFileSync(path.join(base, 'status.json'), st.stdout);
         fs.writeFileSync(path.join(base, 'promise-list.txt'), engineCmd(['promise', 'list']).stdout);
         fs.writeFileSync(path.join(base, 'engine-log.txt'), engineCmd(['log']).stdout.slice(0, 200000));
+        const er = await engineRecords(T); // before the final check run below, which may add rows of its own
+        if (er) {
+          fs.writeFileSync(path.join(base, 'engine-runs.json'), `${JSON.stringify(er)}\n`);
+          fs.writeFileSync(path.join(base, 'engine-show.txt'), er.turns.map((t) => `=== turn ${t.n}\n${engineCmd(['show', String(t.n)]).stdout.slice(0, 4000)}`).join('\n'));
+        }
         if (spec.check && outcome === 'DONE') {
           const t1 = Date.now();
           const c = engineCmd(['check', '--all']);
@@ -348,6 +414,7 @@ async function runSession(ctx, spec, o) {
           fs.writeFileSync(path.join(base, 'final-check.txt'), c.stdout.slice(0, 20000));
         }
         rec.manifest_end = manifest(ws, sha);
+        if (rec.decoy) { rec.decoy.after = hashDir(rec.decoy.realpath); rec.decoy.same = JSON.stringify(rec.decoy.after) === JSON.stringify(rec.decoy.before); }
         rec.git_end = sb.exec({ argv: ['sh', '-c', 'git status --porcelain; git log --oneline | head -5'], cwd: ws, env: toolEnv(T), merge: true, timeoutMs: 30000 }).stdout.slice(0, 2000);
       }
       const main = logs.filter((l) => !isSub(l.f));
@@ -369,7 +436,7 @@ async function runSession(ctx, spec, o) {
     if (T) { killEp(T); safeDelete(T); }
     active = null;
   }
-  Object.assign(rec, { outcome, reason, ended_at: utc(), minutes: round((Date.now() - t0) / 60000, 2), spec_turns: spec.turns.length });
+  Object.assign(rec, { outcome, reason, ended_at: utc(), minutes: round((Date.now() - t0) / 60000, 2), spec_turns: spec.turns.length, typed_turns: rec.turns.length });
   fs.writeFileSync(path.join(base, 'run.json'), `${JSON.stringify(rec)}\n`);
   return { rec, stage: stageStop };
 }
@@ -400,7 +467,7 @@ async function main() {
   const ctx = mkctx(o);
   if (cmd === 'build') console.log(JSON.stringify(build(ctx)));
   else if (cmd === 'hashes') console.log(JSON.stringify(hashes(ctx), null, 1));
-  else if (cmd === 'prompts') console.log(promptsText());
+  else if (cmd === 'prompts') console.log(`${promptsText()}\n${extrasText()}`);
   else if (cmd === 'wrapcost') {
     const r = wrapcost(ctx, Number(o.n ?? 400));
     fs.mkdirSync(ctx.out, { recursive: true });
@@ -410,17 +477,19 @@ async function main() {
     const r = ledger(ctx, path.resolve(o.file), ctx.cap);
     console.log(`ledger: ${r.calls} calls, lo $${r.lo.toFixed(4)}, hi $${r.hi.toFixed(4)}`);
   } else if (cmd === 'run') {
-    const spec = SESSIONS[o.session];
-    if (!spec) throw new Error(`unknown session ${o.session}; known: ${Object.keys(SESSIONS).join(', ')}`);
+    const known = SESSIONS[o.session];
+    if (!known) throw new Error(`unknown session ${o.session}; known: ${Object.keys(SESSIONS).join(', ')}`);
+    if (o.turns && !o.echo) throw new Error('--turns is for free echo runs only');
+    const spec = o.turns ? { ...known, turns: known.turns.slice(0, Number(o.turns)) } : known;
     ctx.spent = spentSoFar(ctx.out);
     try {
       const { rec } = await runSession(ctx, spec, o);
       // Calibration prints only infra facts: outcome, turns, cost, minutes, hook-run and key counts. The numbers behind E1-E6 stay unread.
-      console.log(`${rec.label}: ${rec.outcome}${rec.reason ? ` (${rec.reason.slice(0, 240)})` : ''} turns ${rec.turns.filter((t) => t.done).length}/${rec.spec_turns} minutes ${rec.minutes} cost hi $${rec.cost?.total_hi} (muse $${rec.cost?.muse.hi}, writer $${rec.cost?.writer.hi}) hooks ${JSON.stringify(rec.hook_runs)} key ${JSON.stringify(rec.key)} egress ${JSON.stringify(rec.egress)}`);
+      console.log(`${rec.label}: ${rec.outcome}${rec.reason ? ` (${rec.reason.slice(0, 240)})` : ''} turns ${rec.turns.filter((t) => t.done).length}/${rec.typed_turns}${rec.filler_turns ? ` (${rec.filler_turns} filler)` : ''} of ${rec.spec_turns} scripted, minutes ${rec.minutes} cost hi $${rec.cost?.total_hi} (muse $${rec.cost?.muse.hi}, writer $${rec.cost?.writer.hi}) hooks ${JSON.stringify(rec.hook_runs)} key ${JSON.stringify(rec.key)} egress ${JSON.stringify(rec.egress)}`);
       process.exitCode = rec.outcome === 'DONE' ? 0 : 1;
     } finally { if (ctx.S) safeDelete(ctx.S.dir); }
   } else throw new Error('usage: run.mjs build|hashes|wrapcost|run|ledger [options]');
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main().catch((e) => { console.error(e.message); process.exitCode = 1; });
-export { buildWorkspace, hashes };
+export { buildWorkspace, engineRecords, hashes };

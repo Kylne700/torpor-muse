@@ -98,6 +98,53 @@ export function timeline(recs) {
   return out.sort((a, b) => a.t - b.t);
 }
 
+// Every bash call of a session log with its result: { t (call, ns), t_result, command, exit, status, output (first 400 chars) }. Muse's bash result is
+// a JSON text with exit_code / terminal_status / output; a result that is not that JSON has exit null.
+export function bashRuns(recs) {
+  const calls = new Map(), out = [];
+  for (const r of recs) {
+    const k = kindOf(r), e = evOf(r), t = Math.round((r.recorded_at ?? 0) * 1000);
+    if (k === 'assistant_tool_calls_committed') {
+      for (const c of e.tool_calls ?? []) {
+        if (c.name !== 'bash') continue;
+        let a = {};
+        try { a = JSON.parse(c.args); } catch { /* keep {} */ }
+        calls.set(c.call_id, { t, command: String(a.command ?? '') });
+      }
+    } else if (k === 'tool_result_batch_committed') {
+      for (const x of e.results ?? []) {
+        const c = calls.get(x.tool_call_id);
+        if (!c) continue;
+        let j = null;
+        try { j = JSON.parse(x.text); } catch { /* not the bash JSON */ }
+        out.push({ ...c, t_result: t, exit: Number.isInteger(j?.exit_code) ? j.exit_code : null, status: j?.terminal_status ?? null, output: String(j?.output ?? x.text ?? '').slice(0, 400) });
+      }
+    }
+  }
+  return out;
+}
+
+// E7 and the driver's filler loop. From one session log: save_at = when the first `torpor keep` bash call that exited 0 returned (the saved check exists
+// from then on); every installed compaction with its trigger, whether it came after the save, the first SessionStart hook run after it (and before the
+// next compaction), and whether a model call came after it (the AI went on, so the text it got mattered). Times in ns since the epoch.
+export function compactionFacts(recs) {
+  const keep = bashRuns(recs).find((b) => /\btorpor keep\b/.test(b.command) && b.exit === 0);
+  const save_at = keep ? keep.t_result : null;
+  const comps = [], starts = [], calls = [];
+  for (const r of recs) {
+    const k = kindOf(r), e = evOf(r), t = Math.round((r.recorded_at ?? 0) * 1000);
+    if (k === 'context_compaction_installed') comps.push({ t, trigger: e.trigger ?? null, timing: e.timing ?? null });
+    else if (k === 'hook_run_terminal' && e.event === 'SessionStart') starts.push({ t, status: e.status, exit: e.exit_code, stdout: String(e.stdout ?? '') });
+    else if (k === 'assistant_tool_calls_committed' || k === 'assistant_message_committed') calls.push(t);
+  }
+  const compactions = comps.map((c, i) => {
+    const next = comps[i + 1]?.t ?? Infinity;
+    const ss = starts.filter((s) => s.t > c.t && s.t < next); // all SessionStart hook runs after it; the first that gave text is the one quoted
+    return { ...c, after_save: save_at !== null && c.t > save_at, session_start: ss.find((s) => s.stdout) ?? ss[0] ?? null, session_start_runs: ss.length, model_call_after: calls.some((x) => x > c.t) };
+  });
+  return { save_at, compactions, after_save: compactions.filter((c) => c.after_save) };
+}
+
 // ------------------------------------------------------------------ workspace manifests (the oracle for "put right")
 
 // path -> sha256 of every regular file under dir except .git, node_modules and SQLite -shm files; sha256 is injected (the driver passes it).
