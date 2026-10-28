@@ -2,8 +2,9 @@
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
 //! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
 //! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
-//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept) and `app/<hash of folder>.json`
-//! (the user was told once that the check-writer needs an app with a start script; never swept).
+//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept), `app/<hash of folder>.json`
+//! (the user was told once that the check-writer needs an app with a start script; never swept) and
+//! `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -38,7 +39,8 @@ pub struct Session {
     /// The turn whose end Torpor blocked once for a broken check or a risky turn (`hook::stop_note`).
     #[serde(default)]
     pub noted: String,
-    /// The kinds of check-writer news the user of this session was told, one note each (`hook::writer_note`).
+    /// The kinds of check-writer news the user of this session was told, one note each (`hook::writer_note`); not
+    /// `app` and `no-key`, which are marked per folder (`mark`) unless that is not possible.
     #[serde(default)]
     pub writer_told: Vec<String>,
     /// Why the check-writer could not start on the last prompt (`busy`, `start`), to tell at the next prompt.
@@ -266,9 +268,10 @@ pub fn sweep(dir: &Path) {
     }
 }
 
-/// A folder marked once for `sub`: `gate` (`hook::gate_default` switched its engine gate off) or `app` (the user was
-/// told the check-writer needs an app with a start script); stored inside and compared whole. Kept without an end
-/// (`sweep` leaves `gate/` and `app/` alone): the `gate` file is what lets a later `torpor gate on` of the user's stay on.
+/// A folder marked once for `sub`: `gate` (`hook::gate_default` switched its engine gate off), `app` (the user was told
+/// the check-writer needs an app with a start script) or `no-key` (told it is off for lack of a key); stored inside and
+/// compared whole. Kept without an end (`sweep` leaves `gate/`, `app/` and `no-key/` alone): the `gate` file is what
+/// lets a later `torpor gate on` of the user's stay on.
 #[derive(Serialize, Deserialize)]
 struct Mark {
     cwd: String,
@@ -480,13 +483,14 @@ mod tests {
         assert!(!marked(&dir, "app", "/w/a"), "another kind");
         // 15 days untouched: `sweep` takes the other kinds of file, not these
         let stale = UNIX_EPOCH + Duration::from_secs(crate::util::now_secs() - 15 * 86_400);
-        assert!(mark(&dir, "app", "/w/a"));
-        for sub in ["gate", "app"] {
+        assert!(mark(&dir, "app", "/w/a") && mark(&dir, "no-key", "/w/a"));
+        for sub in ["gate", "app", "no-key"] {
             let f = folder_file(&dir, sub, "/w/a");
             fs::File::open(&f).unwrap().set_modified(stale).unwrap();
         }
         sweep(&dir);
         assert!(marked(&dir, "gate", "/w/a") && marked(&dir, "app", "/w/a"));
+        assert!(marked(&dir, "no-key", "/w/a"));
     }
 
     #[test]
