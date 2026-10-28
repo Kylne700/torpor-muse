@@ -6,26 +6,38 @@
 //! remove, move or overwrite; the hook (hook.rs `busy_guard`) then denies the command and tells the model why.
 //!
 //! What counts: `rm`, `unlink`, `shred`, `git rm`; `mv` (what it moves and what it overwrites); `cp` and `install`
-//! (what they overwrite); `truncate`; a `>`, `>>` or `>|` redirect; `find ... -delete` or `-exec rm`; `git clean` unless
-//! it is a dry run; also inside `sh -c '...'`, after `sudo`, `env` and the like, and after a plain `cd DIR`. A word
-//! counts when it names the database or one of its `-wal`, `-shm` or `-journal` files, is a glob (or `{a,b}`) that
+//! (what they overwrite, also with `-t DIR`); `truncate`; a `>`, `>>` or `>|` redirect; `find ... -delete` or
+//! `-exec rm` unless its `-name`, `-iname` and `-type` tests cannot reach the database; `git clean` unless it is a dry
+//! run or git itself says it leaves the database and its `-wal`, `-shm` and `-journal` files alone (`.gitignore`, `-e`);
+//! also inside `sh -c '...'`, after `sudo`, `env` and the like, and after a plain `cd DIR`. A word counts when it names
+//! the database or one of its `-wal`, `-shm` or `-journal` files, is a glob (`{a,b}` is expanded as a shell does) that
 //! matches one, or (for `rm -r`, `mv`, `find` and `git clean`) names a folder that holds one. Only databases inside the
 //! project folder count: the engine saves nothing outside it.
 //! shortcut: SQL on a busy database (`sqlite3 app.db "DROP TABLE t"`), `dd`, `tee`, `sed -i`, `rsync`, `xargs rm`,
 //! `git stash -u`, `git checkout`/`restore`/`reset --hard` over a tracked busy database, a script, `make clean` or any
 //! other program that removes it, words made with `$VAR`, `$(...)` or `~`, a wrapper option with a separate value
 //! (`sudo -u x rm ...`, `nice -n 10 rm ...`: the value is read as the command), a `cd` inside `( )` that goes on into
-//! the commands after it, here-document text read as commands, a busy database in an ignored folder (the engine would
-//! not have saved it either), a link to a busy database (named like the database itself) and anything past `LOOK`
-//! directory entries all pass or are judged wrongly; upgrade when a drill or a live run shows one of them.
+//! the commands after it, a busy database in an ignored folder (the engine would not have saved it either), a link to a
+//! busy database (named like the database itself) and anything past `LOOK` directory entries all pass or are judged
+//! wrongly; upgrade when a drill or a live run shows one of them. A here-document body is not read as commands unless
+//! the input runs a script or a shell (`bash`, `source`, `eval`, any `/` command), so `python3 <<EOF` hides what it runs.
+//! A `find` with `-o`, `!`, `-not`, a parenthesis or `-prune` in front of its action (the common `-prune -o` idiom) is
+//! denied as if it had no tests; its `-path` and `-regex` tests are not judged. One `git clean` is judged whole, and
+//! `-ff` (nested repositories) is always denied.
 
+use crate::engine;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const MAGIC: &[u8; 16] = b"SQLite format 3\0";
 /// Directory entries one command may make us read (glob matches and folder walks together); the rest passes.
 const LOOK: usize = 20_000;
 const DEPTH: usize = 12;
+/// Words one `{a,b}` word may be expanded into; past it a group is read as `*`.
+const BRACES: usize = 256;
+/// How long the one `git` call of a `git clean` may take; the hook has 6 s and its engine call may have used some of it.
+const GIT_WAIT: Duration = Duration::from_millis(1500);
 /// Words that only run the next one: skipped, with the `-x` options right after them, to find the real command.
 const WRAP: &[&str] = &[
     "sudo", "doas", "command", "builtin", "exec", "env", "nohup", "time", "nice", "ionice",
@@ -78,13 +90,49 @@ enum Tok {
     Redir(bool),
 }
 
+/// Where the text goes on after the here-documents `open` (the end words of the ones the line before started, in order,
+/// and whether tabs may stand in front of an end word): past the line that holds the last end word. No such line (the
+/// `<<` was a shift, `$((1 << x))`): `from`, nothing is left out.
+fn skip_docs(c: &[char], from: usize, open: &mut Vec<(String, bool)>) -> usize {
+    let mut at = from;
+    for (end, tabs) in open.drain(..) {
+        loop {
+            if at >= c.len() {
+                return from;
+            }
+            let stop = c[at..]
+                .iter()
+                .position(|&x| x == '\n')
+                .map_or(c.len(), |p| at + p);
+            let line: String = c[at..stop].iter().collect();
+            at = (stop + 1).min(c.len());
+            if (if tabs {
+                line.trim_start_matches('\t')
+            } else {
+                line.as_str()
+            }) == end
+            {
+                break;
+            }
+        }
+    }
+    at
+}
+
+/// `docs`: leave out the bodies of here-documents (`cat <<EOF` ... `EOF`), which are text and not commands.
 #[allow(unused_assignments)] // the last `flush!` resets what nothing reads again
-fn lex(s: &str) -> Vec<Tok> {
+fn lex(s: &str, docs: bool) -> Vec<Tok> {
     let c: Vec<char> = s.chars().collect();
     let (mut out, mut w, mut glob, mut inw, mut i) = (Vec::new(), String::new(), false, false, 0);
+    // the here-documents this line opens: `want` is set by `<<` (tabs allowed in front of the end word: `<<-`) and the
+    // next word is the end word
+    let (mut open, mut want): (Vec<(String, bool)>, Option<bool>) = (Vec::new(), None);
     macro_rules! flush {
         () => {
             if inw {
+                if let Some(tabs) = want.take() {
+                    open.push((w.clone(), tabs));
+                }
                 out.push(Tok::Word(std::mem::take(&mut w), glob));
                 (glob, inw) = (false, false);
             }
@@ -96,6 +144,10 @@ fn lex(s: &str) -> Vec<Tok> {
             '\n' | ';' | '|' | '(' | ')' | '`' => {
                 flush!();
                 out.push(Tok::Sep);
+                want = None;
+                if c[i] == '\n' && !open.is_empty() {
+                    i = skip_docs(&c, i + 1, &mut open) - 1; // the loop steps to the line after the end word
+                }
             }
             '&' if c.get(i + 1) == Some(&'>') => {
                 flush!();
@@ -125,7 +177,11 @@ fn lex(s: &str) -> Vec<Tok> {
                         true
                     }
                     Some('<') if !out_op => {
-                        i += 1 + usize::from(matches!(c.get(i + 2), Some('<' | '-')));
+                        let third = c.get(i + 2).copied();
+                        if docs && third != Some('<') {
+                            want = Some(third == Some('-')); // `<<EOF`, `<<-EOF`; `<<<` is a here-string, no body
+                        }
+                        i += 1 + usize::from(matches!(third, Some('<' | '-')));
                         false
                     }
                     _ => out_op,
@@ -182,9 +238,9 @@ struct Cmd {
     writes: Vec<W>,
 }
 
-fn commands(s: &str) -> Vec<Cmd> {
+fn commands(s: &str, docs: bool) -> Vec<Cmd> {
     let (mut all, mut cur, mut redir) = (Vec::new(), Cmd::default(), None);
-    for t in lex(s) {
+    for t in lex(s, docs) {
         match t {
             Tok::Word(w, g) => match redir.take() {
                 Some(true) => cur.writes.push((w, g)),
@@ -214,6 +270,32 @@ fn is_assign(w: &str) -> bool {
     })
 }
 
+/// The words from the command a list runs on: without the assignments and wrappers (`sudo`, `env`, ...) and their
+/// options in front.
+fn head(mut ws: &[W]) -> &[W] {
+    let mut wrapped = false;
+    while let Some((w, _)) = ws.first() {
+        if is_assign(w) || WRAP.contains(&base(w)) {
+            wrapped = true;
+        } else if !(wrapped && w.starts_with('-')) {
+            break;
+        }
+        ws = &ws[1..];
+    }
+    ws
+}
+
+/// True when the command could run text a here-document wrote: a shell, `source`, `.`, `eval` or anything given as a path.
+fn runs_script(c: &Cmd) -> bool {
+    head(&c.words).first().is_some_and(|(v, _)| {
+        v.contains('/')
+            || matches!(
+                v.as_str(),
+                "." | "source" | "eval" | "sh" | "bash" | "zsh" | "dash" | "ksh"
+            )
+    })
+}
+
 /// Options (`-x`, `--long`, up to a `--`) and operands of a command's arguments.
 fn split(args: &[W]) -> (Vec<&str>, Vec<&W>) {
     let (mut opts, mut ops, mut end) = (Vec::new(), Vec::new(), false);
@@ -229,31 +311,168 @@ fn split(args: &[W]) -> (Vec<&str>, Vec<&W>) {
     (opts, ops)
 }
 
-/// `{a,b}` is read as `*` (more than it matches, which is the safe side).
-fn unbrace(p: &str) -> String {
-    let (mut out, mut depth) = (String::new(), 0);
-    for ch in p.chars() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    out.push('*');
-                }
-                depth += 1;
+/// `cp`, `mv` and `install` put what they copy in the folder that `-t DIR`, `-tDIR`, `-rt DIR`, `--target-directory DIR`
+/// or `--target-directory=DIR` names. Returns it and the other arguments.
+/// shortcut: a short option with a value (`-S x`) in the same cluster in front of the `t` is read as flags; upgrade when
+/// a real command shows it.
+fn target_dir(args: &[W]) -> (Option<W>, Vec<W>) {
+    let (mut dir, mut rest, mut i) = (None, Vec::new(), 0);
+    while i < args.len() {
+        let (a, glob) = &args[i];
+        i += 1;
+        if a == "--" {
+            rest.extend_from_slice(&args[i - 1..]);
+            break;
+        }
+        // None: not the `-t` option; Some(None): the folder is the next word; Some(Some(v)): it is stuck to the option
+        let value = if let Some(long) = a.strip_prefix("--") {
+            let (name, v) = long
+                .split_once('=')
+                .map_or((long, None), |(n, v)| (n, Some(v)));
+            (!name.is_empty() && "target-directory".starts_with(name)).then_some(v)
+        } else if a.len() > 1 && a.starts_with('-') {
+            a[1..]
+                .find('t')
+                .map(|k| Some(&a[k + 2..]).filter(|v| !v.is_empty()))
+        } else {
+            None
+        };
+        match value {
+            None => rest.push(args[i - 1].clone()),
+            Some(Some(v)) => dir = Some((v.to_string(), *glob)),
+            Some(None) => {
+                dir = args.get(i).cloned();
+                i += 1;
             }
-            '}' if depth > 0 => depth -= 1,
-            _ if depth == 0 => out.push(ch),
+        }
+    }
+    (dir, rest)
+}
+
+/// What the arguments of `git clean` say.
+#[derive(Default)]
+struct Clean<'a> {
+    /// `-n`, `--dry-run`: nothing is removed.
+    dry: bool,
+    /// `-x`: files the ignore rules name are removed too (not the ones `-e` names).
+    x: bool,
+    /// `-X`: only files the ignore rules name are removed.
+    only_ignored: bool,
+    /// `-f` twice: nested repositories are removed too.
+    nested: bool,
+    /// The `-e` and `--exclude` patterns.
+    exclude: Vec<String>,
+    /// The paths it was told to clean (none: the whole folder).
+    paths: Vec<&'a W>,
+}
+
+fn clean_args(args: &[W]) -> Clean<'_> {
+    let (mut c, mut force, mut end, mut i) = (Clean::default(), 0, false, 0);
+    while i < args.len() {
+        let a = args[i].0.as_str();
+        i += 1;
+        if end || a == "-" || !a.starts_with('-') {
+            c.paths.push(&args[i - 1]);
+        } else if a == "--" {
+            end = true;
+        } else if let Some(long) = a.strip_prefix("--") {
+            let (name, v) = long
+                .split_once('=')
+                .map_or((long, None), |(n, v)| (n, Some(v)));
+            match name {
+                "dry-run" => c.dry = true,
+                "force" => force += 1,
+                "exclude" => {
+                    let p = match v {
+                        Some(v) => Some(v.to_string()),
+                        None => {
+                            i += 1;
+                            args.get(i - 1).map(|x| x.0.clone())
+                        }
+                    };
+                    c.exclude.extend(p);
+                }
+                _ => {}
+            }
+        } else {
+            for (k, ch) in a.char_indices().skip(1) {
+                match ch {
+                    'n' => c.dry = true,
+                    'x' => c.x = true,
+                    'X' => c.only_ignored = true,
+                    'f' => force += 1,
+                    'e' => {
+                        // the rest of the word is the pattern, else the next word is
+                        if a[k + 1..].is_empty() {
+                            i += 1;
+                            c.exclude.extend(args.get(i - 1).map(|x| x.0.clone()));
+                        } else {
+                            c.exclude.push(a[k + 1..].to_string());
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    c.nested = force > 1;
+    c
+}
+
+/// The words a shell makes of one with `{a,b}` groups: `app.db{,-wal}` is `app.db` and `app.db-wal`. A group with no comma
+/// (`{x}`), one that is never closed, and every group past `BRACES` words are read as `*` (more than they match, which is
+/// the safe side).
+fn expand(w: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    brace(w, &mut out);
+    out
+}
+
+fn brace(w: &str, out: &mut Vec<String>) {
+    let Some(open) = w.find('{') else {
+        out.push(w.to_string());
+        return;
+    };
+    let (head, rest) = (&w[..open], &w[open + 1..]);
+    // the `}` that closes this group, and the commas on its own level
+    let (mut depth, mut commas, mut close) = (0, Vec::new(), None);
+    for (k, ch) in rest.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' if depth == 0 => {
+                close = Some(k);
+                break;
+            }
+            '}' => depth -= 1,
+            ',' if depth == 0 => commas.push(k),
             _ => {}
         }
     }
-    out
+    let Some(close) = close else {
+        out.push(format!("{head}*"));
+        return;
+    };
+    let tail = &rest[close + 1..];
+    if commas.is_empty() || out.len() >= BRACES {
+        brace(&format!("{head}*{tail}"), out);
+        return;
+    }
+    let mut from = 0;
+    for end in commas.into_iter().chain([close]) {
+        brace(&format!("{head}{}{tail}", &rest[from..end]), out);
+        from = end + 1;
+    }
 }
 
 /// Shell glob on one name: `*`, `?`, `[a-z]`, `[!x]`; a leading dot is matched only by a leading dot.
 fn glob_match(pat: &str, name: &str) -> bool {
+    !(name.starts_with('.') && !pat.starts_with('.')) && fnmatch(pat, name)
+}
+
+/// `glob_match` without the dot rule: what `find -name` does (its `*` also matches a leading dot).
+fn fnmatch(pat: &str, name: &str) -> bool {
     let (p, n): (Vec<char>, Vec<char>) = (pat.chars().collect(), name.chars().collect());
-    if n.first() == Some(&'.') && p.first() != Some(&'.') {
-        return false;
-    }
     // how many pattern characters (from `i`, not a `*`) stand for the character `c`; None = it does not match
     let one = |i: usize, c: char| -> Option<usize> {
         match p[i] {
@@ -316,34 +535,37 @@ impl Spy {
         if !glob {
             return vec![dir.join(w)];
         }
-        let pat = unbrace(w);
-        let mut cur = vec![if pat.starts_with('/') {
-            PathBuf::from("/")
-        } else {
-            dir.to_path_buf()
-        }];
-        for comp in pat.split('/').filter(|c| !c.is_empty()) {
-            let mut next = Vec::new();
-            for b in &cur {
-                if !comp.contains(['*', '?', '[']) {
-                    next.push(b.join(comp));
-                    continue;
-                }
-                for e in std::fs::read_dir(b).into_iter().flatten().flatten() {
-                    if self.left == 0 {
-                        break;
+        let mut found = Vec::new();
+        for pat in expand(w) {
+            let mut cur = vec![if pat.starts_with('/') {
+                PathBuf::from("/")
+            } else {
+                dir.to_path_buf()
+            }];
+            for comp in pat.split('/').filter(|c| !c.is_empty()) {
+                let mut next = Vec::new();
+                for b in &cur {
+                    if !comp.contains(['*', '?', '[']) {
+                        next.push(b.join(comp));
+                        continue;
                     }
-                    self.left -= 1;
-                    let name = e.file_name();
-                    if glob_match(comp, &name.to_string_lossy()) {
-                        next.push(b.join(name));
+                    for e in std::fs::read_dir(b).into_iter().flatten().flatten() {
+                        if self.left == 0 {
+                            break;
+                        }
+                        self.left -= 1;
+                        let name = e.file_name();
+                        if glob_match(comp, &name.to_string_lossy()) {
+                            next.push(b.join(name));
+                        }
                     }
                 }
+                next.truncate(4096);
+                cur = next;
             }
-            next.truncate(4096);
-            cur = next;
+            found.extend(cur);
         }
-        cur
+        found
     }
 
     fn add(&mut self, p: &Path) {
@@ -416,8 +638,12 @@ impl Spy {
             }
             "truncate" => self.all(dir, &ops, false),
             "mv" | "cp" | "install" => {
-                let Some((last, srcs)) = ops.split_last() else {
-                    return;
+                let (target, args) = target_dir(args);
+                let (_, ops) = split(&args);
+                let (dest, srcs) = match (&target, ops.split_last()) {
+                    (Some(t), _) => (t, ops.as_slice()),
+                    (None, Some((last, srcs))) => (*last, srcs),
+                    (None, None) => return,
                 };
                 let srcs: Vec<PathBuf> = srcs
                     .iter()
@@ -428,7 +654,7 @@ impl Spy {
                         self.visit(s, true);
                     }
                 }
-                for d in self.paths(dir, &last.0, last.1) {
+                for d in self.paths(dir, &dest.0, dest.1) {
                     if d.is_dir() {
                         for n in srcs
                             .iter()
@@ -437,53 +663,161 @@ impl Spy {
                         {
                             self.visit(&d.join(n), false); // moved or copied into the folder under its own name
                         }
-                    } else {
+                    } else if target.is_none() {
                         self.visit(&d, false);
                     }
                 }
             }
-            "find" => {
-                let del = args.iter().any(|(w, _)| w == "-delete")
-                    || args.windows(2).any(|p| {
-                        p[0].0.starts_with("-exec")
-                            && matches!(base(&p[1].0), "rm" | "unlink" | "shred" | "mv")
-                    });
-                if del {
-                    let mut starts: Vec<&W> = args
-                        .iter()
-                        .take_while(|(w, _)| {
-                            !w.starts_with('-') || matches!(w.as_str(), "-H" | "-L" | "-P")
-                        })
-                        .filter(|(w, _)| !w.starts_with('-'))
-                        .collect();
-                    let here = (".".to_string(), false);
-                    if starts.is_empty() {
-                        starts.push(&here);
-                    }
-                    self.all(dir, &starts, true);
-                }
-            }
+            "find" => self.find(args, dir),
             _ => {}
         }
     }
 
+    /// What this call finds, apart from the hits so far: a command judges the databases it reaches, not earlier ones.
+    fn fresh(&mut self, find: impl FnOnce(&mut Self)) -> Vec<String> {
+        let before = std::mem::take(&mut self.hits);
+        find(self);
+        std::mem::replace(&mut self.hits, before)
+    }
+
+    /// Adds the hits a `fresh` call found.
+    fn keep(&mut self, found: Vec<String>) {
+        for h in found {
+            if !self.hits.contains(&h) {
+                self.hits.push(h);
+            }
+        }
+    }
+
+    /// `find START... TESTS (-delete | -exec rm|mv ...)`: the databases under the start points that the tests can reach.
+    fn find(&mut self, args: &[W], dir: &Path) {
+        let n = args
+            .iter()
+            .take_while(|(w, _)| !w.starts_with('-') || matches!(w.as_str(), "-H" | "-L" | "-P"))
+            .count();
+        let (front, expr) = args.split_at(n);
+        let deletes = |k: usize| {
+            expr[k].0 == "-delete"
+                || (expr[k].0.starts_with("-exec")
+                    && expr
+                        .get(k + 1)
+                        .is_some_and(|(x, _)| matches!(base(x), "rm" | "unlink" | "shred" | "mv")))
+        };
+        let Some(k) = (0..expr.len()).find(|&k| deletes(k)) else {
+            return;
+        };
+        let exec = expr[k].0 != "-delete";
+        let mut starts: Vec<&W> = front.iter().filter(|(w, _)| !w.starts_with('-')).collect();
+        let here = (".".to_string(), false);
+        if starts.is_empty() {
+            starts.push(&here);
+        }
+        // a start point that is the project folder or holds it (not `.`, which `rm` refuses): a folder test could
+        // take the whole folder, database and all
+        let whole = starts.iter().any(|(w, _)| {
+            !matches!(w.as_str(), "." | "./")
+                && dir
+                    .join(w)
+                    .canonicalize()
+                    .is_ok_and(|c| self.root.starts_with(c))
+        });
+        let found = self.fresh(|s| s.all(dir, &starts, true));
+        let reached = found
+            .into_iter()
+            .filter(|db| self.find_reaches(db, &expr[..k], exec, whole))
+            .collect();
+        self.keep(reached);
+    }
+
+    /// Can a `find` with these `tests` in front of its deleting action take the database `db` (path from the project
+    /// folder) or one of its `-wal`, `-shm` or `-journal` files? `exec`: the action is `-exec rm|mv`, which takes a
+    /// matching folder with everything in it; `-delete` takes files and empty folders. Doubt means yes.
+    /// shortcut: `-o`, `!`, `-not`, parentheses, `-prune` and other actions among the tests are not judged (the common
+    /// `-prune -o` idiom stays a false alarm), nor are `-path`, `-regex` and the like (they only narrow); a `-name`
+    /// pattern with `\`, `$` or a backtick counts as matching. Upgrade when a live run shows a false alarm of these.
+    fn find_reaches(&self, db: &str, tests: &[W], exec: bool, whole: bool) -> bool {
+        let (mut names, mut kind, mut i) = (Vec::new(), None, 0);
+        while i < tests.len() {
+            let value = tests.get(i + 1).map(|(v, _)| v.as_str());
+            match tests[i].0.as_str() {
+                "-o" | "-or" | "!" | "-not" | "(" | ")" | "-prune" | "-exec" | "-execdir"
+                | "-ok" | "-okdir" => return true,
+                t @ ("-name" | "-iname") => {
+                    names.extend(value.map(|v| (v, t == "-iname")));
+                    i += 1;
+                }
+                "-type" => {
+                    kind = value;
+                    i += 1;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        let (file_ok, dir_ok) =
+            kind.map_or((true, exec), |k| (k.contains('f'), exec && k.contains('d')));
+        // `-name` tests the last word of a path; every one of them must fit
+        let fits = |cand: &str| {
+            names.iter().all(|&(p, nocase)| {
+                p.contains(['$', '`', '\\'])
+                    || (nocase && p.contains('['))
+                    || if nocase {
+                        fnmatch(&p.to_lowercase(), &cand.to_lowercase())
+                    } else {
+                        fnmatch(p, cand)
+                    }
+            })
+        };
+        let leaf = db.rsplit('/').next().unwrap_or(db);
+        (file_ok
+            && ["", "-wal", "-shm", "-journal"].iter().any(|s| {
+                self.root.join(format!("{db}{s}")).exists() && fits(&format!("{leaf}{s}"))
+            }))
+            || (dir_ok && (whole || db.split('/').rev().skip(1).any(fits)))
+    }
+
+    /// True when git, asked as `git clean` would be, lists none of the databases `found` (paths from the project folder)
+    /// or their `-wal`, `-shm` and `-journal` files: it leaves them alone (`.gitignore`, `-e`, or tracked). Any doubt
+    /// (not a repository, git missing or slow) is false, and so is `-ff`, which also takes nested repositories.
+    fn git_leaves(&self, d: &Path, c: &Clean, found: &[String]) -> bool {
+        if c.nested {
+            return false;
+        }
+        let mut a = vec![
+            "--literal-pathspecs".to_string(),
+            "ls-files".into(),
+            "--others".into(),
+        ];
+        if !c.x {
+            a.push("--exclude-standard".into());
+            if c.only_ignored {
+                a.push("--ignored".into());
+            }
+        }
+        a.extend(c.exclude.iter().map(|e| format!("--exclude={e}")));
+        a.push("--".into());
+        for h in found {
+            for s in ["", "-wal", "-shm", "-journal"] {
+                a.push(self.root.join(format!("{h}{s}")).display().to_string());
+            }
+        }
+        let a: Vec<&str> = a.iter().map(String::as_str).collect();
+        engine::exec(Path::new("git"), &a, None, Some(d), GIT_WAIT)
+            .is_ok_and(|o| o.code == 0 && o.stdout.is_empty())
+    }
+
     fn scan(&mut self, cmd: &str, dir: &mut PathBuf, depth: u8) {
-        for c in commands(cmd) {
+        let mut cmds = commands(cmd, true);
+        if cmds.iter().any(runs_script) {
+            cmds = commands(cmd, false); // a here-document may be the script it runs: read its lines as commands
+        }
+        for c in cmds {
             for (w, g) in &c.writes {
                 for p in self.paths(dir, w, *g) {
                     self.visit(&p, false);
                 }
             }
-            let mut ws = c.words.as_slice();
-            let mut wrapped = false;
-            while let Some((w, _)) = ws.first() {
-                if is_assign(w) || WRAP.contains(&base(w)) {
-                    wrapped = true;
-                } else if !(wrapped && w.starts_with('-')) {
-                    break;
-                }
-                ws = &ws[1..];
-            }
+            let ws = head(&c.words);
             let Some((v, _)) = ws.first() else { continue };
             let (verb, args) = (base(v), &ws[1..]);
             match verb {
@@ -519,14 +853,18 @@ impl Spy {
                     let rest = args.get(i + 1..).unwrap_or(&[]);
                     match args.get(i).map(|(w, _)| w.as_str()) {
                         Some("clean") => {
-                            let (opts, ops) = split(rest);
-                            let dry = opts.iter().any(|o| {
-                                *o == "--dry-run" || (!o.starts_with("--") && o.contains('n'))
-                            });
-                            if !dry && ops.is_empty() {
-                                self.walk(&d, 0);
-                            } else if !dry {
-                                self.all(&d, &ops, true);
+                            let c = clean_args(rest);
+                            if !c.dry {
+                                let found = self.fresh(|s| {
+                                    if c.paths.is_empty() {
+                                        s.walk(&d, 0);
+                                    } else {
+                                        s.all(&d, &c.paths, true);
+                                    }
+                                });
+                                if !found.is_empty() && !self.git_leaves(&d, &c, &found) {
+                                    self.keep(found);
+                                }
                             }
                         }
                         Some(g @ ("rm" | "mv")) if !rest.iter().any(|(w, _)| w == "--cached") => {
@@ -796,10 +1134,9 @@ mod tests {
         }
         // several stars on a name that cannot match must not take forever
         assert!(!glob_match("a*a*a*a*a*a*a*b", &"a".repeat(60)));
-        assert_eq!(unbrace("app.db{,-wal,-shm}"), "app.db*");
-        assert_eq!(unbrace("{a,{b,c}}.db"), "*.db");
+        assert!(fnmatch("*.db", ".hidden.db")); // find's -name, unlike the shell, lets a star match a leading dot
         let words = |s: &str| {
-            lex(s)
+            lex(s, true)
                 .into_iter()
                 .filter_map(|t| match t {
                     Tok::Word(w, g) => Some((w, g)),
@@ -821,5 +1158,264 @@ mod tests {
         assert!(
             is_assign("A_1=x") && !is_assign("=x") && !is_assign("1A=x") && !is_assign("a-b=1")
         );
+    }
+
+    #[test]
+    fn braces_expand_like_a_shell_and_stay_bounded() {
+        assert_eq!(
+            expand("app.db{,-wal,-shm}"),
+            ["app.db", "app.db-wal", "app.db-shm"]
+        );
+        assert_eq!(expand("{a,{b,c}}.db"), ["a.db", "b.db", "c.db"]);
+        assert_eq!(expand("{a,b}{c,d}"), ["ac", "ad", "bc", "bd"]);
+        assert_eq!(expand("plain"), ["plain"]);
+        assert_eq!(expand("x{y}z"), ["x*z"]); // no comma: not an expansion, read as a star
+        assert_eq!(expand("x{y,z"), ["x*"]); // never closed
+        assert!(expand(&"{a,b}".repeat(12)).len() < 300);
+        let root = project("braces");
+        let app = "data/app.db".to_string();
+        assert!(hits(&root, "rm data/app.{log,txt}").is_empty());
+        assert!(hits(&root, "rm data/app.{log,db-wal}").contains(&app));
+        assert!(hits(&root, "rm data/{idle,app}.db").contains(&app));
+    }
+
+    #[test]
+    fn a_target_directory_is_where_the_files_go_and_only_what_is_there_is_overwritten() {
+        let root = project("target");
+        let app = "data/app.db".to_string();
+        // lone/app.db is not SQLite and notes.txt is not in data: nothing in use is overwritten
+        for cmd in [
+            "cp -t lone data/app.db",
+            "cp -t lone/ data/app.db",
+            "cp -t backup data/app.db",
+            "cp -t data notes.txt",
+            "cp --target-directory=data notes.txt",
+            "install -m 644 -t data notes.txt",
+        ] {
+            assert!(hits(&root, cmd).is_empty(), "{cmd:?}");
+        }
+        for cmd in [
+            "cp -t data lone/app.db",
+            "cp -tdata lone/app.db",
+            "cp -rt data lone/app.db",
+            "cp -at data lone/app.db",
+            "cp lone/app.db -t data",
+            "cp --target-directory=data lone/app.db",
+            "cp --target-directory data lone/app.db",
+            "cp --target data lone/app.db",
+            "cp -v -- lone/app.db data/",
+            "mv -t data lone/app.db",
+            "mv -t lone data/app.db", // what mv moves away counts, as without -t
+            "install -t data lone/app.db",
+        ] {
+            assert!(hits(&root, cmd).contains(&app), "{cmd:?}");
+        }
+        let w = |s: &str| (s.to_string(), false);
+        assert_eq!(
+            target_dir(&[w("-rt"), w("d"), w("a")]),
+            (Some(w("d")), vec![w("a")])
+        );
+        assert_eq!(target_dir(&[w("a"), w("b")]), (None, vec![w("a"), w("b")]));
+    }
+
+    #[test]
+    fn find_tests_that_cannot_reach_a_database_let_the_command_through() {
+        let root = project("find");
+        let (app, deep) = ("data/app.db".to_string(), "sub/deep/x.SQLITE".to_string());
+        for cmd in [
+            "find . -name .DS_Store -delete",
+            "find . -name '*.pyc' -delete",
+            "find data -iname '*.PYC' -delete",
+            "find . -type f -name '*.orig' -exec rm {} +",
+            "find . -type d -name __pycache__ -exec rm -rf {} +",
+            "find . -type d -name zzz -exec mv {} /tmp \\;",
+            "find ./ -type d -name zzz -exec rm -rf {} +",
+            "find . -type d -delete", // a database is a file: rmdir of a folder that holds one fails
+            "find . -type l -delete",
+            "find . -name '*.db' -type d -delete",
+            "find . -name 'app.dbx' -delete",
+            "find data -name 'app.db' -type d -exec rm -rf {} +",
+            "find . -maxdepth 1 -name '*.log' -delete",
+            "find . -name 'app.d[a]' -delete",
+            "find -L . -name zzz -delete",
+        ] {
+            assert!(
+                hits(&root, cmd).is_empty(),
+                "{cmd:?} -> {:?}",
+                hits(&root, cmd)
+            );
+        }
+        // a name test is on the last word of a path, case as asked, and it sees the -wal, -shm and -journal files too
+        for cmd in [
+            "find . -name '*.db' -delete",
+            "find . -name 'app.db' -delete",
+            "find . -iname 'APP.DB' -delete",
+            "find . -name 'app.d?' -type f -delete",
+            "find . -name 'app.db-wal' -delete",
+            "find . -name '*-shm' -exec rm {} +",
+            "find . -name '*.db' -a -type f -delete",
+            "find data -type f -delete",
+            "find data -delete",
+            "find . -delete -name '*.pyc'", // the action runs before the test
+            "find . -name '[a]pp.db' -delete",
+            "find . -name 'app\\.db' -delete", // a pattern we cannot read counts as matching
+            "find . -name \"$X\" -delete",
+        ] {
+            assert!(hits(&root, cmd).contains(&app), "{cmd:?}");
+        }
+        assert!(hits(&root, "find . -name 'x.SQLITE' -iname 'X.*' -delete").contains(&deep));
+        assert!(!hits(&root, "find . -name 'x.sqlite' -delete").contains(&deep)); // -name is case sensitive
+        // tests this parser does not judge: as if there were none (the common `-prune -o` idiom stays a false alarm)
+        for cmd in [
+            "find . -name '*.pyc' -o -name '*.db' -delete",
+            "find . ! -name '*.db' -delete",
+            "find . -not -name zzz -delete",
+            "find . \\( -name a -o -name b \\) -delete",
+            "find . -name node_modules -prune -o -name '*.pyc' -delete",
+            "find . -path './data/*' -delete",
+            "find . -regex '.*app.*' -delete",
+            "find . -name zzz -exec echo {} \\; -delete",
+        ] {
+            assert!(hits(&root, cmd).contains(&app), "{cmd:?}");
+        }
+        // a folder test with rm -rf / mv takes the database along with the folder it is in
+        assert_eq!(
+            hits(&root, "find . -type d -name data -exec rm -rf {} +"),
+            std::slice::from_ref(&app)
+        );
+        assert_eq!(
+            hits(&root, "find . -type d -name deep -exec rm -rf {} +"),
+            std::slice::from_ref(&deep)
+        );
+        assert_eq!(
+            hits(&root, "find . -name sub -exec mv {} /tmp/x \\;"),
+            std::slice::from_ref(&deep)
+        );
+        assert!(hits(&root, "find . -type d -exec rm -rf {} +").contains(&app));
+        // a start point that holds the project folder, other than `.`, is not judged
+        for start in [
+            root.display().to_string(),
+            "..".to_string(),
+            "../proj".to_string(),
+        ] {
+            let got = hits(
+                &root,
+                &format!("find {start} -type d -name zzz -exec rm -rf {{}} +"),
+            );
+            assert!(got.contains(&app), "{start} -> {got:?}");
+        }
+    }
+
+    #[test]
+    fn here_document_text_is_not_a_command_unless_a_shell_or_script_reads_it() {
+        let root = project("heredoc");
+        let app = "data/app.db".to_string();
+        for cmd in [
+            "cat > reset.sh <<'EOF'\nrm data/app.db\nEOF",
+            "cat > reset.sh <<EOF\nrm data/app.db\nEOF\nchmod +x reset.sh",
+            "cat <<-EOF\n\trm data/app.db\n\tEOF\necho done",
+            "cat <<A <<B\nrm data/app.db\nA\nrm data/app.db\nB",
+            "cat <<EOF > notes.txt\nrm data/app.db\nEOF",
+            "python3 <<EOF\nrm data/app.db\nEOF", // shortcut: not shell, so not read
+            "grep x <<< 'rm data/app.db'",
+        ] {
+            assert!(hits(&root, cmd).is_empty(), "{cmd:?}");
+        }
+        for cmd in [
+            "cat <<EOF\nhello\nEOF\nrm data/app.db",
+            "bash <<EOF\nrm data/app.db\nEOF",
+            "sh <<'EOF'\nrm data/app.db\nEOF",
+            "sudo bash <<EOF\nrm data/app.db\nEOF",
+            "cat <<EOF | sh\nrm data/app.db\nEOF",
+            "cat > x.sh <<EOF\nrm data/app.db\nEOF\nsh x.sh",
+            "cat > x.sh <<EOF\nrm data/app.db\nEOF\n./x.sh",
+            "cat > x.sh <<EOF\nrm data/app.db\nEOF\nbash scripts/x.sh",
+            "source /dev/stdin <<EOF\nrm data/app.db\nEOF",
+            "cat <<EOF\nrm data/app.db\n", // no end word: not a here-document
+            "echo $((1 << 2))\nrm data/app.db",
+            "cat <<EOF\nrm data/app.db\nEOFX\n",
+        ] {
+            assert!(hits(&root, cmd).contains(&app), "{cmd:?}");
+        }
+    }
+
+    /// `git init` in the project folder with this `.gitignore`.
+    fn repo(name: &str, ignore: &str) -> PathBuf {
+        let root = project(name);
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(ok, "git init");
+        fs::write(root.join(".gitignore"), ignore).unwrap();
+        root
+    }
+
+    #[test]
+    fn git_clean_is_denied_unless_git_itself_says_the_database_is_left_alone() {
+        let app = "data/app.db".to_string();
+        let deep = "sub/deep/x.SQLITE".to_string();
+        // not a repository, no way to ask git: the deny of before
+        let none = project("clean-none");
+        assert!(hits(&none, "git clean -fd").contains(&app));
+        assert!(hits(&none, "git clean -fd -e '*.db*'").contains(&app));
+        // every file of both databases ignored
+        let all = repo("clean-all", "*.db*\n*.SQLITE*\n");
+        for cmd in [
+            "git clean -fd",
+            "git clean -f data",
+            "git clean -fdq",
+            "git -C data clean -fd",
+            "git clean -fdn",
+        ] {
+            assert!(hits(&all, cmd).is_empty(), "{cmd:?}");
+        }
+        for cmd in [
+            "git clean -fdx",
+            "git clean -ffd",
+            "git clean -fdf",
+            "git clean -fdX",
+            "git clean -f -d --force",
+        ] {
+            let got = hits(&all, cmd);
+            // -x: the rules are not used; -ff: nested repositories go too; -X: only ignored files go
+            assert!(
+                got.contains(&app) && got.contains(&deep),
+                "{cmd:?} -> {got:?}"
+            );
+        }
+        // only the database file is ignored, not its -wal and -shm: git would take those
+        let part = repo("clean-part", "*.db\n*.SQLITE\n");
+        assert!(hits(&part, "git clean -fd").contains(&app));
+        // -e names, in every spelling, also keep the -wal and -shm files
+        let plain = repo("clean-e", "");
+        for cmd in [
+            "git clean -fdx -e '*.db*' -e '*.SQLITE*'",
+            "git clean -fdx -e'*.db*' -e'*.SQLITE*'",
+            "git clean -fdxe '*.db*' -e '*.SQLITE*'",
+            "git clean -fdx --exclude '*.db*' --exclude='*.SQLITE*'",
+            "git clean -fd -e '*.db*' -e '*.SQLITE*'",
+            "git clean -e '*.db*' -e '*.SQLITE*' -fd",
+        ] {
+            let got = hits(&plain, cmd);
+            assert!(got.is_empty(), "{cmd:?} -> {got:?}");
+        }
+        for cmd in [
+            "git clean -fdx -e dev.db",
+            "git clean -fdx -e '*.db' -e '*.SQLITE'",
+            "git clean -fdx -e '*.db*'", // the deep one is not excluded
+            "git clean -fd",
+            "git clean -fdx",
+        ] {
+            assert!(!hits(&plain, cmd).is_empty(), "{cmd:?}");
+        }
+        assert!(hits(&plain, "git clean -fdx -e '*.db*'").contains(&deep));
+        // -X takes only what the rules ignore: nothing is ignored here
+        assert!(hits(&plain, "git clean -fdX").is_empty());
+        assert!(hits(&all, "git clean -fdX -e zzz").contains(&app));
+        // an -e pattern is not a path to clean
+        assert!(hits(&plain, "git clean -fd -e '*.db*' -e '*.SQLITE*' notes.txt").is_empty());
+        assert!(hits(&plain, "git clean -fd notes.txt data").contains(&app));
     }
 }
