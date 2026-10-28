@@ -1143,7 +1143,7 @@ fn database_turns_reach_the_model_after_an_exit_and_in_later_sessions() {
             .collect();
         let show = json!({"turn": {"n": n, "start_point": p}, "files": files});
         r.set(&format!("out.show.{n}"), &show.to_string());
-        note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+        note_parts(&stop_run(&r, n).out).0
     };
     let ups = || context_of(&r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit")));
     r.hook_ok("SessionStart", &r.fixture("SessionStart"));
@@ -1243,7 +1243,7 @@ fn db_stop(r: &Rig, n: u32, p: u32, files: &[String]) -> String {
         .collect();
     let show = json!({"turn": {"n": n, "start_point": p}, "files": rows});
     r.set(&format!("out.show.{n}"), &show.to_string());
-    note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+    note_parts(&stop_run(r, 100 + n).out).0 // not 1: the session's own id is a subagent's turn
 }
 
 const FIVE_SOURCES: [&str; 5] = [
@@ -1784,8 +1784,8 @@ fn real_engine_a_command_that_would_delete_a_database_in_use_is_denied_until_its
     assert_eq!(rows_in(&db), "300", "{text}");
 
     // the drill's own D07: the writer was killed (SIGKILL), no app runs, its log is still not empty. The engine saves
-    // such a database no more than a live one, so the delete stays denied and the reason says so; with saving off
-    // (nothing is saved anyway) nothing is denied
+    // such a database no more than a live one, so the delete is denied and the reason names the way out (the next
+    // tests walk it); with saving off (nothing is saved anyway) nothing is denied
     let stale = r.cwd.join("data/stale.db");
     drop(BusyApp::start(&stale));
     assert!(
@@ -1800,8 +1800,10 @@ fn real_engine_a_command_that_would_delete_a_database_in_use_is_denied_until_its
     assert!(
         out.contains("permissionDecision")
             && out.contains("a crash left its files behind")
-            && out.contains("stays refused")
-            && out.contains("in their own terminal"),
+            && out.contains("SELECT count(*) FROM sqlite_master")
+            && out.contains("If it is refused again, ask the user")
+            && out.contains("in their own terminal")
+            && !out.contains("stays refused"),
         "{out}"
     );
     assert_eq!(engine_cli(&r, &["off"]).0, 0);
@@ -1809,6 +1811,441 @@ fn real_engine_a_command_that_would_delete_a_database_in_use_is_denied_until_its
         .hook_ok("PreToolUse", &pre("rm data/stale.db", "call_rm_stale_off"))
         .out;
     assert!(!out.contains("permissionDecision"), "{out}");
+}
+
+// ------------------------------------------------ F4c item 10: the way out of a database a crash left behind
+
+/// The state a database is left in, made with python's sqlite3 module (the library real apps use); the table `t` has
+/// 5 committed rows. `wal`: the app was killed with them only in its log. `hot`: killed in the middle of a transaction
+/// (a small cache pushes the unfinished pages into the file), so a journal waits to be rolled back. `persist` and
+/// `truncate`: closed cleanly in a journal mode that keeps the `-journal` file (zero header, empty). `app`: an app
+/// still runs and holds the database open (the one thing that is returned, so the test keeps it alive).
+fn leftover(db: &Path, kind: &str) -> Option<BusyApp> {
+    const SRC: &str = r#"
+import os, signal, sqlite3, sys
+kind, db = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(db, isolation_level=None)
+if kind == "wal":
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA wal_autocheckpoint=0")
+elif kind != "hot":
+    con.execute("PRAGMA journal_mode=" + kind)
+con.execute("create table t(id integer primary key, v text)")
+con.execute("begin")
+for i in range(5):
+    con.execute("insert into t(v) values (?)", ("row%d" % i,))
+con.execute("commit")
+if kind == "hot":
+    con.execute("PRAGMA cache_size=5")
+    con.execute("begin")
+    for i in range(3000):
+        con.execute("insert into t(v) values (?)", ("x" * 500,))
+if kind in ("wal", "hot"):
+    os.kill(os.getpid(), signal.SIGKILL)  # the app dies: no close, no checkpoint, no rollback
+con.close()
+"#;
+    if kind == "app" {
+        return Some(BusyApp::start(db));
+    }
+    let o = Command::new("python3")
+        .args(["-I", "-c", SRC, kind])
+        .arg(db)
+        .output()
+        .expect("python3 is needed for the database tests");
+    assert_eq!(
+        o.status.success(),
+        !matches!(kind, "wal" | "hot"),
+        "{kind}: {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    None
+}
+
+/// The commands the deny text offers. The `sqlite3` program is not on every machine (not on the one these were written
+/// on), so its form is run only where it is installed.
+fn exit_forms() -> Vec<&'static str> {
+    let mut forms = vec!["python3 -c"];
+    if Command::new("sqlite3").arg("-version").output().is_ok() {
+        forms.push("sqlite3 ");
+    }
+    forms
+}
+
+fn second_turn(mut p: Value) -> Value {
+    p["turn_id"] = json!("00000000-0000-7000-8000-000000000012");
+    p
+}
+
+/// A Bash call in the second turn: the reason when the hook denies it, None when it goes through.
+fn denial(r: &Rig, cmd: &str, id: &str) -> Option<String> {
+    let mut p = second_turn(r.fixture("PreToolUse-bash"));
+    p["tool_input"]["command"] = json!(cmd);
+    p["tool_use_id"] = json!(id);
+    let out = r.hook_ok("PreToolUse", &p).out;
+    let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+    let h = &v["hookSpecificOutput"];
+    match h["permissionDecision"].as_str() {
+        Some("deny") => Some(
+            h["permissionDecisionReason"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned(),
+        ),
+        other => {
+            assert!(other.is_none(), "{cmd}: {out}");
+            None
+        }
+    }
+}
+
+/// What the model meets after the app is gone, with the real engine and real SQLite files: `rm data/app.db` is denied,
+/// the model runs the command the text names (`form`: the start of the one it picks), and tries the delete again.
+/// `wal` and `hot` are cleared by that one read, so the delete goes through with the engine holding a copy; the other
+/// kinds are not, so the delete stays denied and the text sends the model to the user.
+fn exit_scenario(kind: &str, form: &str) {
+    let r = Rig::real(&format!(
+        "real-exit-{kind}-{}",
+        form.split_whitespace().next().unwrap()
+    ));
+    let db = r.cwd.join("data/app.db");
+    fs::create_dir(r.cwd.join("data")).unwrap();
+    fs::write(r.cwd.join("base.txt"), "keep\n").unwrap();
+    let _app = leftover(&db, kind);
+    let side = |s: &str| PathBuf::from(format!("{}{s}", db.display()));
+    let (wal, shm, jrn) = (side("-wal"), side("-shm"), side("-journal"));
+    // the state is what the guard calls busy (so a missing state fails here, not later)
+    match kind {
+        "wal" | "app" => assert!(fs::metadata(&wal).unwrap().len() > 0 && shm.exists()),
+        "hot" => assert_eq!(
+            fs::read(&jrn).unwrap()[..8],
+            [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7],
+            "a journal that waits to be rolled back"
+        ),
+        "persist" => assert_eq!(fs::read(&jrn).unwrap()[..8], [0; 8]),
+        "truncate" => assert_eq!(fs::metadata(&jrn).unwrap().len(), 0),
+        _ => unreachable!("{kind}"),
+    }
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    r.hook_ok("Stop", &r.fixture("Stop"));
+    r.hook_ok(
+        "UserPromptSubmit",
+        &second_turn(r.fixture("UserPromptSubmit")),
+    );
+
+    let why = denial(&r, "rm data/app.db", "call_rm_1")
+        .unwrap_or_else(|| panic!("{kind}: the delete is not denied"));
+    assert!(
+        why.contains("a crash left its files behind")
+            && why.contains("If it is refused again, ask the user")
+            && !why.contains("stays refused"),
+        "{why}"
+    );
+    // the way out is in the text; with `<db>` filled in it goes through the hook (neither the guard nor the engine
+    // denies it) and runs
+    let exit = why
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .find(|c| c.starts_with(form))
+        .unwrap_or_else(|| panic!("no {form:?} command in {why}"))
+        .replace("<db>", "data/app.db");
+    assert_eq!(denial(&r, &exit, "call_exit"), None, "{exit}");
+    let run = Command::new("sh")
+        .args(["-c", &exit])
+        .current_dir(&r.cwd)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{exit}: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let clears = matches!(kind, "wal" | "hot");
+    let left: Vec<&PathBuf> = [&wal, &shm, &jrn]
+        .into_iter()
+        .filter(|p| p.exists())
+        .collect();
+    assert!(db.exists(), "the read never removes the database");
+    assert_eq!(
+        left.is_empty(),
+        clears,
+        "{kind}: left after the read: {left:?}"
+    );
+    // every committed row is there; the unfinished transaction of the `hot` kind is the one thing rolled back
+    assert_eq!(rows_in(&db), if kind == "app" { "300" } else { "5" });
+
+    let retry = denial(&r, "rm data/app.db", "call_rm_2");
+    if !clears {
+        let again = retry.unwrap_or_else(|| panic!("{kind}: the delete went through"));
+        assert!(again.contains("ask the user"), "{again}");
+        return;
+    }
+    assert_eq!(
+        retry, None,
+        "{kind}: the files are gone, the same delete goes through"
+    );
+    fs::remove_file(&db).unwrap();
+    let mut post = second_turn(r.fixture("PostToolUse-bash"));
+    post["tool_input"]["command"] = json!("rm data/app.db");
+    post["tool_use_id"] = json!("call_rm_2");
+    r.hook_ok("PostToolUse", &post);
+    let last_stop = r.hook_ok("Stop", &second_turn(r.fixture("Stop"))).out;
+
+    // the engine's own record, as in D07: the save point taken while the files were still there has no copy of the
+    // database ("its database was busy"), the one taken at the retried delete has it, and `back` returns its 5 rows
+    let (code, shown) = engine_cli(&r, &["show", "2", "--json"]);
+    assert_eq!(code, 0, "{shown}");
+    let shown: Value = serde_json::from_str(&shown).unwrap();
+    let pres: Vec<u64> = shown["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["kind"].as_str().is_some_and(|k| k.starts_with("pre_")))
+        .filter_map(|p| p["id"].as_u64())
+        .collect();
+    assert!(pres.len() >= 2, "{shown}");
+    let (early, late) = (pres[0].to_string(), pres[pres.len() - 1].to_string());
+    let told: Value = serde_json::from_str(&last_stop).unwrap_or(Value::Null);
+    assert!(
+        blocked(&told).is_some_and(|w| w.contains(&format!("back --id {late} --with-data"))),
+        "the Stop names the save point that has the copy: {last_stop}"
+    );
+    let (_, text) = engine_cli(&r, &["back", "--id", &early, "--with-data", "--dry-run"]);
+    assert!(text.contains("its database was busy"), "{text}");
+    let (_, text) = engine_cli(&r, &["back", "--id", &late, "--with-data", "--dry-run"]);
+    assert!(!text.contains("busy"), "{text}");
+    let (code, text) = engine_cli(&r, &["back", "--id", &late, "--with-data"]);
+    assert_eq!(code, 0, "{text}");
+    assert_eq!(rows_in(&db), "5", "{text}");
+}
+
+/// F4c item 10. A killed app leaves a `-wal` with rows only in it. The deny text names one read; it folds the log into
+/// the file and removes `-wal` and `-shm`, the same delete then goes through, and the engine keeps a copy with the rows.
+#[test]
+fn real_engine_one_read_clears_the_files_a_killed_app_left_and_the_delete_then_goes_through_saved()
+{
+    for form in exit_forms() {
+        exit_scenario("wal", form);
+    }
+}
+
+/// F4c item 10. An app killed in the middle of a transaction leaves a hot `-journal`. The same read rolls back only the
+/// unfinished transaction (the 5 committed rows stay), removes the journal, and the delete then goes through saved.
+#[test]
+fn real_engine_one_read_rolls_back_a_hot_journal_and_the_delete_then_goes_through_saved() {
+    for form in exit_forms() {
+        exit_scenario("hot", form);
+    }
+}
+
+/// F4c item 10, the open limit. A `-journal` that a clean close left behind in PERSIST mode (its header is zeroed)
+/// survives the read, so the delete stays denied; the text says to ask the user.
+#[test]
+fn real_engine_a_persist_journal_a_clean_close_left_survives_the_read_and_the_delete_stays_denied()
+{
+    for form in exit_forms() {
+        exit_scenario("persist", form);
+    }
+}
+
+/// F4c item 10, the open limit, as above for TRUNCATE mode (the journal file is empty).
+#[test]
+fn real_engine_a_truncate_journal_a_clean_close_left_survives_the_read_and_the_delete_stays_denied()
+{
+    for form in exit_forms() {
+        exit_scenario("truncate", form);
+    }
+}
+
+/// F4c item 10. While another program still has the database open (the app runs), the read leaves its log and the
+/// retried delete stays denied: the guard is right to refuse it.
+#[test]
+fn real_engine_the_read_leaves_the_log_of_a_database_an_app_still_has_open_and_the_delete_stays_denied()
+ {
+    for form in exit_forms() {
+        exit_scenario("app", form);
+    }
+}
+
+// ---------------------------------------------------------------- F4c: no false alarms from the hands-free parts
+
+/// The F4c corpus (pre-registered: no case is added, dropped or edited). The folder is a git repo with a busy `dev.db`
+/// (its app runs, as in D07) and the files the commands name; the hook only looks at the commands, none is run. Rows:
+/// id, command, the folder's .gitignore. The first list must go through, the second must be denied.
+const IGNORED: &str = "dev.db";
+const QUIET_ALLOW: [(&str, &str, &str); 14] = [
+    ("A1", "find . -name .DS_Store -delete", IGNORED),
+    ("A2", "find . -name '*.pyc' -delete", IGNORED),
+    (
+        "A3",
+        "find . -type d -name __pycache__ -exec rm -rf {} +",
+        IGNORED,
+    ),
+    ("A4", "git clean -fd", "dev.db*"),
+    ("A5", "git clean -fdx -e 'dev.db*'", IGNORED),
+    ("A6", "rm app.{log,txt}", IGNORED),
+    ("A7", "cp -t backup/ dev.db", IGNORED),
+    ("A8", "cat > reset.sh <<'EOF'\nrm dev.db\nEOF", IGNORED),
+    ("A9", "mv src/old.ts src/new.ts", IGNORED),
+    ("A10", "rm -rf node_modules", IGNORED),
+    ("A11", "find src -name '*.orig' -delete", IGNORED),
+    ("A12", "git rm --cached dev.db", IGNORED),
+    ("A13", "cp dev.db dev.db.bak", IGNORED),
+    ("A14", "rm -f dev.db.bak", IGNORED),
+];
+const QUIET_DENY: [(&str, &str, &str); 12] = [
+    ("D1", "rm dev.db", IGNORED),
+    ("D2", "rm -f ./dev.db*", IGNORED),
+    ("D3", "find . -name '*.db' -delete", IGNORED),
+    ("D4", "find . -delete", IGNORED),
+    ("D5", "git clean -fdx", IGNORED),
+    ("D6", "mv dev.db old.db", IGNORED),
+    ("D7", "cp other.db dev.db", IGNORED),
+    ("D8", ": > dev.db", IGNORED),
+    ("D9", "sh -c 'rm dev.db'", IGNORED),
+    ("D10", "cd data && rm ../dev.db", IGNORED),
+    ("D11", "git clean -fd", IGNORED),
+    ("D12", "git clean -fdx -e dev.db", IGNORED),
+];
+
+/// The corpus folder; its app holds `dev.db` open as long as the returned value lives.
+fn quiet_folder(r: &Rig) -> BusyApp {
+    assert!(
+        r.command("git", &["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    for d in ["data", "src", "backup", "node_modules/pkg"] {
+        fs::create_dir_all(r.cwd.join(d)).unwrap();
+    }
+    for f in [
+        "src/old.ts",
+        "other.db",
+        "dev.db.bak",
+        "app.log",
+        "app.txt",
+        "node_modules/pkg/index.js",
+    ] {
+        fs::write(r.cwd.join(f), "x\n").unwrap();
+    }
+    let app = BusyApp::start(&r.cwd.join("dev.db"));
+    assert!(fs::metadata(r.cwd.join("dev.db-wal")).unwrap().len() > 0);
+    app
+}
+
+/// The rows of `list` whose verdict is not the wanted one (`want_deny`), each as `id command`.
+fn quiet_wrong(name: &str, list: &[(&str, &str, &str)], want_deny: bool) -> Vec<String> {
+    let r = Rig::real(name);
+    let _app = quiet_folder(&r);
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let mut wrong = Vec::new();
+    for (id, cmd, ignored) in list {
+        fs::write(r.cwd.join(".gitignore"), format!("{ignored}\n")).unwrap();
+        // A6 only means something when a busy `app.db` is there for `app.*` to hit (the expanded braces must not)
+        let app = (*id == "A6").then(|| BusyApp::start(&r.cwd.join("app.db")));
+        let mut p = r.fixture("PreToolUse-bash");
+        p["tool_input"]["command"] = json!(cmd);
+        p["tool_use_id"] = json!(format!("call_{id}"));
+        let out = r.hook_ok("PreToolUse", &p).out;
+        let denied = serde_json::from_str::<Value>(&out)
+            .is_ok_and(|v| v["hookSpecificOutput"]["permissionDecision"] == "deny");
+        if denied != want_deny {
+            wrong.push(format!("{id} {cmd}"));
+        }
+        if app.is_some() {
+            drop(app);
+            for s in ["", "-wal", "-shm"] {
+                let _ = fs::remove_file(r.cwd.join(format!("app.db{s}")));
+            }
+        }
+    }
+    wrong
+}
+
+/// F4c: commands that cannot hurt the busy database are not stopped (a false alarm teaches the model to ask for approval).
+#[test]
+fn corpus_commands_that_cannot_hurt_a_busy_database_are_not_denied() {
+    let wrong = quiet_wrong("quiet-allow", &QUIET_ALLOW, false);
+    assert!(wrong.is_empty(), "{} false denies: {wrong:#?}", wrong.len());
+}
+
+/// F4c: and every way of losing it is still denied, `git clean` included (it deletes the -wal and -shm files too).
+#[test]
+fn corpus_commands_that_would_hurt_a_busy_database_are_denied() {
+    let wrong = quiet_wrong("quiet-deny", &QUIET_DENY, true);
+    assert!(
+        wrong.is_empty(),
+        "{} missed denies: {wrong:#?}",
+        wrong.len()
+    );
+}
+
+/// F4c Stop cases. S1 S3 S4 S5 with the fake engine saying what the turn did; S2 (a rename) with the real engine.
+#[test]
+fn corpus_the_stop_block_comes_only_for_what_is_deleted_or_lost() {
+    let mut wrong: Vec<String> = Vec::new();
+    let r = Rig::new("quiet-stop");
+    started(&r);
+    // S1: a migration changed dev.db: the user's line stays, the model is not stopped for it
+    fs::write(r.cwd.join("dev.db"), b"x").unwrap();
+    engine_turn(&r, 5, 30, &[31], &[("dev.db", "shell", "changed")]);
+    engine_stop(&r, &[SAVED]);
+    let v = stop_of(&r, 2);
+    if blocked(&v).is_some() || !said(&v).contains("turn 5 changed dev.db") {
+        wrong.push(format!("S1 {v}"));
+    }
+    // S3: a deleted file is still told
+    engine_turn(&r, 6, 40, &[], &[("notes.md", "shell", "deleted")]);
+    let v = stop_of(&r, 3);
+    if !blocked(&v).is_some_and(|w| w.contains("This turn deleted notes.md")) {
+        wrong.push(format!("S3 {v}"));
+    }
+    // S5: Muse then runs the turn on and stops again (stop_hook_active): that Stop asks the engine nothing
+    let calls = r.calls().len();
+    let mut again = r.fixture("Stop-active");
+    again["turn_id"] = json!("00000000-0000-7000-8000-000000000003");
+    let v = serde_json::from_str::<Value>(&r.hook_ok("Stop", &again).out).unwrap_or(Value::Null);
+    if r.calls().len() != calls || blocked(&v).is_some() {
+        wrong.push(format!("S5 {} engine calls: {v}", r.calls().len() - calls));
+    }
+    // S4 (D07): the database is deleted after its app stopped, or while it ran: both stay blocked
+    engine_turn(&r, 7, 50, &[51], &[("dev.db", "shell", "deleted")]);
+    let v = stop_of(&r, 4);
+    if !blocked(&v).is_some_and(|w| w.contains("changed or deleted dev.db (database files)")) {
+        wrong.push(format!("S4 deleted {v}"));
+    }
+    fs::remove_file(r.cwd.join("dev.db")).unwrap();
+    engine_turn(&r, 8, 60, &[61], &[("dev.db", "shell", "not saved")]);
+    let v = stop_of(&r, 5);
+    if !blocked(&v).is_some_and(|w| w.contains("could not save dev.db")) {
+        wrong.push(format!("S4 in use {v}"));
+    }
+    // S2: the real engine lists a rename as a deleted file and a new one
+    let r = Rig::real("quiet-rename");
+    fs::create_dir(r.cwd.join("src")).unwrap();
+    fs::write(r.cwd.join("src/old.ts"), "export const a = 1;\n".repeat(12)).unwrap();
+    started(&r);
+    r.hook_ok("Stop", &r.fixture("Stop"));
+    let v = real_turn(&r, 3, "mv src/old.ts src/new.ts", || {
+        fs::rename(r.cwd.join("src/old.ts"), r.cwd.join("src/new.ts")).unwrap()
+    });
+    if blocked(&v).is_some_and(|w| w.contains("deleted")) {
+        let (_, st) = engine_cli(&r, &["status", "--json"]);
+        let n = serde_json::from_str::<Value>(&st)
+            .map_or(0, |s| s["last_turn"]["n"].as_u64().unwrap_or(0));
+        let (_, rows) = engine_cli(&r, &["show", &n.to_string(), "--json"]);
+        let rows = serde_json::from_str::<Value>(&rows).map_or(rows, |s| s["files"].to_string());
+        wrong.push(format!("S2 {v} rows {rows}"));
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong Stop cases: {wrong:#?}",
+        wrong.len()
+    );
 }
 
 /// AD3 (research/60): a promise the AI adds through its bash tool must not count as the user's words. The engine knows
@@ -2076,11 +2513,17 @@ fn engine_turn(r: &Rig, n: u32, start: u32, pre: &[u32], rows: &[(&str, &str, &s
     r.set(&format!("out.show.{n}"), &show.to_string());
 }
 
-/// The Stop of the turn whose id ends in `t` (2 is the fixture's own): what the hook printed, Null when nothing.
-fn stop_of(r: &Rig, t: u32) -> Value {
+/// The Stop of the turn whose id ends in `t` (2 is the fixture's own). A test that plays several turns gives each its own
+/// id, as Muse does: one turn id is one turn, and its Stop after the one block says nothing more (F4c).
+fn stop_run(r: &Rig, t: u32) -> Run {
     let mut p = r.fixture("Stop");
     p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
-    serde_json::from_str(&r.hook_ok("Stop", &p).out).unwrap_or(Value::Null)
+    r.hook_ok("Stop", &p)
+}
+
+/// What the Stop of turn `t` printed, Null when nothing.
+fn stop_of(r: &Rig, t: u32) -> Value {
+    serde_json::from_str(&stop_run(r, t).out).unwrap_or(Value::Null)
 }
 
 /// The reason of a Stop block, None when the output is not one.
@@ -2300,8 +2743,20 @@ fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_bloc
     let (check, gone) = (why.find("Promise #1"), why.find("This turn deleted a.txt"));
     assert!(check.is_some() && gone.is_some() && check < gone, "{why}");
 
-    // a database: the block gives the command with the turn's first save point; no dry run was needed for it
-    engine_turn(&r, 8, 50, &[51], &[("data/app.db", "shell", "changed")]);
+    // a database that was only changed (a migration, a write) is not lost: L3's line tells the user, the model is not stopped
+    engine_turn(&r, 7, 50, &[51], &[("data/app.db", "shell", "changed")]);
+    engine_stop(&r, &[SAVED]);
+    let before = r.calls().len();
+    let v = stop_of(&r, 4);
+    assert!(blocked(&v).is_none(), "{v}");
+    assert_eq!(r.calls().len() - before, 2, "{:?}", r.calls());
+    assert!(
+        said(&v).starts_with("Torpor: turn 7 changed data/app.db. Get it back: stop the app, then torpor back --id 50 --with-data — Torpor: save point 31"),
+        "L3's line stays first: {v}"
+    );
+
+    // a database that is gone: the block gives the command with the turn's first save point; no dry run was needed for it
+    engine_turn(&r, 8, 50, &[51], &[("data/app.db", "shell", "deleted")]);
     engine_stop(&r, &[SAVED]);
     let before = r.calls().len();
     let v = stop_of(&r, 4);
