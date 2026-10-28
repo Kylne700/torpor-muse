@@ -750,8 +750,15 @@ fn project_root(cwd: &str) -> PathBuf {
 /// Costs the `status` and `show` calls of L3, plus up to 3 dry runs of `back` to find a save point that has a database
 /// that was in use when the turn began and is gone now (`stop::restoring_point`): all within 4 s and `left`. A call that
 /// is cut short leaves out what it would have told: the fail-line block still goes out, with `find-break` for the turn.
+/// The Stop that follows the block, in the same turn, costs none of this and adds nothing.
 fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<String> {
     if e.cwd.is_empty() || !turn_ended("Stop", body.as_deref()) {
+        return body;
+    }
+    // Muse runs a blocked turn on and stops again in the same turn: that Stop has told its one block already, so it asks
+    // the engine nothing and says nothing twice (F4c)
+    let told = |s: &mut state::Session| s.noted == e.turn;
+    if !e.turn.is_empty() && state::with_session(e.dir, e.sid, told).unwrap_or(false) {
         return body;
     }
     let fails = serde_json::from_slice::<Value>(engine_out)
@@ -777,6 +784,8 @@ fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<Strin
     if status.as_ref().is_some_and(|s| s["saving"] != true) {
         return body;
     }
+    // shortcut: `last_turn` is the folder's, so with two sessions in one folder it can be the other session's turn, and this
+    // Stop then tells about that one; upgrade when the engine can name the last turn of a session.
     let n = status.and_then(|s| s["last_turn"]["n"].as_u64());
     let show = n.and_then(|n| json(&["show", &n.to_string(), "--json"]));
     let root = project_root(e.cwd);
@@ -846,11 +855,15 @@ fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<Strin
     let Some(reason) = stop::reason(&engine_cmd(e.bin), &broke, &risk) else {
         return body;
     };
+    // the block is built before the turn is marked as told: a block that cannot go out must not use up the turn's one
+    let Some(block) = schema::block(body.as_deref(), &reason) else {
+        return body;
+    };
     // a state file that cannot be locked cannot tell whether this turn was told already: no block
     if !state::with_session(e.dir, e.sid, |s| s.allow_note_block(e.turn)).unwrap_or(false) {
         return body;
     }
-    schema::block(body.as_deref(), &reason).or(body)
+    Some(block)
 }
 
 /// F4 item 4 (drill D07): a Bash command that would delete, move or overwrite a database that is in use is denied (Muse

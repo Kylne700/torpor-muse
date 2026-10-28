@@ -1,8 +1,10 @@
 //! F4 items 2 and 3: the words of the one Stop block that `hook::stop_note` gives when the turn that just ended broke a
 //! saved check or did something risky. This file reads the engine's own text and writes ours; it starts nothing.
 
+use super::busy::is_db_name;
 use crate::suggest::scrub;
 use serde_json::Value;
+use std::path::Path;
 
 /// Names listed in the block before it says "and N more".
 const LIST: usize = 3;
@@ -72,25 +74,18 @@ pub fn broke_in(passed_on: &str, n: u64, start: Option<u64>) -> bool {
         .is_some_and(|(p, start)| p >= start)
 }
 
-/// The engine's own test for a database file (its scan.rs): .db, .sqlite, .sqlite3, any case.
-pub fn is_database(path: &str) -> bool {
-    let p = path.to_lowercase();
-    [".db", ".sqlite", ".sqlite3"]
-        .iter()
-        .any(|x| p.ends_with(x))
-}
-
 /// What `show N --json` says the turn did, sorted for the user's line and for the block.
 #[derive(Debug, Default, PartialEq)]
 pub struct Rows {
     /// Files that existed before the turn, were the AI's to change (not changed by another session or by the user) and
-    /// are gone, databases apart.
+    /// are gone, databases apart and moved files apart (see `rows`).
     pub deleted: Vec<String>,
     /// Every database file the turn changed or deleted that was not made by someone else: the user's line and the kept
     /// database turns (L3 N1) name these.
     pub dbs: Vec<String>,
-    /// Of those, the ones whose data changed or is gone: the block names these. A database that was in use at one end
-    /// of the turn and is still there is not one (Torpor knows nothing about its data).
+    /// Of those, the ones that are gone: the block names these. A database that was changed (a migration, a write) or
+    /// that was in use at one end of the turn and is still there is not one: Torpor knows nothing about its data, the AI
+    /// did not lose it, and the user's line tells about it (F4c).
     pub risky: Vec<String>,
     /// Of those, the ones that were in use when the turn began and are gone now: the start of the turn has no copy.
     pub lost: Vec<String>,
@@ -99,6 +94,9 @@ pub struct Rows {
 /// `gone(path)`: the path no longer exists in the project folder.
 pub fn rows(show: &Value, gone: impl Fn(&str) -> bool) -> Rows {
     let mut r = Rows::default();
+    // the AI's own deleted and new files that are no databases, with the lines the engine counted in them (None: it
+    // counted none, as for a binary file)
+    let (mut deleted, mut fresh) = (Vec::new(), Vec::new());
     for f in show["files"].as_array().into_iter().flatten() {
         let Some(path) = f["path"].as_str() else {
             continue;
@@ -108,20 +106,41 @@ pub fn rows(show: &Value, gone: impl Fn(&str) -> bool) -> Rows {
             continue;
         }
         let own = class != Some("shared"); // "shared": another session was working there
-        if is_database(path) {
+        if is_db_name(path) {
             if change != Some("new") {
                 r.dbs.push(path.into());
             }
             match change {
-                Some("deleted" | "changed") if own => r.risky.push(path.into()),
+                Some("deleted") if own => r.risky.push(path.into()),
                 Some("not saved") if own && gone(path) => {
                     r.risky.push(path.into());
                     r.lost.push(path.into());
                 }
                 _ => {}
             }
-        } else if change == Some("deleted") && own {
-            r.deleted.push(path.into());
+        } else if own {
+            match change {
+                Some("deleted") => deleted.push((path, f["removed"].as_u64())),
+                Some("new") => fresh.push((path, f["added"].as_u64())),
+                _ => {}
+            }
+        }
+    }
+    // The engine shows a rename as a deleted file and a new one. shortcut: a deleted file counts as moved when a new
+    // file of the same kind (extension) has the same number of lines, one new file for one deleted file, and one with no
+    // count (binary, large) never does; a content hash would be exact and the engine gives none, so upgrade when it
+    // gives a hash or says "renamed". A moved file that was edited in the same turn is still told as deleted.
+    for (path, removed) in deleted {
+        let moved = removed.and_then(|n| {
+            fresh.iter().position(|&(p, added)| {
+                added == Some(n) && Path::new(p).extension() == Path::new(path).extension()
+            })
+        });
+        match moved {
+            Some(i) => {
+                fresh.remove(i);
+            }
+            None => r.deleted.push(path.into()),
         }
     }
     r
@@ -419,12 +438,75 @@ mod tests {
         );
         assert_eq!(
             r.risky,
-            ["kept.DB", "gone.sqlite", "busy-gone.db", "no-class.db"],
-            "changed or gone data of the AI's own; not a database still in use, not a mode change"
+            ["gone.sqlite", "busy-gone.db", "no-class.db"],
+            "gone data of the AI's own; not a changed database, not one still in use, not a mode change"
         );
         assert_eq!(r.lost, ["busy-gone.db"]);
         assert_eq!(rows(&json!({}), |_| true), Rows::default());
         assert_eq!(rows(&json!({"files": []}), |_| true), Rows::default());
+    }
+
+    #[test]
+    fn a_moved_file_is_not_a_deleted_one_but_only_when_the_engines_counts_say_so() {
+        let del = |p: &str, class: &str, n: Option<u64>| json!({"path": p, "class": class, "change": "deleted", "removed": n});
+        let new = |p: &str, class: &str, n: Option<u64>| json!({"path": p, "class": class, "change": "new", "added": n});
+        let told = |files: Vec<Value>| rows(&json!({ "files": files }), |_| false).deleted;
+        let none: [&str; 0] = [];
+        // the engine's rows for `mv src/old.ts src/new.ts`: same lines, same kind of file
+        assert_eq!(
+            told(vec![
+                new("src/new.ts", "shell", Some(12)),
+                del("src/old.ts", "shell", Some(12))
+            ]),
+            none
+        );
+        // another number of lines, another kind of file, or nothing counted: deleted
+        assert_eq!(
+            told(vec![
+                del("a.ts", "shell", Some(12)),
+                new("b.ts", "shell", Some(13))
+            ]),
+            ["a.ts"]
+        );
+        assert_eq!(
+            told(vec![
+                del("a.ts", "shell", Some(12)),
+                new("b.js", "shell", Some(12))
+            ]),
+            ["a.ts"]
+        );
+        assert_eq!(
+            told(vec![
+                del("a.png", "shell", None),
+                new("b.png", "shell", None)
+            ]),
+            ["a.png"]
+        );
+        assert_eq!(told(vec![del("a.ts", "shell", Some(3))]), ["a.ts"]);
+        // one new file stands for one deleted file, not for two
+        assert_eq!(
+            told(vec![
+                del("a.ts", "shell", Some(5)),
+                del("b.ts", "edit", Some(5)),
+                new("c.ts", "shell", Some(5))
+            ]),
+            ["b.ts"]
+        );
+        // a new file made by another session hides nothing
+        assert_eq!(
+            told(vec![
+                del("a.ts", "shell", Some(5)),
+                new("b.ts", "shared", Some(5))
+            ]),
+            ["a.ts"]
+        );
+        assert_eq!(
+            told(vec![
+                del("a.ts", "shell", Some(5)),
+                new("b.ts", "outside", Some(5))
+            ]),
+            ["a.ts"]
+        );
     }
 
     #[test]

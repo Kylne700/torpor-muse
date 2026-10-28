@@ -1143,7 +1143,7 @@ fn database_turns_reach_the_model_after_an_exit_and_in_later_sessions() {
             .collect();
         let show = json!({"turn": {"n": n, "start_point": p}, "files": files});
         r.set(&format!("out.show.{n}"), &show.to_string());
-        note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+        note_parts(&stop_run(&r, n).out).0
     };
     let ups = || context_of(&r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit")));
     r.hook_ok("SessionStart", &r.fixture("SessionStart"));
@@ -1243,7 +1243,7 @@ fn db_stop(r: &Rig, n: u32, p: u32, files: &[String]) -> String {
         .collect();
     let show = json!({"turn": {"n": n, "start_point": p}, "files": rows});
     r.set(&format!("out.show.{n}"), &show.to_string());
-    note_parts(&r.hook_ok("Stop", &r.fixture("Stop")).out).0
+    note_parts(&stop_run(r, 100 + n).out).0 // not 1: the session's own id is a subagent's turn
 }
 
 const FIVE_SOURCES: [&str; 5] = [
@@ -2255,11 +2255,17 @@ fn engine_turn(r: &Rig, n: u32, start: u32, pre: &[u32], rows: &[(&str, &str, &s
     r.set(&format!("out.show.{n}"), &show.to_string());
 }
 
-/// The Stop of the turn whose id ends in `t` (2 is the fixture's own): what the hook printed, Null when nothing.
-fn stop_of(r: &Rig, t: u32) -> Value {
+/// The Stop of the turn whose id ends in `t` (2 is the fixture's own). A test that plays several turns gives each its own
+/// id, as Muse does: one turn id is one turn, and its Stop after the one block says nothing more (F4c).
+fn stop_run(r: &Rig, t: u32) -> Run {
     let mut p = r.fixture("Stop");
     p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
-    serde_json::from_str(&r.hook_ok("Stop", &p).out).unwrap_or(Value::Null)
+    r.hook_ok("Stop", &p)
+}
+
+/// What the Stop of turn `t` printed, Null when nothing.
+fn stop_of(r: &Rig, t: u32) -> Value {
+    serde_json::from_str(&stop_run(r, t).out).unwrap_or(Value::Null)
 }
 
 /// The reason of a Stop block, None when the output is not one.
@@ -2479,8 +2485,20 @@ fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_bloc
     let (check, gone) = (why.find("Promise #1"), why.find("This turn deleted a.txt"));
     assert!(check.is_some() && gone.is_some() && check < gone, "{why}");
 
-    // a database: the block gives the command with the turn's first save point; no dry run was needed for it
-    engine_turn(&r, 8, 50, &[51], &[("data/app.db", "shell", "changed")]);
+    // a database that was only changed (a migration, a write) is not lost: L3's line tells the user, the model is not stopped
+    engine_turn(&r, 7, 50, &[51], &[("data/app.db", "shell", "changed")]);
+    engine_stop(&r, &[SAVED]);
+    let before = r.calls().len();
+    let v = stop_of(&r, 4);
+    assert!(blocked(&v).is_none(), "{v}");
+    assert_eq!(r.calls().len() - before, 2, "{:?}", r.calls());
+    assert!(
+        said(&v).starts_with("Torpor: turn 7 changed data/app.db. Get it back: stop the app, then torpor back --id 50 --with-data — Torpor: save point 31"),
+        "L3's line stays first: {v}"
+    );
+
+    // a database that is gone: the block gives the command with the turn's first save point; no dry run was needed for it
+    engine_turn(&r, 8, 50, &[51], &[("data/app.db", "shell", "deleted")]);
     engine_stop(&r, &[SAVED]);
     let before = r.calls().len();
     let v = stop_of(&r, 4);
