@@ -1,4 +1,4 @@
-//! The check-writer's notes at the prompt: off, failed, stopped or not taken up, each told once in plain words.
+//! The check-writer's notes at the prompt: what it sends, off, failed, stopped or not taken up, each told once in plain words.
 
 mod hook_common;
 
@@ -327,15 +327,75 @@ fn an_engine_that_did_not_finish_is_told_once_per_session_in_one_fixed_sentence(
     );
 }
 
+/// Each source of the `nosave` code (see `suggest/work.rs`) is told in one sentence about the claim, built from the run's
+/// words: what the check-writer did, then why nothing was saved, each part once. A key-shaped string in the words is
+/// masked.
 #[test]
-fn any_other_end_without_a_saved_check_is_told_once_per_session_in_the_runs_own_words_made_safe() {
-    // a key-shaped string in the words is masked
-    told_once(
-        "writer-nosave",
-        "nosave",
-        "the engine turned the check down: Rejected: step 1 expects a long number sk-FAKECANARY1234",
-        "Torpor's check-writer wrote no check from an earlier prompt of yours: the engine turned the check down: Rejected: step 1 expects a long number [redacted]. Save points and undo are not affected.",
-    );
+fn a_claim_whose_check_was_not_saved_is_told_once_per_session_in_one_plain_sentence() {
+    let cases = [
+        (
+            "records",
+            "no check saved: step 1 (PUT /api/notes/mvqm4ta2) left out: it needs a record already in your data, which the check did not create",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but every step needed a record that already existed in your data and was not created by the check, so no check was saved. Save points and undo are not affected.",
+        ),
+        (
+            "lint",
+            "the engine turned the check down: Rejected: step 1 expects a long number sk-FAKECANARY1234",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: step 1 expects a long number [redacted]. Save points and undo are not affected.",
+        ),
+        (
+            "lint-more",
+            "the engine turned the check down: Rejected: steps is empty. Rejected: and 2 more problems.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: steps is empty, and 2 more problems. Save points and undo are not affected.",
+        ),
+        // a lint line has a second sentence of advice for the model: the user reads the first
+        (
+            "lint-advice",
+            "the engine turned the check down: Rejected: the check has no assertion (an expect_* step, or http with expect). A check that cannot fail proves nothing.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: the check has no assertion (an expect_* step, or http with expect). Save points and undo are not affected.",
+        ),
+        // one mistake in two steps is said once, with the number of the others
+        (
+            "lint-twice",
+            "the engine turned the check down: Rejected: step 1 uses an absolute URL (http://x.test/a). Paths must start with /. Rejected: step 2 uses an absolute URL (http://x.test/b). Paths must start with /.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: step 1 uses an absolute URL (http://x.test/a), and 1 more problem. Save points and undo are not affected.",
+        ),
+        (
+            "lint-twice-more",
+            "the engine turned the check down: Rejected: step 1 uses an absolute URL (http://x.test/a). Paths must start with /. Rejected: step 2 uses an absolute URL (http://x.test/b). Paths must start with /. Rejected: and 3 more problems.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: step 1 uses an absolute URL (http://x.test/a), and 4 more problems. Save points and undo are not affected.",
+        ),
+        (
+            "cannot-run",
+            "the engine turned the check down: the check could not run on the version from the start of turn 2: connection refused",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: the check could not run on the version from the start of turn 2: connection refused. Save points and undo are not affected.",
+        ),
+        (
+            "refused",
+            "Torpor did not save the check: there is no version to call good.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: there is no version to call good. Save points and undo are not affected.",
+        ),
+        (
+            "refused-no-reason",
+            "Torpor did not save the check:",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it. Save points and undo are not affected.",
+        ),
+        // the end of the run's loop; no path reaches it, so this row is written by hand
+        (
+            "none-made",
+            "no check was made",
+            "Torpor's check-writer made no check for an earlier claim of yours. Save points and undo are not affected.",
+        ),
+        // words from no known source are quoted, not guessed at
+        (
+            "other",
+            "something else ended the run.",
+            "Torpor's check-writer saved no check for an earlier claim of yours: something else ended the run. Save points and undo are not affected.",
+        ),
+    ];
+    for (name, message, said) in cases {
+        told_once(&format!("writer-nosave-{name}"), "nosave", message, said);
+    }
 }
 
 #[test]
@@ -435,6 +495,185 @@ fn a_prompt_the_check_writer_could_not_take_up_is_told_at_the_next_prompt_once()
         ),
         "{said}"
     );
+}
+
+// ---------------------------------------------------------------- what the check-writer sends, told once per folder
+
+/// The notice, word for word. Its facts are those of the README, "What is sent to Meta".
+const SEND_NOTICE: &str = "Torpor's check-writer sends each prompt you type, cleaned and redacted, to Meta to ask whether it says something works, and sends file names and code from this project only when the answer is yes or when no usable answer came back. `torpor off` in this folder stops this, and stops Torpor's saving here too.";
+
+/// The API base of these prompts: a closed loopback port, so that even a run that did start could reach nothing.
+const CLOSED_API: [(&str, &str); 1] = [("TORPOR_MUSE_API_BASE", "http://127.0.0.1:9")];
+
+const SAVING_HERE: &str = r#"{"off":false,"saving":true,"last_turn":{"n":1}}"#;
+
+/// The rig's folder as one a run could work in: a script to start the app with, and an engine that says Torpor is
+/// saving here.
+fn app_here(r: &Rig) {
+    let scripts = r#"{"scripts":{"start":"node server.js"}}"#;
+    fs::write(r.cwd.join("package.json"), scripts).unwrap();
+    r.set("out.status", SAVING_HERE);
+}
+
+/// Another run holds the folder (this test holds its lock until the file is dropped), so no prompt there starts one.
+fn hold_lock(r: &Rig) -> fs::File {
+    let held = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(writer_ws(r).join("lock"))
+        .unwrap();
+    held.try_lock().unwrap();
+    held
+}
+
+/// A prompt of session `sid` in the rig's folder (`text`, or the fixture's long words); the hook must exit 0 with output
+/// Muse accepts.
+fn prompt_at(r: &Rig, sid: &str, text: Option<&str>) -> Run {
+    let mut p = r.fixture("UserPromptSubmit");
+    p["session_id"] = json!(sid);
+    if let Some(t) = text {
+        p["prompt"] = json!(t);
+    }
+    let run = r.hook_env("UserPromptSubmit", p.to_string().as_bytes(), &CLOSED_API);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert_muse_output("UserPromptSubmit", &run.out);
+    run
+}
+
+/// What the user is told at such a prompt ("" = nothing); the model is told nothing.
+fn said_at(r: &Rig, sid: &str, text: Option<&str>) -> String {
+    let run = prompt_at(r, sid, text);
+    if run.out.is_empty() {
+        return String::new();
+    }
+    let (said, ctx) = note_parts(&run.out);
+    assert!(ctx.is_empty(), "the model is told nothing: {ctx}");
+    said
+}
+
+/// A session of its own; never the fixture's turn id (a payload whose session id is its turn id is a subagent's).
+fn sid(n: u32) -> String {
+    format!("00000000-0000-7000-8000-00000000a{n:03x}")
+}
+
+#[test]
+fn the_first_prompt_the_check_writer_will_send_says_once_per_folder_what_goes_to_meta_and_how_to_stop_it()
+ {
+    let r = Rig::new("writer-send");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    app_here(&r);
+    let _held = hold_lock(&r);
+    assert_eq!(said_at(&r, &sid(1), None), SEND_NOTICE);
+    // the same session: the news is that the folder was busy with the last prompt, and the notice is not told twice
+    let again = said_at(&r, &sid(1), None);
+    assert!(
+        again.contains("still busy with an earlier prompt") && !again.contains("sends each prompt"),
+        "{again}"
+    );
+    // a later session of the same folder hears nothing
+    assert_eq!(said_at(&r, &sid(2), None), "");
+    // another folder is told, once
+    let elsewhere = Rig {
+        dir: r.dir.clone(),
+        cwd: r.dir.join("elsewhere"),
+        fake: r.fake.clone(),
+        engine: r.engine.clone(),
+        quiet: true,
+    };
+    fs::create_dir_all(&elsewhere.cwd).unwrap();
+    app_here(&elsewhere);
+    let _held_there = hold_lock(&elsewhere);
+    assert_eq!(said_at(&elsewhere, &sid(3), None), SEND_NOTICE);
+    assert_eq!(said_at(&elsewhere, &sid(4), None), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn the_notice_waits_until_the_check_writer_would_really_send_a_prompt() {
+    let r = Rig::new("writer-send-waits");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    app_here(&r);
+    let _held = hold_lock(&r);
+    let marked = || r.store().join("muse/send").exists();
+    // each of these prompts sends nothing: no notice, and the folder is not marked as told
+    let quiet = |n: u32, why: &str, text: Option<&str>| {
+        assert_eq!(said_at(&r, &sid(n), text), "", "{why}");
+        assert!(!marked(), "{why}: marked as told");
+    };
+    quiet(1, "nothing to check in the prompt", Some("ok"));
+    // the engine says Torpor is off or not saving here, or does not say
+    r.set(
+        "out.status",
+        r#"{"off":true,"saving":false,"last_turn":{"n":1}}"#,
+    );
+    quiet(2, "Torpor is off", None);
+    r.set(
+        "out.status",
+        r#"{"off":false,"saving":false,"last_turn":{"n":1}}"#,
+    );
+    quiet(3, "Torpor is not saving", None);
+    fs::remove_file(r.fake.join("out.status")).unwrap();
+    quiet(4, "the engine gives no status", None);
+    r.set("out.status", SAVING_HERE);
+    key_setup(&r, "key_file = ~/key.txt\nday_cap_usd = 0\n", 0o600);
+    quiet(5, "a day cap of 0 sends nothing", None);
+    fs::remove_file(r.dir.join("home/.config/torpor-muse/config")).unwrap();
+    quiet(6, "no key", None);
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    fs::remove_file(r.cwd.join("package.json")).unwrap();
+    quiet(7, "no script to start the app with", None);
+    // a folder a prompt is sent from: told now, once
+    app_here(&r);
+    assert_eq!(said_at(&r, &sid(8), None), SEND_NOTICE);
+    assert!(marked());
+    assert_eq!(said_at(&r, &sid(9), None), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn with_no_key_the_only_note_is_that_the_check_writer_is_off() {
+    let r = Rig::unseeded("writer-send-no-key");
+    app_here(&r);
+    let _held = hold_lock(&r);
+    let said = said_at(&r, &sid(1), None);
+    assert!(
+        said.contains("check-writer is off") && !said.contains("sends each prompt"),
+        "{said}"
+    );
+    assert_eq!(said_at(&r, &sid(2), None), "", "told for the folder");
+    assert!(!r.store().join("muse/send").exists());
+}
+
+#[test]
+fn the_notice_is_for_the_user_the_text_for_the_model_is_the_same_with_and_without_it() {
+    let r = Rig::new("writer-send-model");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    app_here(&r);
+    let _held = hold_lock(&r);
+    r.set(
+        "out.UserPromptSubmit",
+        r#"{"systemMessage":"saved","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"engine says hello"}}"#,
+    );
+    let with = prompt_at(&r, &sid(1), None);
+    let without = prompt_at(&r, &sid(2), None); // the folder has been told
+    let (said, ctx) = note_parts(&with.out);
+    assert!(
+        said.starts_with("saved") && said.ends_with(SEND_NOTICE),
+        "{said}"
+    );
+    assert_eq!(note_parts(&without.out).0, "saved");
+    assert!(
+        ctx.ends_with("engine says hello"),
+        "the engine's text is there: {ctx}"
+    );
+    assert_eq!(context_of(&with), context_of(&without));
+    // and nothing but the user's line differs
+    let model_part = |run: &Run| {
+        let mut v: Value = serde_json::from_str(&run.out).unwrap();
+        v.as_object_mut().unwrap().remove("systemMessage");
+        v
+    };
+    assert_eq!(model_part(&with), model_part(&without));
 }
 
 #[test]

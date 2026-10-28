@@ -34,8 +34,9 @@ pub(super) struct Outcome {
     /// What the hook may tell the user at the next prompt: `key`, `cap`, `api`, `slow` (the watchdog stopped the run),
     /// `rejected` (the model's answer could not be used), `app`, `fails` (the engine: the check fails on the code as it
     /// is), `engine` (the engine timed out or ended oddly), `nosave` (any other end without a saved check: the engine
-    /// turned the check down or refused it, every step needed a record already in the data, no check was made)
-    /// ("" = nothing to tell: no claim, a claim that cannot be checked, skipped, saved).
+    /// turned the check down or refused it, every step needed a record already in the data, no check was made; the hook
+    /// tells these apart by how the words begin, see `read.rs`) ("" = nothing to tell: no claim, a claim that cannot be
+    /// checked, skipped, saved).
     pub(super) code: &'static str,
 }
 

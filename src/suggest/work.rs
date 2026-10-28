@@ -1,6 +1,7 @@
 //! The work of a run: ask the model, wait out a rate limit, and turn the answer into a saved check or an outcome.
 
 use super::client::Bad;
+use super::read::{NO_CHECK_MADE, NO_CHECK_SAVED, NOT_SAVED, TURNED_DOWN};
 use super::schema::Start;
 use super::types::{Ctx, Kind, Outcome, Plan};
 use super::{attach, client, prompt, schema, state};
@@ -105,7 +106,7 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             );
             let why = c.safe(&why, 300);
             if answer.steps.is_empty() {
-                return Outcome::new(Kind::Advisory, format!("no check saved: {why}"))
+                return Outcome::new(Kind::Advisory, format!("{NO_CHECK_SAVED}: {why}"))
                     .code("nosave");
             }
             gaps.push(why);
@@ -155,24 +156,17 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             }
             attach::Added::NotSaved { why, retry: true } => (why, "nosave"),
             attach::Added::NotSaved { why, retry: false } => {
-                return Outcome::new(
-                    Kind::Advisory,
-                    format!("Torpor did not save the check: {why}"),
-                )
-                .code("nosave");
+                return Outcome::new(Kind::Advisory, format!("{NOT_SAVED}: {why}")).code("nosave");
             }
             attach::Added::Failed(m) => return Outcome::new(Kind::Advisory, m).code("engine"),
         };
         if last || c.time_left() < MIN_TIME_FOR_RETRY {
-            return Outcome::new(
-                Kind::Advisory,
-                format!("the engine turned the check down: {turned_down}"),
-            )
-            .code(code);
+            return Outcome::new(Kind::Advisory, format!("{TURNED_DOWN}: {turned_down}"))
+                .code(code);
         }
         retry = Some((c.safe(&text, 3000), turned_down));
     }
-    Outcome::new(Kind::Advisory, "no check was made").code("nosave")
+    Outcome::new(Kind::Advisory, NO_CHECK_MADE).code("nosave")
 }
 
 /// A saved check. What it does not cover also goes to `gaps.json`, for the hook to tell the user and the model.

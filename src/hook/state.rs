@@ -4,7 +4,8 @@
 //! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
 //! (the folder's engine gate was switched off once, `hook::gate::gate_default`; never swept),
 //! `app/<hash of folder>.json` (the user was told once that the check-writer needs an app with a start script; never
-//! swept) and `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept).
+//! swept), `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept) and
+//! `send/<hash of folder>.json` (the same for what the check-writer sends to Meta; never swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -40,8 +41,8 @@ pub struct Session {
     #[serde(default)]
     pub noted: String,
     /// The kinds of check-writer news the user of this session was told, one note each
-    /// (`hook::writer_note::writer_note`); not `app` and `no-key`, which are marked per folder (`mark`) unless that is
-    /// not possible.
+    /// (`hook::writer_note::writer_note`); not `send`, `app` and `no-key`, which are marked per folder (`mark`) unless that
+    /// is not possible.
     #[serde(default)]
     pub writer_told: Vec<String>,
     /// Why the check-writer could not start on the last prompt (`busy`, `start`), to tell at the next prompt.
@@ -270,10 +271,11 @@ pub fn sweep(dir: &Path) {
 }
 
 /// A folder marked once for `sub`: `gate` (`hook::gate::gate_default` switched its engine gate off), `app` (the user
-/// was told the check-writer needs an app with a start script) or `no-key` (told it is off for lack of a key); stored
-/// inside and compared whole. Kept without an end (`sweep` leaves `gate/`, `app/` and `no-key/` alone): the `gate` file
-/// is what lets a later `torpor gate on` of the user's stay on. What the caller passes as `cwd` is the folder; for
-/// `no-key` it is the folder and the reason (`hook::writer_note`), so a different reason is a different mark.
+/// was told the check-writer needs an app with a start script), `no-key` (told it is off for lack of a key) or `send`
+/// (told what it sends to Meta); stored inside and compared whole. Kept without an end (`sweep` leaves `gate/`, `app/`,
+/// `no-key/` and `send/` alone): the `gate` file is what lets a later `torpor gate on` of the user's stay on. What the
+/// caller passes as `cwd` is the folder; for `no-key` it is the folder and the reason (`hook::writer_note`), so a
+/// different reason is a different mark.
 #[derive(Serialize, Deserialize)]
 struct Mark {
     cwd: String,

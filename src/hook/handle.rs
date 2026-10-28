@@ -5,7 +5,7 @@ use super::events::{Act, EVENTS, RETIRED};
 use super::gate::gate_default;
 use super::paths::{engine_cmd, project_root};
 use super::stop_note::{Ended, stop_note};
-use super::writer_note::{gap_line, writer_note};
+use super::writer_note::{gap_line, will_send, writer_note};
 use super::{Done, busy, normalise, state};
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
@@ -78,7 +78,9 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             let engine_out = edited.as_deref().unwrap_or(&out.stdout);
             done.stdout = reply(dir, event, &sid, &turn, &engine_cmd(&out.bin), engine_out);
             if event == "UserPromptSubmit" && !prompt.trim().is_empty() {
-                done.stdout = writer_note(dir, event, &sid, &cwd, done.stdout.take());
+                let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
+                let sends = || will_send(&cwd, &prompt, &out.bin, left);
+                done.stdout = writer_note(dir, event, &sid, &cwd, done.stdout.take(), &sends);
                 done.prompt = Some((sid.clone(), cwd.clone(), prompt));
             }
             done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
