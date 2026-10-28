@@ -73,7 +73,7 @@ fn only_ours<'a>(v: &'a Value, what: &str) -> &'a str {
     rest
 }
 
-/// D with the real engine: no test run, the Stop after the block, a passing run, a later edit, a failing run.
+/// D with the real engine: no test run, the Stop after the block, a passing run, a later edit, a failing run, `torpor off`.
 #[test]
 fn real_engine_a_claim_meets_its_record_once_per_turn_and_only_when_the_record_says_otherwise() {
     let r = Rig::real("real-done");
@@ -116,4 +116,9 @@ fn real_engine_a_claim_meets_its_record_once_per_turn_and_only_when_the_record_s
     // turn 7: no claim, so the Stop is as it was
     let quiet = turn(&r, 7, "echo hi", 0, None, "Done. I changed the loop.");
     assert!(!quiet.to_string().contains("You wrote that"), "{quiet}");
+
+    // turn 8: after `torpor off` the same false claim is left alone
+    assert_eq!(engine_cli(&r, &["off"]).0, 0);
+    let v = turn(&r, 8, "echo hi", 0, None, "All tests pass.");
+    assert!(!v.to_string().contains("You wrote that"), "{v}");
 }
