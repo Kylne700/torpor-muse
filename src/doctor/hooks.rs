@@ -1,6 +1,6 @@
 //! The hooks in Muse's settings file: reads them and checks that the three the gate needs are there and sound.
 
-use super::Ctx;
+use super::ctx::Ctx;
 use super::hook_command::tool_of;
 use super::report::{Level, Report};
 use crate::hook::EVENTS;

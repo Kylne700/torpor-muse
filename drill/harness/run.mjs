@@ -298,7 +298,7 @@ function toRecord(cfg, d, arm, rep, attempt, control, poison, r) {
     build: r.rec.build ?? null, programs: r.rec.programs, arm_setup: r.rec.arm_files, stack: r.rec.stack ?? null,
     side_files: path.relative(cfg.out, r.outDir),
     assumptions: {
-      session_log: 'emulated from the adapter\'s own reading code (src/transcript.rs): a user_intent per prompt and the accepted additional context; Stop block reasons are not logged',
+      session_log: 'emulated from the adapter\'s own reading code (src/transcript.rs, src/transcript/translate.rs, src/transcript/line.rs): a user_intent per prompt and the accepted additional context; Stop block reasons are not logged',
       claudecode_in_bash: 'unset (NV whether Muse sets it)', one_call_one_batch: 'each scripted call is its own PostToolBatch (assumed)', partial: !ok,
     },
   };

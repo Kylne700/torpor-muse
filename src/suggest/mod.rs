@@ -4,8 +4,8 @@
 //! Exit codes of `run`: 0 a promise was saved (proven or advisory), 3 nothing saved (the reason is printed),
 //! 1 the run could not work (no key, no engine, no state folder, another run holds the lock), 2 wrong use.
 //! Every run that got past the lock leaves `<state>/ws/<project>/result.json` (written whole, mode 0600). Its `code`
-//! (key, cap, api, slow, rejected, app; empty for the rest) names the failures hook.rs tells the user at the next
-//! prompt.
+//! (key, cap, api, slow, rejected, app; empty for the rest) names the failures src/hook/writer_note.rs tells the user
+//! at the next prompt.
 mod attach;
 mod client;
 mod finish;

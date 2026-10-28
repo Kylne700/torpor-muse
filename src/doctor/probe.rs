@@ -1,6 +1,6 @@
 //! The probe: runs the generated hook command once, as Muse would, and checks that it prints nothing but one JSON object.
 
-use super::Ctx;
+use super::ctx::Ctx;
 use super::hook_command::probe_command;
 use super::hooks::Hook;
 use super::report::{Level, Report, clip};

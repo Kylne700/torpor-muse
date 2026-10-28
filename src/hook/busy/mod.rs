@@ -3,7 +3,8 @@
 //! The engine saves no database whose `-wal` file is not empty or whose `-journal` file exists (its capture.rs
 //! `db_is_busy`), so once such a file is gone `torpor back --with-data` has nothing to bring back ("Not touched ...
 //! its database was busy"). `targets` reads a command line roughly as a shell does and names the busy databases it would
-//! remove, move or overwrite; the hook (hook.rs `busy_guard`) then denies the command and tells the model why.
+//! remove, move or overwrite; the hook (`busy_guard` in src/hook/handle.rs) then denies the command and tells the
+//! model why.
 //!
 //! What counts: `rm`, `unlink`, `shred`, `git rm`; `mv` (what it moves and what it overwrites); `cp` and `install`
 //! (what they overwrite, also with `-t DIR`); `truncate`; a `>`, `>>` or `>|` redirect; `find ... -delete` or

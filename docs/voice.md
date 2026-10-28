@@ -102,7 +102,7 @@ Result: keywords are ON by default.
 
 ### Run it again
 
-It costs about USD 0.01. Never run the tests with a bare `-- --ignored`: `tests/writer_live.rs` makes paid calls to the check-writer.
+It costs about USD 0.01. Never run the tests with a bare `-- --ignored`: `tests/writer_live.rs` and `tests/writer_bank.rs` make paid calls to the check-writer.
 
     node scripts/voice-measure.mjs gen <dir>        # the 18 clips and manifest.json (ffmpeg with the flite filter)
     META_API_KEY=... TORPOR_MUSE_STATE=<state dir> VOICE_MANIFEST=<dir>/manifest.json VOICE_ROWS=<dir>/rows.jsonl \

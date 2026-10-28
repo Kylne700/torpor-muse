@@ -1,9 +1,10 @@
 //! The gate is live only when a hook ran in a finished turn: reads the hooks' heartbeats and says what is missing.
 
+use super::MUSE_TESTED;
+use super::ctx::Ctx;
 use super::hooks::Hook;
 use super::problems::engine_down_since;
 use super::report::{Level, Report, ago, short};
-use super::{Ctx, MUSE_TESTED};
 use crate::liveness::{self, PROBE_SID};
 use crate::transcript;
 use std::collections::{BTreeSet, HashSet};

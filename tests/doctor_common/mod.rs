@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
+/// doctor.rs reads the engine's time limit per event from src/hook/events.rs; one event is enough here.
 pub mod hook {
     pub struct Ev {
         pub name: &'static str,
@@ -24,8 +24,8 @@ pub mod hook {
     }];
 }
 
-/// doctor.rs asks install.rs where Muse's settings file is and why `init` would refuse it; these tests hand doctor the
-/// path directly and leave the refusal to tests/core_install.rs and the unit tests.
+/// doctor.rs asks src/install/settings.rs where Muse's settings file is and why `init` would refuse it; these tests
+/// hand doctor the path directly and leave the refusal to tests/core_install.rs and the unit tests.
 #[allow(dead_code)]
 pub mod install {
     pub fn settings_path() -> std::path::PathBuf {
@@ -36,7 +36,7 @@ pub mod install {
     }
 }
 
-/// doctor.rs asks suggest.rs whether the check-writer has a key; here it always has.
+/// doctor.rs asks `suggest::writer_off` (src/suggest/trigger.rs) if the check-writer has a key; here it always has.
 #[allow(dead_code)]
 pub mod suggest {
     pub fn writer_off(_: bool) -> Option<String> {

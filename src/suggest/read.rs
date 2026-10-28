@@ -3,12 +3,14 @@
 use super::state::{Gap, Last};
 use super::{client, repo, state};
 
-/// What the saved checks of the project in `cwd` do not cover, newest first (hook.rs tells the user and the model).
+/// What the saved checks of the project in `cwd` do not cover, newest first (src/hook/writer_note.rs tells the user,
+/// src/hook/handle.rs the model).
 pub fn gaps(cwd: &str) -> Vec<Gap> {
     repo::resolve_root(Some(cwd)).map_or_else(|_| Vec::new(), |r| state::gaps(&r))
 }
 
-/// What the last run in the project of `cwd` left in `result.json` (hook.rs tells the user when it failed).
+/// What the last run in the project of `cwd` left in `result.json` (src/hook/writer_note.rs tells the user when it
+/// failed).
 pub fn last_result(cwd: &str) -> Option<Last> {
     state::last_result(&repo::resolve_root(Some(cwd)).ok()?)
 }

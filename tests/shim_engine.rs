@@ -1,4 +1,4 @@
-//! The engine binary (TORPOR_BIN) reading the transcripts src/transcript.rs makes from Muse's own session logs:
+//! The engine binary (TORPOR_BIN) reading the transcripts src/transcript/translate.rs makes from Muse's own session logs:
 //! who typed a prompt, the context rebuild after a compaction, and the delivery check. Hooks are sent to the engine
 //! the way the hook shim sends them (Claude-style payload, `transcript_path` from `transcript::path_for_in`).
 //! Without TORPOR_BIN these tests say so and stop (they fail instead when CI is set).

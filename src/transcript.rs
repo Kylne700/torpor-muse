@@ -77,8 +77,9 @@ pub fn read_state(vault: &Path, sid: &str) -> Option<State> {
     serde_json::from_slice(&b).ok()
 }
 
-/// hook.rs calls this on every main-session event before the engine call; Some(path) = put it in `transcript_path`.
-/// None only when no transcript exists (no Muse log was found): the engine then does nothing with transcripts.
+/// src/hook/handle.rs calls this on every main-session event before the engine call; Some(path) = put it in
+/// `transcript_path`. None only when no transcript exists (no Muse log was found): the engine then does nothing with
+/// transcripts.
 pub fn path_for(event: &str, payload: &Value) -> Option<String> {
     path_for_in(&Paths::from_env(), event, payload)
 }
