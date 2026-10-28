@@ -283,7 +283,10 @@ fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_bloc
         why,
         &format!("stop the app that uses it first, then run `{e} back --id 50 --with-data`"),
     );
-    has(why, "Run it only if the user asks.");
+    has(
+        why,
+        "Run it only if the user asks; if the dry run brings back only what was deleted, that ask is enough.",
+    );
     assert_eq!(r.calls().len() - before, 2, "{:?}", r.calls());
     assert!(
         said(&v).starts_with("Torpor: turn 8 changed data/app.db. Get it back: stop the app, then torpor back --id 50 --with-data — Torpor: save point 31"),

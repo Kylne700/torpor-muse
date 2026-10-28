@@ -356,7 +356,7 @@ fn a_risky_turn_is_told_in_one_plain_sentence_and_a_database_names_its_command()
         "This turn deleted data/app.db (database files).",
         "stop the app that uses it first, then run `/opt/torpor back --id 5 --with-data`",
         "so later changes are undone too",
-        "Run it only if the user asks.",
+        "Run it only if the user asks; if the dry run brings back only what was deleted, that ask is enough.",
     ] {
         assert!(r.contains(want), "{want}: {r}");
     }
@@ -383,4 +383,21 @@ fn a_risky_turn_is_told_in_one_plain_sentence_and_a_database_names_its_command()
     assert!(both.find("Promise #3").unwrap() < both.find("This turn deleted").unwrap());
     assert!(both.chars().count() < 1200, "{both}");
     assert_eq!(reason(e, &[], &Risk::default()), None);
+}
+
+/// The L4 proof: asked to undo the delete, the model ran the dry run, saw that only the deleted database would come back,
+/// and still asked whether to go on. The block says that in this case the user's ask is enough.
+#[test]
+fn the_database_sentence_takes_the_ask_for_enough_when_only_what_was_deleted_comes_back() {
+    let db = Risk {
+        dbs: vec!["data/app.db".to_string()],
+        back: Some(5),
+        ..Risk::default()
+    };
+    let r = reason("/opt/torpor", &[], &db).unwrap();
+    assert!(
+        r.ends_with("(it puts every file back to that point, so later changes are undone too; use --dry-run first). Run it only if the user asks; if the dry run brings back only what was deleted, that ask is enough."),
+        "{r}"
+    );
+    assert_eq!(r.matches("only if the user asks").count(), 1, "{r}");
 }
