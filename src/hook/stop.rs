@@ -293,7 +293,8 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
             s.push_str(&format!(
                 " To bring a database back, stop the app that uses it first, then run `{cmd} back --id {p} \
                  --with-data` (it puts every file back to that point, so later changes are undone too; use --dry-run \
-                 first). Run it only if the user asks."
+                 first). Run it only if the user asks; if the dry run brings back only what was deleted, that ask is \
+                 enough."
             ));
         }
         if !risk.lost.is_empty() {

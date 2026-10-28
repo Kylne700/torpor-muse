@@ -164,7 +164,8 @@ const FIVE_SOURCES: [&str; 5] = [
 ];
 
 /// F4 item 1: every session start (startup, resume, clear, compact, fork) gives the model one short guide: the plain
-/// words a user says, the Torpor command for each (a dry run first), and the commands that are the user's own.
+/// words a user says, the Torpor command for each (undo and back: a dry run first, and the user's ask is the yes), and
+/// the commands that are the user's own.
 #[test]
 fn the_model_gets_the_guide_at_every_session_start_and_nowhere_else() {
     let r = Rig::new("guide");
@@ -188,7 +189,8 @@ fn the_model_gets_the_guide_at_every_session_start_and_nowhere_else() {
             ctx.chars().count()
         );
         for want in [
-            "torpor log -n 5, torpor undo N --dry-run, torpor undo N.",
+            "Undo/back only when asked: --dry-run first, tell them in one sentence what it changes, then run it (their ask is the yes). Ask first only if the dry run also undoes other work or overwrites an existing database.",
+            "torpor log -n 5, torpor undo N.",
             "torpor back --turn K or --id P",
             "torpor find-break --promise ID (or --check -)",
             "the database note's command, app stopped first",
