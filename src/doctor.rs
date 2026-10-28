@@ -4,8 +4,8 @@
 //! that is not its own probe process.
 //! Every line starts with `ok`, `info`, `warn` or `FIX`; a problem line is followed by a `do:` line that says how.
 //! Exit 0 = nothing to fix (warnings may remain), 1 = at least one FIX.
-#![allow(dead_code)] // tests/shim_doctor.rs reaches the parts
 
+use crate::hook::EVENTS;
 use crate::liveness::{self, PROBE_SID};
 use crate::{install, transcript};
 use serde::Deserialize;
@@ -23,20 +23,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const MUSE_TESTED: &str = "1.4.13";
 /// Without these three the gate cannot work.
 const REQUIRED: [&str; 3] = ["SessionStart", "UserPromptSubmit", "Stop"];
-/// How long the engine lets itself run per event, in ms (Torpor 2.3.1 hook.rs `own_deadline_ms`). A Muse timeout
-/// shorter than this (plus 1 s for our own start-up) can kill the hook before the engine has answered.
-const ENGINE_MS: [(&str, u64); 10] = [
-    ("SessionStart", 3000),
-    ("UserPromptSubmit", 5000),
-    ("PreToolUse", 2000),
-    ("PostToolUse", 2000),
-    ("PostToolUseFailure", 2000),
-    ("Stop", 30000),
-    ("StopFailure", 5000),
-    ("SubagentStop", 1000),
-    ("PreCompact", 1000),
-    ("SessionEnd", 1200),
-];
 const LOGS_SCANNED: usize = 6;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Muse keeps at most this much of a hook's stdout or stderr (it fails the hook beyond it); so does the probe.
@@ -64,9 +50,6 @@ impl Report {
     }
     pub fn fixes(&self) -> usize {
         self.0.iter().filter(|(l, _)| *l == Level::Fix).count()
-    }
-    pub fn has(&self, l: Level, needle: &str) -> bool {
-        self.0.iter().any(|(k, s)| *k == l && s.contains(needle))
     }
     pub fn text(&self) -> String {
         let tag = |l: &Level| match l {
@@ -396,10 +379,11 @@ fn check_hooks(c: &Ctx, ours: &[&Hook], r: &mut Report) {
                 "torpor-muse init",
             );
         }
-        let need = ENGINE_MS
+        // `engine_ms` is the engine's own limit plus 1.5 s of grace; Muse's timeout has to cover the limit plus 1 s.
+        let need = EVENTS
             .iter()
-            .find(|(e, _)| *e == h.event)
-            .map(|(_, ms)| ms + 1000);
+            .find(|e| e.name == h.event && e.engine_ms > 0)
+            .map(|e| e.engine_ms.saturating_sub(500));
         if let (Some(t), Some(need)) = (h.timeout, need)
             && t * 1000 < need
         {
@@ -528,7 +512,6 @@ struct LogEvent {
     hook_key: Option<String>,
     status: Option<String>,
     error: Option<String>,
-    exit_code: Option<i64>,
     stdout: Option<String>,
 }
 

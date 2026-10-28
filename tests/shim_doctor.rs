@@ -1,11 +1,27 @@
 //! `torpor-muse doctor` (src/doctor.rs) against made-up worlds: a settings file, a vault with heartbeats, Muse logs and
 //! fake hooks. doctor must never delete or kill anything but its own probe: the tests check that as well.
+// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+#[allow(dead_code)]
 #[path = "../src/doctor.rs"]
 mod doctor;
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
+#[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
+
+/// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
+mod hook {
+    pub struct Ev {
+        pub name: &'static str,
+        pub engine_ms: u64,
+    }
+    pub const EVENTS: &[Ev] = &[Ev {
+        name: "Stop",
+        engine_ms: 31_500,
+    }];
+}
 
 /// doctor.rs asks install.rs where Muse's settings file is and why `init` would refuse it; these tests hand doctor the
 /// path directly and leave the refusal to tests/core_install.rs and the unit tests.
@@ -265,7 +281,7 @@ fn edited(name: &str, f: impl FnOnce(&World, &mut Value)) -> Report {
 #[track_caller]
 fn must(r: &Report, l: Level, needle: &str) {
     assert!(
-        r.has(l, needle),
+        r.0.iter().any(|(k, s)| *k == l && s.contains(needle)),
         "expected {l:?} with {needle:?} in:\n{}",
         r.text()
     );
@@ -274,7 +290,7 @@ fn must(r: &Report, l: Level, needle: &str) {
 #[track_caller]
 fn mustnt(r: &Report, l: Level, needle: &str) {
     assert!(
-        !r.has(l, needle),
+        !r.0.iter().any(|(k, s)| *k == l && s.contains(needle)),
         "unexpected {l:?} with {needle:?} in:\n{}",
         r.text()
     );

@@ -15,7 +15,6 @@
 //!
 //! Files in `<vault>/muse/transcripts/`: `<sid>.jsonl` (the transcript, append only: the engine keeps byte offsets),
 //! `<sid>.state` (where the translation stands and what it has seen), `<sid>.lock`.
-#![allow(dead_code)] // hook.rs does not call path_for yet
 
 use crate::liveness::{log_error, mkdir_private, safe_id, shim_dir, vault};
 use serde::{Deserialize, Serialize};

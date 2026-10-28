@@ -2,8 +2,11 @@
 //! who typed a prompt, the context rebuild after a compaction, and the delivery check. Hooks are sent to the engine
 //! the way the hook shim sends them (Claude-style payload, `transcript_path` from `transcript::path_for_in`).
 //! Without TORPOR_BIN these tests say so and stop (they fail instead when CI is set).
+// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
+#[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
 

@@ -1,11 +1,27 @@
 //! Regression tests for defects the S3a-accept run found in `torpor-muse doctor` (e2e/RESULTS.md, check A8).
 //! doctor.rs is compiled in with the same stubs as tests/shim_doctor.rs; only its look at Muse's session logs is used.
+// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+#[allow(dead_code)]
 #[path = "../src/doctor.rs"]
 mod doctor;
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
+#[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
+
+/// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
+mod hook {
+    pub struct Ev {
+        pub name: &'static str,
+        pub engine_ms: u64,
+    }
+    pub const EVENTS: &[Ev] = &[Ev {
+        name: "Stop",
+        engine_ms: 31_500,
+    }];
+}
 
 /// doctor.rs asks install.rs where Muse's settings file is and why `init` would refuse it; these tests hand doctor the
 /// path directly and leave the refusal to tests/core_install.rs and the unit tests.
@@ -102,23 +118,28 @@ fn doctor_says(name: &str, changed_us: u64, ran_again: bool) -> doctor::Report {
 
 const REJECTED: &str = "Muse rejected a hook";
 
+fn rejected(r: &doctor::Report) -> bool {
+    r.0.iter()
+        .any(|(l, s)| *l == Level::Fix && s.contains(REJECTED))
+}
+
 #[test]
 fn a_hook_that_failed_before_it_was_repaired_is_no_fix_once_the_event_ran_fine_again() {
     // found in A8: after the poisoned command was put back, doctor kept printing the old failure, because the failed key
     // (a hash of the old command) never runs again
     let r = doctor_says("repaired", BASE_US + 7_000, true);
-    assert!(!r.has(Level::Fix, REJECTED), "{}", r.text());
+    assert!(!rejected(&r), "{}", r.text());
 }
 
 #[test]
 fn a_failed_hook_stays_a_fix_when_the_settings_did_not_change_after_it() {
     // another hook of the same event ran fine later, but this one is still in the file and still failing
     let r = doctor_says("unchanged", BASE_US + 500, true);
-    assert!(r.has(Level::Fix, REJECTED), "{}", r.text());
+    assert!(rejected(&r), "{}", r.text());
 }
 
 #[test]
 fn a_failed_hook_stays_a_fix_until_its_event_has_run_since_the_settings_changed() {
     let r = doctor_says("not_yet", BASE_US + 7_000, false);
-    assert!(r.has(Level::Fix, REJECTED), "{}", r.text());
+    assert!(rejected(&r), "{}", r.text());
 }

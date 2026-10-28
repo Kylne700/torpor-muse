@@ -1,4 +1,6 @@
 //! Heartbeats and the turn counter (src/liveness.rs).
+// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
 

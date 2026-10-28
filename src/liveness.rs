@@ -4,7 +4,6 @@
 //! cannot tear it). Nothing here fails the hook or writes to stdout: an error goes to `<vault>/muse/shim-errors.log`,
 //! or to stderr when even that cannot be written. The counters are derived from the file when `doctor` asks, so the
 //! hook path does no reading.
-#![allow(dead_code)] // hook.rs calls `beat` only; the rest is read by doctor.rs and the tests
 
 use serde::Deserialize;
 use std::collections::BTreeMap;

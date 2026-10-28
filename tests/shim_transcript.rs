@@ -1,7 +1,10 @@
 //! Muse's own session log -> the Claude-style transcript the engine reads (src/transcript.rs).
 //! The fixtures are redacted copies of real Muse Code 1.4.13 logs; see tests/fixtures/shim.
+// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+#[allow(dead_code)]
 #[path = "../src/liveness.rs"]
 mod liveness;
+#[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
 
