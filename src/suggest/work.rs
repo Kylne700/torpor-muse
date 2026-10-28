@@ -53,7 +53,8 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
         });
         let input = prompt::input(&nonce, &p.starts, &p.excerpt, &p.words, rejected.as_ref());
         let body = request(&p.model, &input, &p.starts).to_string();
-        let reading = match ask(c, p, &body, attempt) {
+        let (label, sent) = (format!("attempt {}", attempt + 1), files_sent(c, p));
+        let reading = match ask(c, p, &body, MAX_OUT, &label, &sent) {
             Ok(r) => r,
             Err(o) => return o,
         };
@@ -84,13 +85,7 @@ pub(super) fn work(c: &mut Ctx, p: &Plan) -> Outcome {
             }
         };
         match answer.verdict {
-            schema::Verdict::NotAClaim => {
-                let why = c.safe(&answer.reason, 300);
-                return Outcome::new(
-                    Kind::Advisory,
-                    format!("nothing to check: not a statement that something works ({why})"),
-                );
-            }
+            schema::Verdict::NotAClaim => return not_a_claim(c, &answer.reason),
             schema::Verdict::CannotCheck => {
                 let why = c.safe(&answer.reason, 300);
                 return Outcome::new(
@@ -206,40 +201,58 @@ fn saved(c: &Ctx, p: &Plan, kind: Kind, promise: Option<u32>, line: &str, gap: &
     }
 }
 
-/// One response from the model, put into the ledger whatever it was, under the ledger's lock from the cap check
-/// to the row (so two runs cannot both pass the cap).
-fn ask(c: &mut Ctx, p: &Plan, body: &str, attempt: u32) -> Result<client::Reading, Outcome> {
-    let err = |m: String| Outcome::new(Kind::Error, m);
-    let mut ledger = crate::ledger::Ledger::open(&p.ledger_dir).map_err(err)?;
-    let worst = ledger
-        .preflight(&p.model, body.len(), MAX_OUT, p.cap)
-        .map_err(|m| Outcome::new(Kind::Advisory, m).code("cap"))?;
-    c.calls += 1;
-    let timeout = p.http.min(c.time_left());
-    let sent = Instant::now();
-    let reading = match client::post(&p.base, &p.key, body, timeout) {
-        Ok(reply) => client::interpret(&reply, worst),
-        Err(n) => client::from_net(n, worst),
-    };
-    // the call's own time goes into the note, so the ledger shows how long the model took
-    let secs = sent.elapsed().as_secs_f64();
-    let note = match &reading.outcome {
-        Ok(_) => format!("attempt {}, {secs:.1}s", attempt + 1),
-        Err(bad) => format!(
-            "attempt {}, {secs:.1}s: {}",
-            attempt + 1,
-            c.safe(&bad.reason(), 120)
-        ),
-    };
-    // M2 evidence: the names in the FILE LIST that went out (names only, never what is in the files).
-    // shortcut: names past 2000 characters are not recorded; upgrade when a ledger must show a bigger project's list.
+/// The end of a run whose words say nothing works: the user is told nothing (the code is empty).
+pub(super) fn not_a_claim(c: &Ctx, reason: &str) -> Outcome {
+    let why = c.safe(reason, 300);
+    Outcome::new(
+        Kind::Advisory,
+        format!("nothing to check: not a statement that something works ({why})"),
+    )
+}
+
+/// M2 evidence: the names in the FILE LIST that went out (names only, never what is in the files).
+/// shortcut: names past 2000 characters are not recorded; upgrade when a ledger must show a bigger project's list.
+fn files_sent(c: &Ctx, p: &Plan) -> String {
     let names: Vec<&str> = p
         .excerpt
         .lines()
         .skip(1)
         .take_while(|l| !l.is_empty())
         .collect();
-    let note = format!("{note}; sent: {}", c.safe(&names.join(", "), 2000));
+    c.safe(&names.join(", "), 2000)
+}
+
+/// One response from the model, put into the ledger whatever it was, under the ledger's lock from the cap check
+/// to the row (so two runs cannot both pass the cap). `label` and `sent` (what went out) make the ledger note.
+pub(super) fn ask(
+    c: &mut Ctx,
+    p: &Plan,
+    body: &str,
+    max_out: u32,
+    label: &str,
+    sent: &str,
+) -> Result<client::Reading, Outcome> {
+    let err = |m: String| Outcome::new(Kind::Error, m);
+    let mut ledger = crate::ledger::Ledger::open(&p.ledger_dir).map_err(err)?;
+    let worst = ledger
+        .preflight(&p.model, body.len(), max_out, p.cap)
+        .map_err(|m| Outcome::new(Kind::Advisory, m).code("cap"))?;
+    c.calls += 1;
+    let timeout = p.http.min(c.time_left());
+    let started = Instant::now();
+    let reading = match client::post(&p.base, &p.key, body, timeout) {
+        Ok(reply) => client::interpret(&reply, worst),
+        Err(n) => client::from_net(n, worst),
+    };
+    // the call's own time goes into the note, so the ledger shows how long the model took
+    let secs = started.elapsed().as_secs_f64();
+    let note = match &reading.outcome {
+        Ok(_) => format!("{label}, {secs:.1}s; sent: {sent}"),
+        Err(bad) => format!(
+            "{label}, {secs:.1}s: {}; sent: {sent}",
+            c.safe(&bad.reason(), 120)
+        ),
+    };
     c.usd += ledger
         .record(&p.model, &reading.status, reading.charge, &note)
         .map_err(err)?;

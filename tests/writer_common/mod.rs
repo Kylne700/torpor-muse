@@ -94,6 +94,10 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+fn is_first_pass(r: &Value) -> bool {
+    r["body"]["text"]["format"]["name"] == "torpor_muse_first_pass"
+}
+
 /// The mock Meta API (mock/server.mjs) as a child process. Dropping it kills exactly that child.
 pub struct Mock {
     child: Child,
@@ -160,8 +164,9 @@ impl Mock {
         format!("http://127.0.0.1:{}", self.port)
     }
 
-    /// Each logged request; `body` is parsed (the mock writes it as a JSON string), `Null` when it is not JSON.
-    pub fn requests(&self) -> Vec<Value> {
+    /// Each logged request, the first question of a run (the words alone) too; `body` is parsed (the mock writes it as
+    /// a JSON string), `Null` when it is not JSON.
+    pub fn all_requests(&self) -> Vec<Value> {
         fs::read_to_string(&self.log)
             .unwrap_or_default()
             .lines()
@@ -172,6 +177,20 @@ impl Mock {
                 v
             })
             .collect()
+    }
+
+    /// The logged requests without the first questions: the tests of the check-writer count its own calls.
+    pub fn requests(&self) -> Vec<Value> {
+        let mut v = self.all_requests();
+        v.retain(|r| !is_first_pass(r));
+        v
+    }
+
+    /// The first questions only (the words alone, told by the name of their answer format).
+    pub fn first_pass(&self) -> Vec<Value> {
+        let mut v = self.all_requests();
+        v.retain(is_first_pass);
+        v
     }
 
     /// The logged voice requests (`body` is `{request, audio: {bytes, type, filename}, parts}`, never the audio).
@@ -425,12 +444,20 @@ impl Sandbox {
         serde_json::from_str(&text).unwrap_or(Value::Null)
     }
 
-    pub fn ledger(&self) -> Vec<Value> {
+    /// Every ledger row, the first questions' too.
+    pub fn ledger_all(&self) -> Vec<Value> {
         fs::read_to_string(self.state().join("ledger.jsonl"))
             .unwrap_or_default()
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()
+    }
+
+    /// The rows of the check-writer's own calls (a first question's note starts with "first pass").
+    pub fn ledger(&self) -> Vec<Value> {
+        let mut v = self.ledger_all();
+        v.retain(|r| !r["note"].as_str().unwrap_or("").starts_with("first pass"));
+        v
     }
 
     /// The checks the fake engine was handed by `promise add`.

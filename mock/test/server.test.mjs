@@ -133,6 +133,27 @@ test('--output-text-file: ok and truncated carry the text, re-read on every requ
   assert.equal(messageText(JSON.parse((await ask(port)).text)), text, 'slow carries the text too');
 });
 
+const FIRST = JSON.stringify({ text: { format: { name: 'torpor_muse_first_pass' } } }); // what the first question's request says of itself
+
+test('first question: told by its format name, with its own count, answer and usage; the main fixtures stay untouched', async () => {
+  const f = path.join(tmp, 'first.txt');
+  fs.writeFileSync(f, '{"verdict":"not_a_claim","reason":"a question"}');
+  const { port } = await start(['--fixture', 'server-500,ok', '--first-fixture', 'rate-429,ok', '--first-text-file', f, '--first-usage', '200,50,40000']);
+  assert.equal((await ask(port, { body: FIRST })).status, 429);
+  const b = await ask(port, { body: FIRST });
+  assert.equal(b.status, 200);
+  const j = JSON.parse(b.text);
+  assert.equal(messageText(j), '{"verdict":"not_a_claim","reason":"a question"}');
+  assert.deepEqual([j.usage.input_tokens, j.usage.input_tokens_details.cached_tokens, j.usage.output_tokens], [200, 50, 40000]);
+  assert.equal(j.id, 'resp_mock_first_2');
+  assert.equal((await ask(port)).status, 500, 'the first main request still meets the first main fixture');
+  assert.equal((await ask(port, { body: '{"text":{"format":{"name":"torpor_muse_check"}}}' })).status, 200);
+  const d = await start();
+  const dj = JSON.parse((await ask(d.port, { body: FIRST })).text);
+  assert.equal(messageText(dj), '{"verdict":"claim","reason":""}', 'by default the first question is answered claim');
+  assert.deepEqual(dj.usage, fixture('ok').body.usage, 'with the recorded usage');
+});
+
 test('drop-mid-body: the client gets headers and part of the body, then a socket error', async () => {
   const { port } = await start(['--fixture', 'drop-mid-body']);
   const seen = await new Promise((resolve) => {
@@ -223,7 +244,8 @@ test('binds 127.0.0.1 only', async (t) => {
 });
 
 test('bad arguments exit with code 2 and a message, without printing "listening"', async () => {
-  for (const args of [['--fixture', 'nope'], ['--output-text-file', path.join(tmp, 'missing.txt')], ['--delay-ms', 'abc'], ['--bogus'], ['--asr', 'ok,200'], ['--asr', 'nope'], ['--log', path.join(tmp, 'no-dir', 'x.log')]]) {
+  for (const args of [['--fixture', 'nope'], ['--output-text-file', path.join(tmp, 'missing.txt')], ['--delay-ms', 'abc'], ['--bogus'], ['--asr', 'ok,200'], ['--asr', 'nope'], ['--log', path.join(tmp, 'no-dir', 'x.log')],
+    ['--first-fixture', 'nope'], ['--first-text-file', path.join(tmp, 'missing.txt')], ['--first-usage', '1,2'], ['--first-usage', '5,9,1'], ['--first-usage', 'a,b,c']]) {
     await assert.rejects(start(args), (e) => e.code === 2 && /^mock: /.test(e.err) && e.out === '', args.join(' '));
   }
 });
