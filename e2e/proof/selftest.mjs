@@ -428,6 +428,13 @@ t('analyze: a Muse log is searched for the hook text, and a run folder loads, re
   assert.equal(blind.status, 0, blind.stderr.slice(0, 200));
   assert.ok(blind.stdout.includes('no numbers printed') && !/p50/.test(blind.stdout));
 });
+t('analyze: a clean run that stopped early (cost cap, found in calibration) still reports, over the turns it really typed', () => {
+  const run = fakeRun('clean-1', Array.from({ length: 9 }, () => ({ manifest: {} })), [hookRun('SessionStart', 500, 5), hookRun('Stop', 1500, 10)], [], { outcome: 'STOPPED-COST' });
+  const rep = report([run]);
+  assert.equal(rep.out.e2[run.label].clean_turns, 8, '9 turns typed, turn 4 is a claim');
+  assert.equal(rep.out.e4.turns, 9);
+  assert.ok(markdown(rep).includes('STOPPED-COST'));
+});
 
 fs.rmSync(tmp, { recursive: true, force: true });
 if (failed.length) { console.error(`selftest: ${failed.length} failed, ${passed} passed\n${failed.join('\n')}`); process.exit(1); }

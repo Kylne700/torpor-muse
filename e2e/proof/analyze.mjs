@@ -99,7 +99,8 @@ export function e2(run) {
   const n = run.rec.turns.length;
   const per = Array.from({ length: n + 2 }, () => ({ model: 0, user: 0 }));
   for (const h of run.hooks) { per[h.turn].model += h.vis.model; per[h.turn].user += h.vis.user; }
-  const clean = run.spec.turns.map((t, i) => ({ n: i + 1, ok: (t.role ?? 'prompt') === 'prompt' && !t.claim })).filter((t) => t.ok).map((t) => t.n);
+  // Only turns that were really typed: a run that stopped early (cost cap, infra failure) has fewer turns than the script.
+  const clean = run.spec.turns.map((t, i) => ({ n: i + 1, ok: (t.role ?? 'prompt') === 'prompt' && !t.claim })).filter((t) => t.ok && t.n <= n).map((t) => t.n);
   const bad = clean.filter((i) => per[i].model > 0);
   const total = per.reduce((s, p) => s + p.model, 0);
   const modelTexts = run.hooks.flatMap((h) => Object.entries(h.vis.texts ?? {}).filter(([f]) => f !== 'systemMessage').map(([, text]) => text));
@@ -234,7 +235,7 @@ export function report(runs, verdicts = null) {
   out.e1 = e1(runs);
   out.e2 = Object.fromEntries(clean.map((r) => [r.label, e2(r)]));
   out.e3 = Object.fromEntries(clean.map((r) => [r.label, e3(r)]));
-  out.e4 = e4Tally(items, verdicts, clean.reduce((n, r) => n + r.spec.turns.length, 0));
+  out.e4 = e4Tally(items, verdicts, clean.reduce((n, r) => n + r.rec.turns.length, 0)); // turns really typed (20 per finished clean run)
   out.e5 = seeded.map(e5);
   out.e6 = seeded.map(e6);
   out.v11 = by(/^v11$/).map(v11);
