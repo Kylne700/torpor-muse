@@ -1123,12 +1123,16 @@ fn run_shell(
     })
 }
 
+/// What a person must know while the engine's gate is off, as it is since F4b: `doctor` shows it, and so does the line the
+/// check-writer prints after it saves a check (src/suggest/attach.rs).
+pub const GATE_OFF_TELLS: &str = "A broken check is told to the AI before it says Done; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.";
+
 /// What a broken check does in the folder doctor is run in (F4b): the engine's own read-only `torpor gate`, run with the
 /// engine and the vault the hooks use. An `info`: it is a setting of the user's, not a fault. Left out when the hooks do
 /// not say which engine they run (doctor does not guess from its own PATH), when that engine is missing (`check_hooks`
 /// says so) and when the vault does not exist yet (nothing is saved, and doctor creates nothing).
 fn check_promise_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
-    const TELLS: &str = "A broken check is told to the AI before it says Done; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.";
+    const TELLS: &str = GATE_OFF_TELLS;
     let Some(bin) = ours.iter().find_map(|h| tool_of(&h.command, "TORPOR_BIN")) else {
         return;
     };

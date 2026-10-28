@@ -26,6 +26,38 @@ fn hook_run(sb: &Sandbox, base: &str) -> Ran {
     )
 }
 
+/// S2 on F4b: with the user's gate off (what the first Muse session in a folder sets) the engine still says "In shadow for
+/// now ... starts to stop it", and the line the user reads must not. The test above keeps the engine's own words with the
+/// gate on, as a new store has it.
+#[test]
+fn with_the_gate_off_the_proven_line_says_what_the_ai_is_told_and_not_a_stop() {
+    let Some(sb) = with_engine("gate-off") else {
+        return;
+    };
+    sb.engine_history(PRAISE);
+    let (code, out, err) = sb.torpor(&["gate", "off"], None);
+    assert_eq!(code, 0, "{out}{err}");
+    let (_, now, _) = sb.torpor(&["gate"], None);
+    assert!(now.starts_with("The gate is off"), "{now}");
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    let r = hook_run(&sb, &mock.base());
+    let ctx = format!("out={:?} err={:?}", r.out, r.err);
+    assert_eq!(r.code, 0, "{ctx}");
+    assert!(
+        r.out.starts_with("proven: Promise #1 ") && r.out.contains(" Proof: passed "),
+        "{ctx}"
+    );
+    assert!(
+        !r.out.contains("In shadow") && !r.out.contains("starts to stop"),
+        "{ctx}"
+    );
+    assert!(
+        r.out.contains("it does not stop the AI") && r.out.contains("`torpor gate on`"),
+        "{ctx}"
+    );
+    assert_eq!(sb.result()["outcome"], "proven", "{ctx}");
+}
+
 #[test]
 fn a_praise_becomes_a_proven_check_that_catches_a_break_and_ignores_a_harmless_edit() {
     let Some(sb) = with_engine("e2e") else { return };

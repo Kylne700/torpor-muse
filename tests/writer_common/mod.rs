@@ -223,6 +223,7 @@ case "$1 $2" in
     echo "torpor 0.0.0-fake" ;;
   "status --json") cat "$D/status.json" 2>/dev/null || echo '{"saving":true,"off":false,"last_turn":{"n":2}}' ;;
   "promise list") cat "$D/list.txt" 2>/dev/null ;;
+  "gate "*) cat "$D/gate.txt" 2>/dev/null || echo "The gate is on." ;;
   "promise add")
     cat >> "$D/adds.log"; echo >> "$D/adds.log"
     [ -f "$D/add.sleep" ] && sleep "$(cat "$D/add.sleep")"

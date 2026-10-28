@@ -270,6 +270,24 @@ pub fn classify(r: &Run) -> Added {
     }
 }
 
+/// The engine ends a proven check's line with "In shadow for now: ... It starts to stop it after one real catch or three
+/// clean days ...". That holds only with the gate on; with it off (the default since F4b) nothing ever stops the AI, so
+/// the tail is swapped for the sentence `doctor` shows. `gate` is what `torpor gate` printed, `None` when it gave no
+/// answer: the part before the tail is true either way, so that part is all that is left when the gate is not known.
+fn for_gate(line: &str, gate: Option<&str>) -> String {
+    let Some(at) = line.find("In shadow for now") else {
+        return line.to_string();
+    };
+    let gate = gate.unwrap_or("").trim_start();
+    if gate.starts_with("The gate is on") {
+        line.to_string()
+    } else if gate.starts_with("The gate is off") || gate.starts_with("The gate is advisory") {
+        format!("{}{}", &line[..at], crate::doctor::GATE_OFF_TELLS)
+    } else {
+        line[..at].trim_end().to_string()
+    }
+}
+
 /// Hands the check to the engine, which lints it, qualifies it on the saved versions, and saves it.
 pub fn add(root: &Path, check: &Value, limit: Duration) -> Result<Added, String> {
     let r = exec(
@@ -278,7 +296,17 @@ pub fn add(root: &Path, check: &Value, limit: Duration) -> Result<Added, String>
         Some(&check.to_string()),
         limit,
     )?;
-    Ok(classify(&r))
+    Ok(match classify(&r) {
+        Added::Proven { id, line } => {
+            // one read-only look, and only for a saved check: what the line may say depends on the user's gate
+            let gate = exec(root, &["gate"], None, SHORT)
+                .ok()
+                .filter(|g| g.code == Some(0) && !g.timed_out);
+            let line = for_gate(&line, gate.as_ref().map(|g| g.out.as_str()));
+            Added::Proven { id, line }
+        }
+        other => other,
+    })
 }
 
 #[cfg(test)]
@@ -344,6 +372,37 @@ mod tests {
         let mut t = run(None, "", "");
         t.timed_out = true;
         assert!(matches!(classify(&t), Added::Failed(m) if m.contains("in time")));
+    }
+
+    #[test]
+    fn the_line_says_it_will_stop_the_ai_only_when_the_gate_is_on() {
+        let head =
+            "Promise #3 \"login works\" saved. Proof: passed 5 of 5 on A and failed 2 of 2 on B.";
+        let line = format!(
+            "{head} In shadow for now: Torpor will say when it would have stopped the AI, but does not stop it yet. It starts to stop it after one real catch or three clean days, or when you run: torpor promise block 3"
+        );
+        let off = "The gate is off. Promises show failures but do not stop the AI. Turn it on: torpor gate on";
+        let told = format!("{head} {}", crate::doctor::GATE_OFF_TELLS);
+        assert_eq!(for_gate(&line, Some("The gate is on.")), line);
+        assert_eq!(for_gate(&line, Some(off)), told);
+        assert_eq!(
+            for_gate(
+                &line,
+                Some("The gate is advisory: two disputes were upheld within 7 days.")
+            ),
+            told
+        );
+        // not known (no answer, no save points, something else): only what is true either way
+        for unknown in [
+            None,
+            Some(""),
+            Some("Torpor has no save points for this folder yet."),
+        ] {
+            assert_eq!(for_gate(&line, unknown), head);
+        }
+        // a check that is not in shadow has no such tail
+        let adv = "Promise #4 \"x\" saved. Proof: passed 5 of 5 on A and failed 2 of 2 on B. Advisory for now: Torpor shows failures.";
+        assert_eq!(for_gate(adv, Some(off)), adv);
     }
 
     fn script(dir: &Path, body: &str) -> String {
