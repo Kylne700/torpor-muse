@@ -6,7 +6,7 @@ const BRACES: usize = 256;
 /// The words a shell makes of one with `{a,b}` groups: `app.db{,-wal}` is `app.db` and `app.db-wal`. A group with no comma
 /// (`{x}`), one that is never closed, and every group past `BRACES` words are read as `*` (more than they match, which is
 /// the safe side).
-pub(super) fn expand(w: &str) -> Vec<String> {
+pub(in crate::hook) fn expand(w: &str) -> Vec<String> {
     let mut out = Vec::new();
     brace(w, &mut out);
     out
@@ -49,7 +49,7 @@ fn brace(w: &str, out: &mut Vec<String>) {
 }
 
 /// Shell glob on one name: `*`, `?`, `[a-z]`, `[!x]`; a leading dot is matched only by a leading dot.
-pub(super) fn glob_match(pat: &str, name: &str) -> bool {
+pub(in crate::hook) fn glob_match(pat: &str, name: &str) -> bool {
     !(name.starts_with('.') && !pat.starts_with('.')) && fnmatch(pat, name)
 }
 

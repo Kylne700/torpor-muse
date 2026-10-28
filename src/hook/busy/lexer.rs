@@ -1,7 +1,7 @@
 //! Reads a Bash command line into commands and words roughly as a shell does: quotes, separators, redirects, here-documents.
 
 /// A word and whether it holds an unquoted glob character (`*`, `?`, `[`, `{`, `}`).
-pub(super) type W = (String, bool);
+pub(in crate::hook) type W = (String, bool);
 
 pub(super) enum Tok {
     Word(String, bool),
@@ -153,13 +153,13 @@ pub(super) fn lex(s: &str, docs: bool) -> Vec<Tok> {
 }
 
 #[derive(Default)]
-pub(super) struct Cmd {
-    pub(super) words: Vec<W>,
+pub(in crate::hook) struct Cmd {
+    pub(in crate::hook) words: Vec<W>,
     /// Targets of `>`, `>>`, `>|` and `&>`.
     pub(super) writes: Vec<W>,
 }
 
-pub(super) fn commands(s: &str, docs: bool) -> Vec<Cmd> {
+pub(in crate::hook) fn commands(s: &str, docs: bool) -> Vec<Cmd> {
     let (mut all, mut cur, mut redir) = (Vec::new(), Cmd::default(), None);
     for t in lex(s, docs) {
         match t {

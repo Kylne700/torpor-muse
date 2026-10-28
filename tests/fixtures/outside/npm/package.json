@@ -1,0 +1,8 @@
+{
+  "name": "probe-c06",
+  "scripts": {
+    "preclean": "echo cleaning",
+    "clean": "rm -rf $HOME/old-stuff",
+    "build": "rm -rf dist && tsc"
+  }
+}

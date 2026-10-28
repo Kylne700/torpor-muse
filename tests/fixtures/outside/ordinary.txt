@@ -1,0 +1,208 @@
+# 200 ordinary dev commands (stage O false-alarm replay): none may be stopped. One per line; `#` lines are comments.
+# npm and other JavaScript tools
+npm install
+npm ci
+npm test
+npm run build
+npm run dev
+npm run lint
+npm run lint -- --fix
+npm run test -- --watch=false
+npm run clean
+npm install --save-dev typescript
+npm install react react-dom
+npm uninstall lodash
+npm outdated
+npm audit
+npm audit fix
+npm ls --depth=0
+npm pack --dry-run
+npm version patch --no-git-tag-version
+npm init -y
+npm exec -- tsc --noEmit
+npx tsc --noEmit
+npx eslint . --ext .ts,.tsx
+npx prettier --write "src/**/*.ts"
+npx vitest run
+npx jest --coverage
+npx playwright test --reporter=line
+npm run format && npm test
+pnpm install
+pnpm test
+pnpm run build
+yarn install --frozen-lockfile
+yarn test
+yarn build
+bun install
+bun test
+node scripts/check.js
+node -e "console.log(process.version)"
+# cargo and Rust
+cargo build
+cargo build --release
+cargo test
+cargo test -- --nocapture
+cargo test --all-targets
+cargo check
+cargo clippy --all-targets -- -D warnings
+cargo fmt
+cargo fmt --check
+cargo run -- --help
+cargo run --example demo
+cargo doc --no-deps
+cargo add serde --features derive
+cargo update -p serde
+cargo tree -d
+cargo bench --no-run
+cargo clean
+cargo clean -p app
+cargo install --path .
+cargo metadata --format-version 1 --no-deps
+RUST_BACKTRACE=1 cargo test parse
+CARGO_TARGET_DIR=/tmp/target cargo build
+cargo build 2>&1 | tail -n 20
+cargo test --lib hook:: -- --test-threads=1
+rustc --version
+rustup show
+cargo nextest run
+cargo test --doc
+cargo build --target x86_64-unknown-linux-gnu
+# git
+git status
+git status --short
+git diff
+git diff --stat
+git diff HEAD~1 -- src/main.rs
+git log --oneline -n 20
+git log -p -1
+git show HEAD
+git add -A
+git add src/lib.rs tests/
+git commit -m "fix: handle empty input"
+git commit --amend --no-edit
+git checkout -b feature/login
+git checkout main
+git switch -c fix/parser
+git branch -d old-branch
+git branch -a
+git fetch origin
+git pull --rebase
+git push origin feature/login
+git push -u origin HEAD
+git stash push -m wip
+git stash pop
+git merge --no-ff feature/login
+git rebase main
+git reset --soft HEAD~1
+git restore src/app.ts
+git restore --staged .
+git rm --cached config.local.json
+git rm -r old_tests
+git mv src/util.rs src/utils.rs
+git clean -n
+git tag v0.1.0
+git remote -v
+git blame src/main.rs
+git grep -n TODO
+git cherry-pick abc1234
+git worktree list
+git submodule update --init
+git ls-files --others --exclude-standard | xargs rm -f
+# rm inside the project folder
+rm -rf node_modules
+rm -rf dist build
+rm -rf target
+rm -f package-lock.json
+rm -rf .next
+rm -rf coverage .nyc_output
+rm src/old.rs
+rm -f *.log
+rm -rf ./tmp
+rm -r tests/fixtures/old
+rm -rf node_modules && npm install
+rm -f .eslintcache
+rm -rf __pycache__ .pytest_cache
+find . -name '*.pyc' -delete
+find . -name '.DS_Store' -delete
+find ./build -type f -name '*.o' -exec rm -f {} +
+find . -type d -name __pycache__ -exec rm -rf {} +
+rm -rf ./dist/*
+rmdir empty-dir
+unlink current-link
+rm -i notes.txt
+rm -- -weird-name.txt
+cd src && rm -f generated.rs
+cd frontend && rm -rf node_modules && npm ci
+rm -rf "build output"
+rm -rf docs/_build
+rm -rf .venv
+rm -rf vendor/bundle
+truncate -s 0 app.log
+shred -u secrets.tmp
+ls *.tmp | xargs rm -f
+find . -name '*.orig' | xargs rm -f
+rm -rf ./.cache
+rm -rf src/{old,legacy}
+cd docs && rm -rf _site && cd ..
+# rm in temp folders
+rm -rf /tmp/build-1
+rm -f /tmp/out.txt
+rm -rf /tmp/test-*
+rm -rf /var/tmp/cache-123
+rm -rf /tmp/pytest-of-user
+mkdir -p /tmp/work && rm -rf /tmp/work
+cd /tmp && rm -rf scratch
+rm -rf "$TMPDIR/x"
+rm -rf $TMPDIR/build
+rm -rf ${TMPDIR:-/tmp}/cache
+tmp=$(mktemp -d) && rm -rf "$tmp"
+rm -rf /tmp/ci-cache
+find /tmp -maxdepth 1 -name 'npm-*' -mtime +1 -delete
+rm -rf /tmp/node-compile-cache
+mv /tmp/report.html ./report.html
+rm -f /tmp/*.sock
+dd if=/dev/zero of=/tmp/disk.img bs=1M count=10
+truncate -s 0 /tmp/app.log
+rm -rf /var/tmp/build-cache/*
+shred -u /tmp/key.tmp
+# mv within the project folder
+mv src/old.rs src/new.rs
+mv README.txt README.md
+mv lib/*.js dist/
+mv -f config.example.json config.json
+mv -t archive/ notes-1.md notes-2.md
+mv docs/draft.md docs/final.md
+mv components/Button.jsx components/Button.tsx
+mv tests/test_a.py tests/unit/
+mv .env.example .env.local.example
+mv build/output.wasm public/
+mv -n a.txt b.txt
+mv ./scripts/setup.sh ./scripts/install.sh
+mv src/{old,new}.ts
+mv data/raw.csv data/archive/raw-2024.csv
+mv migrations/001.sql migrations/001_init.sql
+mv package.json package.json.bak
+mv dist release
+mv -v assets/img/*.png assets/images/
+mv "My File.txt" my-file.txt
+# other everyday commands
+ls -la
+pwd
+cat package.json
+mkdir -p src/components
+touch src/index.ts
+cp .env.example .env
+cp -r templates/ /tmp/templates-copy
+echo "hello" > out.txt
+grep -rn "TODO" src/
+python3 -m pytest -q
+python3 -m venv .venv
+pip install -r requirements.txt
+make
+make clean
+make test
+docker build -t app .
+chmod +x scripts/build.sh
+sed -i 's/foo/bar/g' src/main.rs
+tar -czf /tmp/backup.tgz src
+ls ~

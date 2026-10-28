@@ -8,7 +8,7 @@ const WRAP: &[&str] = &[
     "stdbuf", "setsid", "if", "then", "else", "elif", "do", "while", "until", "!", "{", "}",
 ];
 
-pub(super) fn base(w: &str) -> &str {
+pub(in crate::hook) fn base(w: &str) -> &str {
     w.rsplit('/').next().unwrap_or(w)
 }
 
@@ -22,7 +22,7 @@ pub(super) fn is_assign(w: &str) -> bool {
 
 /// The words from the command a list runs on: without the assignments and wrappers (`sudo`, `env`, ...) and their
 /// options in front.
-pub(super) fn head(mut ws: &[W]) -> &[W] {
+pub(in crate::hook) fn head(mut ws: &[W]) -> &[W] {
     let mut wrapped = false;
     while let Some((w, _)) = ws.first() {
         if is_assign(w) || WRAP.contains(&base(w)) {
@@ -36,7 +36,7 @@ pub(super) fn head(mut ws: &[W]) -> &[W] {
 }
 
 /// True when the command could run text a here-document wrote: a shell, `source`, `.`, `eval` or anything given as a path.
-pub(super) fn runs_script(c: &Cmd) -> bool {
+pub(in crate::hook) fn runs_script(c: &Cmd) -> bool {
     head(&c.words).first().is_some_and(|(v, _)| {
         v.contains('/')
             || matches!(
@@ -47,7 +47,7 @@ pub(super) fn runs_script(c: &Cmd) -> bool {
 }
 
 /// Options (`-x`, `--long`, up to a `--`) and operands of a command's arguments.
-pub(super) fn split(args: &[W]) -> (Vec<&str>, Vec<&W>) {
+pub(in crate::hook) fn split(args: &[W]) -> (Vec<&str>, Vec<&W>) {
     let (mut opts, mut ops, mut end) = (Vec::new(), Vec::new(), false);
     for a in args {
         if !end && a.0 == "--" {
@@ -65,7 +65,7 @@ pub(super) fn split(args: &[W]) -> (Vec<&str>, Vec<&W>) {
 /// or `--target-directory=DIR` names. Returns it and the other arguments.
 /// shortcut: a short option with a value (`-S x`) in the same cluster in front of the `t` is read as flags; upgrade when
 /// a real command shows it.
-pub(super) fn target_dir(args: &[W]) -> (Option<W>, Vec<W>) {
+pub(in crate::hook) fn target_dir(args: &[W]) -> (Option<W>, Vec<W>) {
     let (mut dir, mut rest, mut i) = (None, Vec::new(), 0);
     while i < args.len() {
         let (a, glob) = &args[i];

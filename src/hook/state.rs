@@ -34,6 +34,10 @@ pub struct Session {
     /// The newest database turn of the folder the model of this session was told about (`hook::db_note::db_note`).
     #[serde(default)]
     pub db_told: u64,
+    /// (turn id, files) the model was told this turn that their new text deletes the home folder or `/`
+    /// (`hook::outside::text_note`).
+    #[serde(default)]
+    pub text_told: (String, Vec<String>),
     /// The newest promise whose not-covered text the model of this session was given (`hook::handle::gap_note`).
     #[serde(default)]
     pub gap_told: u32,

@@ -26,9 +26,9 @@
 //! denied as if it had no tests; its `-path` and `-regex` tests are not judged. One `git clean` is judged whole, and
 //! `-ff` (nested repositories) is always denied.
 
-mod args;
-mod glob;
-mod lexer;
+pub(super) mod args;
+pub(super) mod glob;
+pub(super) mod lexer;
 mod spy;
 
 use spy::Spy;
