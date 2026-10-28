@@ -1,20 +1,24 @@
 # Torpor for Muse Code
 
-Work in progress, for the Meta Global AI Developer Hackathon (October 26 to November 4, 2026).
-
 **You say what works. If the AI breaks it, the AI is told before it says "Done", and it can undo the damage.**
 
 1. You say what works in Muse Code ("login works now"), typed or from a sound clip with `torpor-muse say`.
-2. Muse Spark, Meta's model, writes a check from your words.
-3. At the end of a later turn that could have broken it, Torpor runs the check; if it fails, the AI is told before it says "Done", and "undo that" puts it back.
+2. Muse Spark, Meta's model, writes a check from your words (Node apps for now).
+3. At the end of a later turn that could have broken it, Torpor runs the check. If it fails, the AI is told before it says "Done", and "undo that" puts it back.
 
-**Install** (Linux or macOS), once: copy the block under [Install](#install) below into a terminal, run `torpor-muse init`, then [add your Meta API key](#add-your-meta-api-key). After install you type nothing. Optional: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
+**Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, then `torpor-muse init` and [add your Meta API key](#add-your-meta-api-key). After that you type nothing.
 
-**Cost.** Only Meta's API costs money (the check-writer, after each prompt), with your own key and a daily cap. One recorded run (a spoken claim) cost USD 0.00015 for the transcription and USD 0.005265 for the check-writer ([details](docs/voice.md)). The engine makes no AI calls; in its own test (earlier build, no check running) no step took longer than 128.9 ms ([record](https://github.com/Kylne700/torpor/blob/v2.3.1/NOTES-S1.md#L71-L89)).
+**Cost:** about half a US cent per prompt in a Node app (measured once: USD 0.005265). The check-writer sends your prompt, file names and up to 14 KB of your code to Meta's API, with your own key, at most USD 2 a day. The engine makes no AI calls.
 
-**If Torpor itself stops working**, your Muse turn goes on and you are told once per session that Torpor is not saving. A check that fails only tells the AI; it stops the AI only after you run `torpor gate on` yourself.
+**If Torpor fails**, your Muse turn goes on, and you are told once per session that Torpor is not saving.
 
-Everything in this repo was built during the hackathon. The Torpor engine it drives is the declared older base and is not judged ([details](#built-during-the-hackathon-judge-this)).
+**Hackathon** (work in progress): the Muse Code hooks, the Muse Spark check-writer and voice were built during the Meta Global AI Developer Hackathon, October 26 to November 4, 2026. The Torpor engine (save points, undo) existed before and is not judged ([details](#built-during-the-hackathon-judge-this)).
+
+Good to know:
+- Optional commands: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
+- A failing check only tells the AI. It stops the AI only after you run `torpor gate on` yourself.
+- Speed: in the engine's own test (earlier build, no check running) no hook took longer than 128.9 ms ([record](https://github.com/Kylne700/torpor/blob/v2.3.1/NOTES-S1.md#L71-L89)).
+- Cost details: [docs/voice.md](docs/voice.md).
 
 <!-- CLIP: a 20-second clip goes here -->
 
