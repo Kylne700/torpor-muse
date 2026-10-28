@@ -1,10 +1,11 @@
 //! The engine's own gate setting for this folder: what a broken check does here (tells the AI, or stops it).
 
+use super::GATE_OFF_TELLS;
+use super::ctx::Ctx;
 use super::hook_command::tool_of;
 use super::hooks::Hook;
 use super::report::{Level, Report, clip};
 use super::shell::run_shell;
-use super::{Ctx, GATE_OFF_TELLS};
 use crate::util::quote;
 use std::path::Path;
 use std::time::Duration;

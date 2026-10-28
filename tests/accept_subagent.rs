@@ -1,5 +1,5 @@
 //! A model-spawned subagent's tool calls reach the engine as part of its parent's turn. Found by S3a-accept (e2e/RESULTS.md,
-//! A4): hook.rs dropped every child event, so a subagent could run the store-writing command the main session was
+//! A4): src/hook/handle.rs dropped every child event, so a subagent could run the store-writing command the main session was
 //! refused. Real `torpor-muse hook`, a fake engine that logs what it is given, a cleared environment as Muse gives it.
 use serde_json::{Value, json};
 use std::fs;

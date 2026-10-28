@@ -43,7 +43,7 @@ fn warns(r: &Report) -> usize {
 
 #[test]
 fn a_problem_line_saying_the_engine_did_not_run_is_a_fix_and_says_how() {
-    // the messages are the ones the hook core writes (src/engine.rs, src/hook.rs)
+    // the messages are the ones the hook core writes (src/engine.rs, src/hook.rs, src/hook/handle.rs)
     let msgs = [
         (
             "UserPromptSubmit",

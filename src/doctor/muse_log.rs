@@ -1,8 +1,9 @@
 //! Muse's own session logs: the Muse version, hooks it rejected, and prompts that never reached the prompt hook.
 
+use super::MUSE_TESTED;
+use super::ctx::Ctx;
 use super::hooks::Hook;
 use super::report::{Level, Report, clip, short};
-use super::{Ctx, MUSE_TESTED};
 use crate::transcript;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};

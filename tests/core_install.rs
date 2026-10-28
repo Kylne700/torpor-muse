@@ -13,7 +13,7 @@ const EXE: &str = env!("CARGO_BIN_EXE_torpor-muse");
 /// know, and the reserved `hooks.state`.
 const PLANTED: &str = r#"{"schema_version":1,"future_key":{"a":[1,{"b":null}],"c":"d"},"runtime_capabilities":{"plugin:x:y":{"enabled":false}},"hooks":{"state":{"seen":["x"]},"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo hello","timeout":3}]}],"PreToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"/opt/audit/pre"}]}],"Stop":[{"hooks":[{"type":"command","command":"/opt/audit/stop","timeout":20}]}]}}"#;
 
-/// The events `init` registers (src/hook.rs EVENTS), and the ones it leaves alone: six Muse events it never
+/// The events `init` registers (src/hook/events.rs EVENTS), and the ones it leaves alone: six Muse events it never
 /// registered and two (PostToolBatch, PostCompact) that earlier versions registered for a heartbeat only.
 const REGISTERED: [&str; 11] = [
     "SessionStart",

@@ -1,6 +1,6 @@
 //! Which vault the hooks write to, and whether this shell sees the same one.
 
-use super::Ctx;
+use super::ctx::Ctx;
 use super::hook_command::vault_of;
 use super::hooks::Hook;
 use super::report::{Level, Report};

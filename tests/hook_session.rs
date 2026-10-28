@@ -396,6 +396,48 @@ fn what_a_new_promise_does_not_cover_reaches_the_user_and_the_model() {
     assert!(!context_of(&r.hook_ok("UserPromptSubmit", &other)).contains("does not cover"));
 }
 
+/// Z item D: a check the user's engine keeps reaches the AI again at a resume and after a compaction, in the engine's
+/// own `Promises:` line (Torpor adds no note of its own for it). After a compaction the engine sends it once the
+/// transcript shows the compaction (its `compact_boundary` record); without one the AI hears nothing from the engine.
+#[test]
+fn real_engine_a_saved_check_reaches_the_ai_at_a_resume_and_after_a_compaction() {
+    const WORDS: &str = "the proof page must answer";
+    const SPEC: &str = r#"{"v":1,"name":"proof page answers","why":"the proof page must answer","start":{"cmd":"python3 -m http.server {port} --bind 127.0.0.1","ready":"/","timeout_s":90},"env":{},"steps":[{"http":{"method":"GET","path":"/proof.html"},"expect":{"status":200},"why":"the proof page answers"}],"unverifiable":false}"#;
+    let r = Rig::real("real-checks-reach-the-ai");
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    r.hook_ok("Stop", &r.fixture("Stop"));
+    // the page is made by hand, so the check is provable and the engine keeps it
+    fs::write(r.cwd.join("proof.html"), "<p>proof</p>\n").unwrap();
+    let (code, text) = engine_cli_stdin(&r, &["keep", WORDS, "--check", "-"], SPEC);
+    assert_eq!(code, 0, "{text}");
+    let promise = "Promises: #1 \"proof page answers\" (shadow, last passed)";
+
+    let ctx = context_of(&r.hook_ok("SessionStart", &r.fixture("SessionStart-resume")));
+    assert!(ctx.contains(promise), "resume: {ctx}");
+
+    r.hook_ok("PreCompact", &r.fixture("PreCompact"));
+    let compact = r.fixture("SessionStart-compact");
+    let ctx = context_of(&r.hook_ok("SessionStart", &compact));
+    assert!(
+        !ctx.contains("Promises:"),
+        "no compaction in the transcript: {ctx}"
+    );
+    let transcript = r.dir.join("transcript.jsonl");
+    fs::write(
+        &transcript,
+        "{\"type\":\"user\",\"uuid\":\"u1\",\"message\":\"hello\"}\n{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"uuid\":\"b1\"}\n",
+    )
+    .unwrap();
+    let mut compact = compact;
+    compact["transcript_path"] = json!(transcript);
+    let ctx = context_of(&r.hook_ok("SessionStart", &compact));
+    assert!(
+        ctx.contains("after compaction 1") && ctx.contains(promise),
+        "compaction: {ctx}"
+    );
+}
+
 // ---------------------------------------------------------------- F4b: the gate is off until the user turns it on
 
 /// The engine's promise gate is on in every folder it saves. The user chose hands-free (a broken check is told to the AI

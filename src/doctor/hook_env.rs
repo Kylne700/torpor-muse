@@ -1,6 +1,6 @@
 //! Two warnings about the hooks' surroundings: the check-writer has no key, and XDG_DATA_HOME moves Muse's logs away from them.
 
-use super::Ctx;
+use super::ctx::Ctx;
 use super::report::{Level, Report};
 use crate::util::quote;
 use std::path::PathBuf;

@@ -69,7 +69,8 @@ pub fn log_error(vault: &Path, what: &str) {
     }
 }
 
-/// hook.rs calls this first for every event it parsed, observer child sessions too (`main` = false, research/59 D10).
+/// src/hook/handle.rs calls this first for every event it parsed, observer child sessions too (`main` = false,
+/// research/59 D10).
 pub fn beat(event: &str, session_id: &str, main: bool) {
     let v = vault();
     match std::panic::catch_unwind(|| beat_in(&v, event, session_id, main, now_ms())) {

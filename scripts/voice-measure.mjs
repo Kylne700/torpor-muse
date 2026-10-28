@@ -5,8 +5,8 @@
 //   gen <dir>                    18 clips (6 claims x 3 flite voices) and <dir>/manifest.json, with ffmpeg
 //   table <rows.jsonl>           the markdown table and the verdict from the rows the measurement test wrote
 //   spend <out.md> <run>=<ledger.jsonl> ...   the spend ledger of the stage, with its total against USD 1.00
-// The keyed part is `suggest::voice::tests::measure_keywords` (src/suggest/voice.rs): it calls the same `transcribe` that
-// `say` uses, once without and once with the keywords the shipped derivation gives for the app the claim is about.
+// The keyed part is `suggest::voice::tests::measure_keywords` (src/suggest/voice/tests.rs): it calls the same
+// `transcribe` (src/suggest/voice/upload.rs) that `say` (src/suggest/voice.rs) uses, once without and once with the keywords the shipped derivation gives for the app the claim is about.
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
