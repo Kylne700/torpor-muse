@@ -1,4 +1,4 @@
-//! What the hooks do not inherit from this shell: the check-writer's key file and XDG_DATA_HOME.
+//! Two warnings about the hooks' surroundings: the check-writer has no key, and XDG_DATA_HOME moves Muse's logs away from them.
 
 use super::Ctx;
 use super::report::{Level, Report};
