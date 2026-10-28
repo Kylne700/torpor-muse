@@ -6,6 +6,7 @@
 //! the file before and the result after, writes through a temp file and a rename, and refuses rather than guesses.
 
 mod entries;
+mod key;
 mod settings;
 #[cfg(test)]
 mod tests;
@@ -74,7 +75,7 @@ fn try_init() -> Result<(), String> {
             "torpor-muse hooks are already installed in {}",
             path.display()
         );
-        return Ok(());
+        return key::offer();
     }
     let mut note = String::new();
     if let Some(orig) = &old_bytes {
@@ -89,7 +90,7 @@ fn try_init() -> Result<(), String> {
         .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     println!("torpor-muse hooks installed in {}{note}", path.display());
     println!("store {home}, engine {bin}; start a new Muse session to use them");
-    Ok(())
+    key::offer()
 }
 
 pub fn init() -> u8 {
@@ -183,6 +184,12 @@ fn try_uninstall() -> Result<(), String> {
     remove_hooks()?;
     if let Some(line) = tidy(&settings_path(), &engine::state_dir()) {
         println!("{line}");
+    }
+    if let Some(f) = key::kept() {
+        println!(
+            "kept: your Meta API key in {}; deleting it is your choice",
+            f.display()
+        );
     }
     Ok(())
 }

@@ -3,9 +3,12 @@
 
 use serde_json::{Value, json};
 use std::fs;
+use std::io::{Read, Write};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const EXE: &str = env!("CARGO_BIN_EXE_torpor-muse");
 
@@ -95,7 +98,12 @@ impl Rig {
 
     /// `torpor-muse <args>` with the environment a user shell would have, and nothing else.
     fn command(&self, args: &[&str]) -> Command {
-        let mut c = Command::new(EXE);
+        self.program(EXE, args)
+    }
+
+    /// `program <args>` with that environment.
+    fn program(&self, program: &str, args: &[&str]) -> Command {
+        let mut c = Command::new(program);
         c.args(args)
             .env_clear()
             .env("HOME", &self.home)
@@ -745,4 +753,234 @@ fn doctor_says_when_the_check_writer_has_no_key_file_and_why() {
         line_of(&out).is_some_and(|l| l.contains("only you can read")),
         "{out}"
     );
+}
+
+// ---- the Meta API key (stage H): init asks for it only when a person is at a terminal
+
+const KEY: &str = "test-not-a-key";
+const PROMPT: &str = "Paste your Meta API key";
+
+/// util-linux `script` (a terminal) and `setsid` (none); macOS has BSD `script` and no `setsid`.
+fn util_linux(tool: &str) -> bool {
+    let ok = Command::new(tool)
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("util-linux"));
+    if !ok {
+        eprintln!("SKIPPED: no util-linux `{tool}` here, so this terminal case is not run");
+    }
+    ok
+}
+
+/// `'<torpor-muse>' init` for `sh -c`.
+fn init_line() -> String {
+    format!("'{}' init", EXE.replace('\'', r"'\''"))
+}
+
+impl Rig {
+    /// `cmd` run by `sh -c` in a new terminal (util-linux `script`), with the rig's environment.
+    fn in_terminal(&self, cmd: &str) -> Child {
+        let mut c = self.program("script", &["-qec", cmd, "/dev/null"]);
+        c.env("SHELL", "/bin/sh");
+        spawn(c, Stdio::piped()) // stdin stays open until script ends: an early EOF can reach the terminal
+    }
+}
+
+fn spawn(mut c: Command, stdin: Stdio) -> Child {
+    c.stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+/// Waits for `child` to end; once `typed.0` has been shown it types `typed.1`. Fails after 20 s: init must never
+/// wait for input that nobody gives. Returns the exit code and everything shown (stdout and stderr).
+fn drive(mut child: Child, typed: Option<(&str, &[u8])>) -> (i32, String) {
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let readers: Vec<_> = [
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|mut from| {
+        let shown = Arc::clone(&shown);
+        std::thread::spawn(move || {
+            let mut b = [0u8; 4096];
+            while let Ok(n @ 1..) = from.read(&mut b) {
+                shown.lock().unwrap().extend_from_slice(&b[..n]);
+            }
+        })
+    })
+    .collect();
+    let text = || String::from_utf8_lossy(&shown.lock().unwrap()).into_owned();
+    let mut stdin = child.stdin.take();
+    let mut typed = typed;
+    let end = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some((after, input)) = typed
+            && text().contains(after)
+        {
+            stdin.as_mut().unwrap().write_all(input).unwrap();
+            typed = None;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            drop(stdin);
+            readers.into_iter().for_each(|r| r.join().unwrap());
+            return (status.code().unwrap_or(-1), text());
+        }
+        if Instant::now() > end {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("still running after 20 s; it showed: {}", text());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn mode(p: &Path) -> u32 {
+    fs::metadata(p).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn in_a_terminal_init_asks_for_the_key_and_saves_it_unshown() {
+    if !util_linux("script") {
+        return;
+    }
+    let r = Rig::new("key-asked");
+    let cfg = r.home.join(".config/torpor-muse/config");
+    let file = r.home.join(".config/torpor-muse/meta-api-key");
+    fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+    // others may read it and its key file is not there: not usable, so init asks, and keeps the other lines
+    fs::write(&cfg, "# mine\nday_cap_usd = 2\nkey_file = ~/gone\n").unwrap();
+    let typed = format!("{KEY}\n");
+    let (code, shown) = drive(
+        r.in_terminal(&init_line()),
+        Some((PROMPT, typed.as_bytes())),
+    );
+    assert_eq!(code, 0, "{shown}");
+    assert!(shown.contains("torpor-muse hooks installed in"), "{shown}");
+    assert!(shown.contains(PROMPT), "{shown}");
+    assert!(!shown.contains(KEY), "the key was shown: {shown}");
+    let saved = format!("Meta API key saved in {}", file.display());
+    assert!(shown.contains(&saved), "{shown}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), typed);
+    assert_eq!(
+        fs::read_to_string(&cfg).unwrap(),
+        "# mine\nday_cap_usd = 2\nkey_file = ~/.config/torpor-muse/meta-api-key\n"
+    );
+    assert_eq!((mode(&file), mode(&cfg)), (0o600, 0o600));
+    // now there is a usable key file: init says so and does not ask
+    let (code, shown) = drive(r.in_terminal(&init_line()), None);
+    assert_eq!(code, 0, "{shown}");
+    let set = format!("Meta API key file already set: {}", file.display());
+    assert!(shown.contains(&set) && !shown.contains(PROMPT), "{shown}");
+}
+
+#[test]
+fn in_a_terminal_enter_alone_skips_the_key() {
+    if !util_linux("script") {
+        return;
+    }
+    let r = Rig::new("key-skipped");
+    let (code, shown) = drive(r.in_terminal(&init_line()), Some((PROMPT, b"\n")));
+    assert_eq!(code, 0, "{shown}");
+    assert!(
+        shown.contains("No key: Torpor saves and undoes without one; the check-writer stays off"),
+        "{shown}"
+    );
+    assert!(
+        !r.home.join(".config/torpor-muse").exists(),
+        "nothing written"
+    );
+}
+
+#[test]
+fn ctrl_c_at_the_key_prompt_turns_echo_back_on() {
+    if !util_linux("script") {
+        return;
+    }
+    let r = Rig::new("key-ctrl-c");
+    // the shell around init goes on after Ctrl-C and prints `echo` or `-echo` from the terminal's settings
+    let flag = "stty -a | tr ' ;' '\\n\\n' | grep -x -e echo -e -echo";
+    let cmd = format!(
+        "trap : INT; {}; for i in 1 2 3 4 5 6 7 8 9 10; do {flag} | grep -qx echo && break; sleep 0.2; done; {flag}",
+        init_line()
+    );
+    let (_, shown) = drive(r.in_terminal(&cmd), Some((PROMPT, b"\x03")));
+    let last = shown
+        .lines()
+        .map(str::trim)
+        .rfind(|l| *l == "echo" || *l == "-echo");
+    assert_eq!(last, Some("echo"), "{shown}");
+    assert!(
+        !r.home.join(".config/torpor-muse").exists(),
+        "nothing written"
+    );
+}
+
+#[test]
+fn without_a_terminal_init_never_asks_or_waits() {
+    if !util_linux("setsid") {
+        return;
+    }
+    let r = Rig::new("key-no-terminal");
+    // no controlling terminal, stdin /dev/null, stdout a pipe: today's two lines
+    let (code, shown) = drive(
+        spawn(r.program("setsid", &["-w", EXE, "init"]), Stdio::null()),
+        None,
+    );
+    assert_eq!(code, 0, "{shown}");
+    assert_eq!(shown.lines().count(), 2, "{shown}");
+    assert!(
+        shown.starts_with("torpor-muse hooks installed in"),
+        "{shown}"
+    );
+    // stdout a terminal, but no /dev/tty to read from: no prompt either
+    if util_linux("script") {
+        let line = format!("setsid -w {} </dev/null", init_line());
+        let (code, shown) = drive(r.in_terminal(&line), None);
+        assert_eq!(code, 0, "{shown}");
+        assert_eq!(
+            shown.trim(),
+            format!(
+                "torpor-muse hooks are already installed in {}",
+                r.settings().display()
+            )
+        );
+    }
+    assert!(
+        !r.home.join(".config/torpor-muse").exists(),
+        "nothing written"
+    );
+}
+
+#[test]
+fn uninstall_keeps_the_key_file_and_says_where() {
+    let r = Rig::new("key-kept");
+    let cfg = r.home.join(".config/torpor-muse/config");
+    let file = r.home.join(".config/torpor-muse/meta-api-key");
+    fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+    fs::write(&cfg, "key_file = ~/.config/torpor-muse/meta-api-key\n").unwrap();
+    fs::write(&file, format!("{KEY}\n")).unwrap();
+    for f in [&cfg, &file] {
+        fs::set_permissions(f, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert_eq!(r.run(&["init"]).0, 0);
+    let (code, out, err) = r.run(&["uninstall"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let kept = format!(
+        "kept: your Meta API key in {}; deleting it is your choice",
+        file.display()
+    );
+    assert_eq!(out.lines().last(), Some(kept.as_str()), "{out}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{KEY}\n"));
+    assert!(!out.contains(KEY) && !err.contains(KEY), "{out}{err}");
 }
