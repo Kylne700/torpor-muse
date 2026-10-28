@@ -540,3 +540,11 @@ impl Drop for Sandbox {
         }
     }
 }
+
+pub const PROVEN: &str = "Promise #1 \"login works\" saved. Proof: passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the version from the start of turn 1. In shadow for now: it blocks nothing yet.";
+
+pub const WORDS: &str = "login works now";
+
+pub fn say_proven(sb: &Sandbox) {
+    sb.engine_says(0, &format!("Checking...\n{PROVEN}\n"), "");
+}
