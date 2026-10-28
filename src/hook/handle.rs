@@ -6,7 +6,7 @@ use super::gate::gate_default;
 use super::paths::{engine_cmd, project_root};
 use super::stop_note::{Ended, stop_note};
 use super::writer_note::{gap_line, writer_note};
-use super::{Done, busy, normalise, state};
+use super::{Done, busy, normalise, outside, state};
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
 use std::path::Path;
@@ -52,6 +52,7 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
     if main && event == "UserPromptSubmit" && !cwd.is_empty() {
         state::open_set(dir, &cwd, &sid, &turn);
     }
+    let told = outside::text_line(event, &payload); // before `normalise` drops the file bodies
     if let Some(m) = payload.as_object_mut() {
         normalise::apply(event, m);
     }
@@ -103,6 +104,10 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
         }
     }
     if event == "PreToolUse" {
+        done.stdout = outside::guard(&payload, &cwd, done.stdout.take());
+        if let Some(t) = told {
+            done.stdout = outside::text_note(dir, &sid, &turn, t, done.stdout.take());
+        }
         let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
         done.stdout = busy_guard(&payload, &cwd, left, done.stdout.take());
     }

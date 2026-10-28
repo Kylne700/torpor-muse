@@ -12,6 +12,7 @@ mod events;
 mod gate;
 mod handle;
 mod normalise;
+mod outside;
 mod paths;
 mod state;
 mod stop;
