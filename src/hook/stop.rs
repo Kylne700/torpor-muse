@@ -1,5 +1,6 @@
-//! F4 items 2 and 3: the words of the one Stop block that `hook::stop_note` gives when the turn that just ended broke a
-//! saved check or did something risky. This file reads the engine's own text and writes ours; it starts nothing.
+//! F4 items 2 and 3: the words of the one Stop block that `hook::stop_note::stop_note` gives when the turn that just
+//! ended broke a saved check or did something risky. This file reads the engine's own text and writes ours; it starts
+//! nothing.
 
 use super::busy::is_db_name;
 use crate::suggest::scrub;

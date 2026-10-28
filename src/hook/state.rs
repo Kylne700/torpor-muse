@@ -2,9 +2,9 @@
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
 //! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
 //! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
-//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept), `app/<hash of folder>.json`
-//! (the user was told once that the check-writer needs an app with a start script; never swept) and
-//! `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept).
+//! (the folder's engine gate was switched off once, `hook::gate::gate_default`; never swept),
+//! `app/<hash of folder>.json` (the user was told once that the check-writer needs an app with a start script; never
+//! swept) and `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -30,17 +30,18 @@ pub struct Session {
     pub told: bool,
     /// (turn id, Stop blocks let through), oldest first, the last 8 turns.
     pub blocks: Vec<(String, u32)>,
-    /// The newest database turn of the folder the model of this session was told about (`hook::db_note`).
+    /// The newest database turn of the folder the model of this session was told about (`hook::db_note::db_note`).
     #[serde(default)]
     pub db_told: u64,
-    /// The newest promise whose not-covered text the model of this session was given (`hook::gap_note`).
+    /// The newest promise whose not-covered text the model of this session was given (`hook::handle::gap_note`).
     #[serde(default)]
     pub gap_told: u32,
-    /// The turn whose end Torpor blocked once for a broken check or a risky turn (`hook::stop_note`).
+    /// The turn whose end Torpor blocked once for a broken check or a risky turn (`hook::stop_note::stop_note`).
     #[serde(default)]
     pub noted: String,
-    /// The kinds of check-writer news the user of this session was told, one note each (`hook::writer_note`); not
-    /// `app` and `no-key`, which are marked per folder (`mark`) unless that is not possible.
+    /// The kinds of check-writer news the user of this session was told, one note each
+    /// (`hook::writer_note::writer_note`); not `app` and `no-key`, which are marked per folder (`mark`) unless that is
+    /// not possible.
     #[serde(default)]
     pub writer_told: Vec<String>,
     /// Why the check-writer could not start on the last prompt (`busy`, `start`), to tell at the next prompt.
@@ -86,8 +87,8 @@ impl Session {
         *n <= STOP_CAP
     }
 
-    /// True once per `turn`: the one block of `hook::stop_note` may go out. It counts against the same cap as the
-    /// engine's blocks; a turn without an id cannot be told apart from another, so it gets none.
+    /// True once per `turn`: the one block of `hook::stop_note::stop_note` may go out. It counts against the same cap
+    /// as the engine's blocks; a turn without an id cannot be told apart from another, so it gets none.
     pub fn allow_note_block(&mut self, turn: &str) -> bool {
         if turn.is_empty() || self.noted == turn || !self.allow_block(turn) {
             return false;
@@ -268,10 +269,10 @@ pub fn sweep(dir: &Path) {
     }
 }
 
-/// A folder marked once for `sub`: `gate` (`hook::gate_default` switched its engine gate off), `app` (the user was told
-/// the check-writer needs an app with a start script) or `no-key` (told it is off for lack of a key); stored inside and
-/// compared whole. Kept without an end (`sweep` leaves `gate/`, `app/` and `no-key/` alone): the `gate` file is what
-/// lets a later `torpor gate on` of the user's stay on.
+/// A folder marked once for `sub`: `gate` (`hook::gate::gate_default` switched its engine gate off), `app` (the user
+/// was told the check-writer needs an app with a start script) or `no-key` (told it is off for lack of a key); stored
+/// inside and compared whole. Kept without an end (`sweep` leaves `gate/`, `app/` and `no-key/` alone): the `gate` file
+/// is what lets a later `torpor gate on` of the user's stay on.
 #[derive(Serialize, Deserialize)]
 struct Mark {
     cwd: String,
@@ -292,8 +293,8 @@ pub fn mark(dir: &Path, sub: &str, cwd: &str) -> bool {
 }
 
 /// The main turn open in a folder. Muse gives a subagent's tool events no parent id (its session id and turn id are its
-/// own), only the folder, so hook.rs files them under the turn recorded here. One file per folder, replaced whole
-/// (the hooks of a parent and its subagents run at the same time).
+/// own), only the folder, so `hook::handle::adopt` files them under the turn recorded here. One file per folder,
+/// replaced whole (the hooks of a parent and its subagents run at the same time).
 #[derive(Serialize, Deserialize)]
 struct Open {
     cwd: String,
