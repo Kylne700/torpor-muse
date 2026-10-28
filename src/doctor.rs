@@ -1,6 +1,7 @@
 //! `torpor-muse doctor`: is the gate really live, and what broke without a sound. Owner: S3a-shim.
 //!
-//! It only reads and runs one harmless probe: it never deletes or kills anything that is not its own probe process.
+//! It only reads, runs one harmless probe and the engine's read-only `torpor gate`: it never deletes or kills anything
+//! that is not its own probe process.
 //! Every line starts with `ok`, `info`, `warn` or `FIX`; a problem line is followed by a `do:` line that says how.
 //! Exit 0 = nothing to fix (warnings may remain), 1 = at least one FIX.
 #![allow(dead_code)] // tests/shim_doctor.rs reaches the parts
@@ -167,6 +168,7 @@ pub fn examine(c: &Ctx) -> Report {
     let vault = check_vault(c, &ours, &mut r);
     check_logs(c, &ours, &mut r);
     check_gate(c, &vault, &ours, &mut r);
+    check_promise_gate(c, &vault, &ours, &mut r);
     check_errors(&vault, c.now_ms, &mut r);
     check_problems(&vault, c.now_ms, &mut r);
     check_probe(c, &ours, &mut r);
@@ -931,7 +933,11 @@ fn problem_level(msg: &str) -> Level {
         "payload has no session_id",
         "unknown event name",
     ];
-    const ROUTINE: [&str; 2] = ["Stop block dropped", "is not in our schema"];
+    const ROUTINE: [&str; 3] = [
+        "Stop block dropped",
+        "is not in our schema",
+        "gate default not set", // the next session start tries again; the line about the gate says what it is now
+    ];
     if DOWN.iter().any(|d| msg.starts_with(d)) || msg.contains(" timed out after ") {
         Level::Fix
     } else if ROUTINE.iter().any(|q| msg.contains(q)) {
@@ -1115,6 +1121,47 @@ fn run_shell(
         stderr: take(&err),
         timed_out,
     })
+}
+
+/// What a broken check does in the folder doctor is run in (F4b): the engine's own read-only `torpor gate`, run with the
+/// engine and the vault the hooks use. An `info`: it is a setting of the user's, not a fault. Left out when the hooks do
+/// not say which engine they run (doctor does not guess from its own PATH), when that engine is missing (`check_hooks`
+/// says so) and when the vault does not exist yet (nothing is saved, and doctor creates nothing).
+fn check_promise_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) {
+    const TELLS: &str = "A broken check is told to the AI before it says Done; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.";
+    let Some(bin) = ours.iter().find_map(|h| tool_of(&h.command, "TORPOR_BIN")) else {
+        return;
+    };
+    if !bin.is_file() || !vault.is_dir() {
+        return;
+    }
+    let env: Vec<(String, String)> = vec![
+        (
+            "PATH".into(),
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into()),
+        ),
+        ("HOME".into(), c.home.to_string_lossy().into_owned()),
+        ("TORPOR_HOME".into(), vault.to_string_lossy().into_owned()),
+    ];
+    let cmd = format!("{} gate", quote(&bin.to_string_lossy()));
+    let (ok, first) = match run_shell("/bin/sh", &cmd, &env, &c.cwd, b"", Duration::from_secs(5)) {
+        Err(e) => (false, e),
+        Ok(x) if x.timed_out => (false, "it did not finish in 5 s".to_string()),
+        Ok(x) => {
+            let text = [x.stdout, x.stderr]
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .join("\n");
+            let line = text.lines().map(str::trim).find(|l| !l.is_empty());
+            (x.code == Some(0), line.unwrap_or("").to_string())
+        }
+    };
+    let now = match first.as_str() {
+        s if ok && s.starts_with("The gate is on") => "on. A broken check can stop the AI. To let checks only tell it, run `torpor gate off` in your own terminal.".to_string(),
+        s if ok && s.starts_with("The gate is off") => format!("off. {TELLS}"),
+        s if ok && s.starts_with("The gate is advisory") => format!("off (advisory). {TELLS}"),
+        s => format!("not read: {}", clip(s, 120)),
+    };
+    r.add(Level::Info, format!("torpor gate (this folder): {now}"));
 }
 
 fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {

@@ -61,6 +61,17 @@ pwd > "$d/cwd.txt"
 exit "$(cat "$d/exit" 2>/dev/null || echo 0)"
 "#;
 
+/// Stands in for the engine's `torpor gate`: prints `gate.say`, exits with `gate.exit`, and keeps what it was started with
+/// and where (files next to the symlinked path, like the fake torpor-muse).
+const FAKE_ENGINE: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+echo "$*" > "$d/gate.args"
+echo "$TORPOR_HOME" > "$d/gate.home"
+pwd > "$d/gate.cwd"
+cat "$d/gate.say" 2>/dev/null
+exit "$(cat "$d/gate.exit" 2>/dev/null || echo 0)"
+"#;
+
 /// Stands in for a login shell whose start-up file talks (zsh reads ~/.zshenv for every `-c`; there is no zsh here).
 const FAKE_SHELL: &str = r#"#!/bin/sh
 [ -f "$HOME/.fakerc" ] && . "$HOME/.fakerc"
@@ -84,6 +95,11 @@ fn script(cell: &'static OnceLock<PathBuf>, name: &str, body: &str) -> PathBuf {
 fn fake_exe() -> PathBuf {
     static C: OnceLock<PathBuf> = OnceLock::new();
     script(&C, "fake-torpor-muse", FAKE_EXE)
+}
+
+fn fake_engine() -> PathBuf {
+    static C: OnceLock<PathBuf> = OnceLock::new();
+    script(&C, "fake-torpor-engine", FAKE_ENGINE)
 }
 
 fn fake_shell() -> PathBuf {
@@ -778,13 +794,18 @@ fn routine_lines_and_a_missing_or_empty_log_are_no_problem() {
                 "Stop",
                 "payload key brand_new_key is not in our schema (kept, passed on)",
             ),
+            (
+                30,
+                "SessionStart",
+                "gate default not set, tried again at the next session start: `torpor gate off` exited 3: refused",
+            ),
         ],
     );
     let r = w.examine();
     must(
         &r,
         Level::Ok,
-        "no problem logged by the hooks in the last 24 h (2 routine and 0 older",
+        "no problem logged by the hooks in the last 24 h (3 routine and 0 older",
     );
     assert_eq!((r.fixes(), warns(&r)), (0, 0), "{}", r.text());
 }
@@ -1597,6 +1618,91 @@ fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
         ]
     );
     assert_eq!(p("/x/torpor-muse 'hook"), None);
+}
+
+// ---------------------------------------------------------------- the engine's gate (F4b)
+
+/// A healthy world whose engine is the fake `torpor gate` that says `said` and exits `code`.
+fn gate_world(name: &str, said: &str, code: i32) -> World {
+    let w = healthy(name);
+    fs::remove_file(w.engine()).unwrap();
+    std::os::unix::fs::symlink(fake_engine(), w.engine()).unwrap();
+    fs::write(w.bin.join("gate.say"), said).unwrap();
+    fs::write(w.bin.join("gate.exit"), code.to_string()).unwrap();
+    w
+}
+
+const GATE_LINE: &str = "torpor gate (this folder)";
+
+/// F4b: the line about the gate is the engine's own `torpor gate` (read only), run with the engine and the vault the hooks use
+/// and in the folder doctor is run in, put as what a broken check does. An `info`, never a fault: it is a setting.
+#[test]
+fn doctor_says_what_a_broken_check_does_here_from_the_engines_own_gate() {
+    for (said, code, needle) in [
+        (
+            "The gate is off. Promises show failures but do not stop the AI. Turn it on: torpor gate on",
+            0,
+            "told to the AI before it says Done",
+        ),
+        (
+            "The gate is advisory: two disputes were upheld within 7 days. Turn it on again: torpor gate on",
+            0,
+            "advisory",
+        ),
+        ("The gate is on.", 0, "can stop the AI"),
+        (
+            "Torpor has no save points for this folder yet.",
+            5,
+            "not read",
+        ),
+    ] {
+        let w = gate_world("gate-line", said, code);
+        let r = w.examine();
+        let line = r.0.iter().find(|(_, s)| s.starts_with(GATE_LINE));
+        let line = line.unwrap_or_else(|| panic!("no gate line for {said:?} in:\n{}", r.text()));
+        assert!(line.0 == Level::Info && line.1.contains(needle), "{line:?}");
+        assert_eq!(w.seen("gate.args").trim(), "gate");
+        assert_eq!(w.seen("gate.home").trim(), w.vault.to_string_lossy());
+        let proj = fs::canonicalize(w.t.join("proj")).unwrap();
+        assert_eq!(w.seen("gate.cwd").trim(), proj.to_string_lossy());
+    }
+    // off says how to let checks stop the AI, on says how to take that away, both as the user's own command
+    let off = gate_world("gate-off", "The gate is off. Turn it on: torpor gate on", 0).examine();
+    must(
+        &off,
+        Level::Info,
+        "run `torpor gate on` in your own terminal",
+    );
+    let on = gate_world("gate-on", "The gate is on.", 0).examine();
+    must(
+        &on,
+        Level::Info,
+        "run `torpor gate off` in your own terminal",
+    );
+}
+
+/// Which engine the hooks use is known only from the TORPOR_BIN in their commands: without one doctor does not guess from
+/// its own PATH, and runs nothing.
+#[test]
+fn doctor_has_no_gate_line_when_the_hook_commands_do_not_say_which_engine_they_use() {
+    let w = gate_world("gate-none", "The gate is on.", 0);
+    // the control: with TORPOR_BIN in the commands the engine is asked
+    let asked = w.examine();
+    assert!(asked.text().contains(GATE_LINE), "{}", asked.text());
+    fs::remove_file(w.bin.join("gate.args")).unwrap();
+    let mut v = w.settings_value(&[("SessionStart", 10), ("UserPromptSubmit", 10), ("Stop", 35)]);
+    for e in ["SessionStart", "UserPromptSubmit", "Stop"] {
+        let cmd = format!(
+            "env TORPOR_HOME={} {} hook {e}",
+            doctor::quote(&w.vault.to_string_lossy()),
+            doctor::quote(&w.exe().to_string_lossy())
+        );
+        v["hooks"][e][0]["hooks"][0]["command"] = json!(cmd);
+    }
+    w.write_json(&v);
+    let r = w.examine();
+    assert!(!r.text().contains(GATE_LINE), "{}", r.text());
+    assert!(!w.bin.join("gate.args").exists(), "the engine was run");
 }
 
 // ---------------------------------------------------------------- the binary

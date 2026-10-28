@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Re-runs the end-to-end checks that need no model, against a real Muse Code install: A1 (hooks installed and removed
-# next to a foreign hook), A2 (a healthy turn: doctor says the gate is live) and A8 (a hook Muse rejects, then repaired;
-# the engine gone). The "echo" provider answers a prompt with the prompt itself: free, no key.
+# next to a foreign hook), A2 (a healthy turn: doctor says the gate is live), F4b (the engine's gate is off in the new
+# folder after that turn) and A8 (a hook Muse rejects, then repaired; the engine gone). The "echo" provider answers a prompt with the prompt itself: free, no key.
 # Not part of scripts/accept.sh or CI. The full run (A1-A10, keyed checks included) and its findings: e2e/RESULTS.md.
 #   usage: e2e/run.sh      MUSE=<muse binary, default: muse on PATH>  TORPOR_BIN=<pinned engine, required>
 #                          TORPOR_MUSE=<adapter binary, default: target/release/torpor-muse>
@@ -61,12 +61,15 @@ check "A2 the foreign hook ran too" test -s "$E/foreign.txt"
 hooks > "$E/hooks-ok.txt"
 check "A2 Muse logged our Stop hook completed and none failed" sh -c "grep -Eq '^Stop +completed' '$E/hooks-ok.txt' && ! grep -Eq ' (failed|timed_out|blocked|cancelled) ' '$E/hooks-ok.txt'"
 check "F4 Muse's own record of the first turn holds the start guide the model was given" grep -rq 'Torpor guide: stays valid' "$H/.local/share/muse/sessions"
+box "$E/bin/torpor" gate > "$E/gate.txt" 2>&1
+check "F4b the first session start in the folder switched the engine's gate off" has '^The gate is off' "$E/gate.txt"
 doctor
 rc=$?
 check "A2 doctor exits 0" test $rc -eq 0
 check "A2 doctor says the gate is live" has '^ok +gate live' "$E/doctor.txt"
 check "A1 doctor names the Muse version" has '^ok +Muse Code [0-9]' "$E/doctor.txt"
-quote '^ok +(gate live|Muse Code)' "$E/doctor.txt"
+check "F4b doctor says what a broken check does in this folder" has '^info +torpor gate \(this folder\): off\. ' "$E/doctor.txt"
+quote '^(ok +(gate live|Muse Code)|info +torpor gate)' "$E/doctor.txt"
 
 # A8: our UserPromptSubmit command replaced by a wrapper that prints {"torpor_drill_poison":1} and exits 0
 cat > "$E/bin/poison.sh" <<'EOF'
