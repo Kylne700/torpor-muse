@@ -1189,14 +1189,15 @@ fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {
     if !env.iter().any(|(k, _)| k == "PATH") {
         env.push(("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into()));
     }
+    // SubagentStart: a registered event that only records a heartbeat (in the probe vault), so the engine is not called.
     let payload = json!({
-        "hook_event_name": "Notification", "session_id": PROBE_SID, "cwd": c.cwd,
+        "hook_event_name": "SubagentStart", "session_id": PROBE_SID, "cwd": c.cwd,
         "transcript_path": null, "model": "probe", "model_provider": "probe", "permission_mode": "default",
     })
     .to_string();
     let cmds: BTreeSet<String> = ours
         .iter()
-        .filter_map(|h| probe_command(&h.command, &probe_vault, "Notification"))
+        .filter_map(|h| probe_command(&h.command, &probe_vault, "SubagentStart"))
         .collect();
     for cmd in cmds {
         let ran = match run_shell(
@@ -1225,7 +1226,7 @@ fn check_probe(c: &Ctx, ours: &[&Hook], r: &mut Report) {
         if ran.timed_out {
             r.problem(Level::Fix, format!("probe: `{shell} -c` did not finish in {}s (the hook command, or the shell's start-up files, hang)", c.probe_timeout.as_secs()), "run the same command by hand and see where it stops");
         } else if ran.code != Some(0) {
-            r.problem(Level::Fix, format!("probe: the hook command exits with {:?}: {}", ran.code, clip(&err, 200)), "run `torpor-muse hook Notification < /dev/null` by hand; if the shell cannot find torpor-muse, run torpor-muse init again");
+            r.problem(Level::Fix, format!("probe: the hook command exits with {:?}: {}", ran.code, clip(&err, 200)), "run `torpor-muse hook SubagentStart < /dev/null` by hand; if the shell cannot find torpor-muse, run torpor-muse init again");
         } else if !out.trim().is_empty() && !object {
             r.problem(
                 Level::Fix,

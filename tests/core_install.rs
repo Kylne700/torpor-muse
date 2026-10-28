@@ -13,29 +13,30 @@ const EXE: &str = env!("CARGO_BIN_EXE_torpor-muse");
 /// know, and the reserved `hooks.state`.
 const PLANTED: &str = r#"{"schema_version":1,"future_key":{"a":[1,{"b":null}],"c":"d"},"runtime_capabilities":{"plugin:x:y":{"enabled":false}},"hooks":{"state":{"seen":["x"]},"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo hello","timeout":3}]}],"PreToolUse":[{"matcher":"bash","hooks":[{"type":"command","command":"/opt/audit/pre"}]}],"Stop":[{"hooks":[{"type":"command","command":"/opt/audit/stop","timeout":20}]}]}}"#;
 
-/// The events `init` registers, and the ones it leaves alone (src/hook.rs EVENTS, as the Muse docs name them).
-const REGISTERED: [&str; 13] = [
+/// The events `init` registers (src/hook.rs EVENTS), and the ones it leaves alone: six Muse events it never
+/// registered and two (PostToolBatch, PostCompact) that earlier versions registered for a heartbeat only.
+const REGISTERED: [&str; 11] = [
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
-    "PostToolBatch",
     "Stop",
     "StopFailure",
     "SessionEnd",
     "PreCompact",
-    "PostCompact",
     "SubagentStart",
     "SubagentStop",
 ];
-const NOT_REGISTERED: [&str; 6] = [
+const NOT_REGISTERED: [&str; 8] = [
     "PreLLMCall",
     "PostLLMCall",
     "PermissionRequest",
     "Notification",
     "Interrupt",
     "SessionFork",
+    "PostToolBatch",
+    "PostCompact",
 ];
 
 fn pinned() -> &'static str {
@@ -246,6 +247,40 @@ fn round_trip_keeps_everything_foreign_and_gives_back_the_same_bytes() {
     );
     assert!(!r.backup().exists());
     assert_eq!(r.settings_dir_files(), ["settings.json"]);
+}
+
+/// PLANTED plus the two rows an earlier version of `init` wrote for a heartbeat only.
+fn planted_with_old_rows() -> String {
+    let mut doc: Value = serde_json::from_str(PLANTED).unwrap();
+    for e in ["PostToolBatch", "PostCompact"] {
+        let cmd =
+            format!("env TORPOR_HOME=/old/store TORPOR_BIN=/old/torpor /old/torpor-muse hook {e}");
+        doc["hooks"][e] = json!([{"hooks": [{"type": "command", "command": cmd, "timeout": 5}]}]);
+    }
+    doc.to_string()
+}
+
+#[test]
+fn rows_an_earlier_version_registered_for_a_heartbeat_go_on_init_and_on_uninstall() {
+    let r = Rig::new("retired-init");
+    r.plant(&planted_with_old_rows());
+    let (code, out, err) = r.run(&["init"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let doc = r.read();
+    for e in ["PostToolBatch", "PostCompact"] {
+        assert!(
+            doc["hooks"].get(e).is_none(),
+            "{e}: the old row is still there"
+        );
+    }
+    assert_eq!(ours(&doc).len(), REGISTERED.len());
+
+    let r = Rig::new("retired-uninstall");
+    r.plant(&planted_with_old_rows());
+    let (code, out, err) = r.run(&["uninstall"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let orig: Value = serde_json::from_str(PLANTED).unwrap();
+    assert_eq!(r.read(), orig, "only our rows went, the old ones too");
 }
 
 #[test]

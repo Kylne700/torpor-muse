@@ -6,7 +6,7 @@
 //! the file before and the result after, writes through a temp file and a rename, and refuses rather than guesses.
 
 use crate::engine;
-use crate::hook::{Act, EVENTS, Ev};
+use crate::hook::{EVENTS, Ev, RETIRED};
 use serde_json::{Map, Value, json};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -72,14 +72,15 @@ fn group(ev: &Ev, cmd: String) -> Value {
     Value::Object(g)
 }
 
-/// Removes our handlers; a group or event that only we filled goes with them. Returns how many handlers went.
+/// Removes our handlers, also those an earlier version registered for an event we no longer use (RETIRED); a group or
+/// event that only we filled goes with them. Returns how many handlers went.
 fn prune(doc: &mut Value) -> usize {
     let mut removed = 0;
     let Some(hooks) = doc.get_mut("hooks").and_then(Value::as_object_mut) else {
         return 0;
     };
-    for ev in EVENTS {
-        let Some(groups) = hooks.get_mut(ev.name).and_then(Value::as_array_mut) else {
+    for name in EVENTS.iter().map(|e| e.name).chain(RETIRED.iter().copied()) {
+        let Some(groups) = hooks.get_mut(name).and_then(Value::as_array_mut) else {
             continue;
         };
         let before = removed;
@@ -88,7 +89,7 @@ fn prune(doc: &mut Value) -> usize {
             let mut here = 0;
             if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
                 let n = hs.len();
-                hs.retain(|h| !is_ours(h, ev.name));
+                hs.retain(|h| !is_ours(h, name));
                 here = n - hs.len();
                 if here > 0 && hs.is_empty() {
                     removed += here;
@@ -100,7 +101,7 @@ fn prune(doc: &mut Value) -> usize {
         }
         *groups = kept;
         if removed > before && groups.is_empty() {
-            hooks.remove(ev.name);
+            hooks.remove(name);
         }
     }
     if removed > 0 && hooks.is_empty() {
@@ -207,6 +208,23 @@ pub fn refusal(path: &Path) -> Option<String> {
     }
 }
 
+/// Our (group, handler) pairs under one event name.
+fn ours_in<'a>(doc: &'a Value, name: &str) -> Vec<(&'a Value, &'a Value)> {
+    doc["hooks"][name]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|g| {
+            g["hooks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |h| (g, h))
+        })
+        .filter(|(_, h)| is_ours(h, name))
+        .collect()
+}
+
 /// The finished document must hold exactly our entries, as Muse reads them, and leave everything else as it was.
 fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     let mut rest = new.clone();
@@ -217,29 +235,15 @@ fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     if rest != old {
         return Err("internal check failed: the edit would change more than our entries".into());
     }
-    for ev in EVENTS {
-        let ours: Vec<(&Value, &Value)> = new["hooks"][ev.name]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|g| {
-                g["hooks"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(move |h| (g, h))
-            })
-            .filter(|(_, h)| is_ours(h, ev.name))
-            .collect();
-        if ev.act == Act::Off {
-            if !ours.is_empty() {
-                return Err(format!(
-                    "internal check failed: {} must not be registered",
-                    ev.name
-                ));
-            }
-            continue;
+    for name in RETIRED {
+        if !ours_in(new, name).is_empty() {
+            return Err(format!(
+                "internal check failed: {name} must not be registered"
+            ));
         }
+    }
+    for ev in EVENTS {
+        let ours = ours_in(new, ev.name);
         let [(g, h)] = ours[..] else {
             return Err(format!(
                 "internal check failed: {} entries for {}",
@@ -352,7 +356,7 @@ fn try_init() -> Result<(), String> {
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or("hooks is not an object")?;
-    for ev in EVENTS.iter().filter(|e| e.act != Act::Off) {
+    for ev in EVENTS {
         let list = hooks.entry(ev.name).or_insert_with(|| json!([]));
         list.as_array_mut()
             .ok_or_else(|| format!("hooks.{} is not a list", ev.name))?
@@ -518,7 +522,7 @@ mod tests {
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .unwrap();
-        for ev in EVENTS.iter().filter(|e| e.act != Act::Off) {
+        for ev in EVENTS {
             let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", ev.name);
             hooks
                 .entry(ev.name)
@@ -533,10 +537,7 @@ mod tests {
     #[test]
     fn prune_removes_exactly_our_entries() {
         let mut doc = ours_doc(foreign());
-        assert_eq!(
-            prune(&mut doc),
-            EVENTS.iter().filter(|e| e.act != Act::Off).count()
-        );
+        assert_eq!(prune(&mut doc), EVENTS.len());
         assert_eq!(doc, foreign());
         let mut fresh = ours_doc(json!({"schema_version": 1}));
         prune(&mut fresh);
@@ -545,6 +546,32 @@ mod tests {
             json!({"schema_version": 1}),
             "an empty hooks object goes too"
         );
+    }
+
+    #[test]
+    fn retired_rows_are_removed_and_never_written_but_a_foreign_one_stays() {
+        let mut before = foreign();
+        before["hooks"]["PostCompact"] = json!([{"hooks": [{"type": "command", "command": "echo foreign-compact", "timeout": 3}]}]);
+        let mut doc = ours_doc(before.clone());
+        for name in RETIRED {
+            let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", name);
+            let row = json!({"hooks": [{"type": "command", "command": cmd, "timeout": 5}]});
+            doc["hooks"]
+                .as_object_mut()
+                .unwrap()
+                .entry(*name)
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .unwrap()
+                .push(row);
+        }
+        let err = check_result(&doc, &before).unwrap_err();
+        assert!(
+            err.contains("PostToolBatch must not be registered"),
+            "{err}"
+        );
+        assert_eq!(prune(&mut doc), EVENTS.len() + RETIRED.len());
+        assert_eq!(doc, before);
     }
 
     #[test]

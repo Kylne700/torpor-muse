@@ -354,40 +354,26 @@ fn alive(pid: &str) -> bool {
 
 // ---------------------------------------------------------------- events
 
-/// Every event research/59 lists: (event, fixture, the engine is called). The four with no fixture were never seen
-/// firing in G0; they get a minimal payload.
-const EVENTS: [(&str, Option<&str>, bool); 19] = [
-    ("SessionStart", Some("SessionStart"), true),
-    ("UserPromptSubmit", Some("UserPromptSubmit"), true),
-    ("PreToolUse", Some("PreToolUse-bash"), true),
-    ("PostToolUse", Some("PostToolUse-bash"), true),
-    ("PostToolUseFailure", Some("PostToolUseFailure-bash"), true),
-    ("PostToolBatch", Some("PostToolBatch"), false),
-    ("Stop", Some("Stop"), true),
-    ("StopFailure", Some("StopFailure"), true),
-    ("SessionEnd", Some("SessionEnd"), true),
-    ("PreCompact", Some("PreCompact"), true),
-    ("PostCompact", Some("PostCompact"), false),
-    ("SubagentStart", Some("SubagentStart"), false),
-    ("SubagentStop", Some("SubagentStop"), true),
-    ("PreLLMCall", Some("PreLLMCall"), false),
-    ("PostLLMCall", Some("PostLLMCall"), false),
-    ("PermissionRequest", None, false),
-    ("Notification", None, false),
-    ("Interrupt", None, false),
-    ("SessionFork", None, false),
+/// Every event `init` registers: (event, fixture, the engine is called).
+const EVENTS: [(&str, &str, bool); 11] = [
+    ("SessionStart", "SessionStart", true),
+    ("UserPromptSubmit", "UserPromptSubmit", true),
+    ("PreToolUse", "PreToolUse-bash", true),
+    ("PostToolUse", "PostToolUse-bash", true),
+    ("PostToolUseFailure", "PostToolUseFailure-bash", true),
+    ("Stop", "Stop", true),
+    ("StopFailure", "StopFailure", true),
+    ("SessionEnd", "SessionEnd", true),
+    ("PreCompact", "PreCompact", true),
+    ("SubagentStart", "SubagentStart", false),
+    ("SubagentStop", "SubagentStop", true),
 ];
 
 #[test]
 fn every_muse_event_is_taken_and_goes_to_the_engine_or_not_as_documented() {
     let r = Rig::new("events");
     for (event, fixture, called) in EVENTS {
-        let mut p = match fixture {
-            Some(f) => r.fixture(f),
-            None => {
-                json!({"session_id": SID, "hook_event_name": event, "cwd": r.cwd, "turn_id": TURN})
-            }
-        };
+        let mut p = r.fixture(fixture);
         if event == "SubagentStop" {
             // the G0 recording is an observer child's own event; a parent's has a child id of its own
             p["child_session_id"] = json!("00000000-0000-7000-8000-000000000009");
@@ -406,6 +392,24 @@ fn every_muse_event_is_taken_and_goes_to_the_engine_or_not_as_documented() {
         }
         assert_eq!(r.got(event).len(), usize::from(called), "{event}");
     }
+}
+
+#[test]
+fn an_event_an_earlier_version_registered_is_answered_with_nothing() {
+    // Settings written before this version still name PostToolBatch and PostCompact until `init` is run again.
+    let r = Rig::new("retired");
+    for event in ["PostToolBatch", "PostCompact"] {
+        let p = json!({"session_id": SID, "hook_event_name": event, "cwd": r.cwd, "turn_id": TURN});
+        let run = r.hook_ok(event, &p);
+        assert!(
+            run.out.is_empty() && run.err.is_empty(),
+            "{event}: {}{}",
+            run.out,
+            run.err
+        );
+        assert!(r.got(event).is_empty(), "{event}: the engine was called");
+    }
+    assert_eq!(r.problems(), "", "nothing is logged for them");
 }
 
 #[test]
@@ -431,7 +435,7 @@ fn the_engine_gets_each_recording_in_its_own_form_and_nothing_else_changed() {
                 .map(|s| format!("SessionStart{s}"))
                 .collect(),
             ("Stop", _) => vec!["Stop".into(), "Stop-active".into()],
-            (_, Some(f)) if called && event != "SubagentStop" => vec![f.to_owned()],
+            (_, f) if called && event != "SubagentStop" => vec![f.to_owned()],
             _ => continue,
         };
         for name in names {

@@ -240,9 +240,8 @@ pub fn gate_live(beats: &[Beat]) -> bool {
     turns(beats).closed >= 1
 }
 
-const PAIRS: [(&str, &[&str]); 3] = [
+const PAIRS: [(&str, &[&str]); 2] = [
     ("PreToolUse", &["PostToolUse", "PostToolUseFailure"]),
-    ("PreLLMCall", &["PostLLMCall"]),
     ("SubagentStart", &["SubagentStop"]),
 ];
 

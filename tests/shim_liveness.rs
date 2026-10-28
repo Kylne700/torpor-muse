@@ -271,8 +271,6 @@ fn events_that_arrived_without_their_pair_are_listed() {
         all,
     );
     assert_eq!(sub, ["3 SubagentStart without SubagentStop"]);
-    let llm = unpaired(&seq(&["PostLLMCall"]), all);
-    assert_eq!(llm, ["1 PostLLMCall without PreLLMCall"]);
 }
 
 #[test]

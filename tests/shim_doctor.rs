@@ -1207,7 +1207,7 @@ fn the_probe_runs_the_command_like_muse_does() {
     assert_ne!(get("TORPOR_HOME"), w.vault.to_string_lossy());
     assert_eq!(get("TORPOR_BIN"), w.engine().to_string_lossy());
     let payload: Value = serde_json::from_str(&w.seen("stdin.txt")).unwrap();
-    assert_eq!(payload["hook_event_name"], "Notification");
+    assert_eq!(payload["hook_event_name"], "SubagentStart");
     assert_eq!(payload["session_id"], liveness::PROBE_SID);
     assert!(payload["transcript_path"].is_null());
     let cwd = fs::canonicalize(w.seen("cwd.txt").trim()).unwrap();
@@ -1586,7 +1586,7 @@ fn the_vault_is_what_the_command_carries() {
 #[test]
 fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
     let vault = Path::new("/tmp/probe vault");
-    let p = |c: &str| doctor::probe_command(c, vault, "Notification");
+    let p = |c: &str| doctor::probe_command(c, vault, "SubagentStart");
     let a = p("env TORPOR_HOME=/real TORPOR_BIN=/e /x/torpor-muse hook Stop").unwrap();
     assert_eq!(
         doctor::words(&a).unwrap(),
@@ -1596,7 +1596,7 @@ fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
             "TORPOR_BIN=/e",
             "/x/torpor-muse",
             "hook",
-            "Notification"
+            "SubagentStart"
         ]
     );
     assert!(doctor::is_ours(&a));
@@ -1614,7 +1614,7 @@ fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
             "TORPOR_HOME=/tmp/probe vault",
             "/x/torpor-muse",
             "hook",
-            "Notification"
+            "SubagentStart"
         ]
     );
     assert_eq!(p("/x/torpor-muse 'hook"), None);

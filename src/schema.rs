@@ -32,18 +32,6 @@ pub struct Common {
     pub turn_id: Option<String>,
 }
 
-/// One entry of PostToolBatch `tool_calls[]`.
-#[allow(dead_code)] // the fields document the payload
-#[derive(Deserialize, Debug, Clone, Default)]
-pub struct ToolCall {
-    pub tool_name: Option<String>,
-    pub tool_input: Value,
-    pub tool_response: Value,
-    pub tool_use_id: Option<String>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
 /// One struct per event (common keys + the event's own keys + every key we do not know yet in `extra`), an enum over
 /// them, and the list of event names.
 macro_rules! payloads {
@@ -80,7 +68,7 @@ macro_rules! payloads {
             }
         }
 
-        /// Every Muse hook event kind (research/59 section 4, binary strings of 1.4.13).
+        /// The events we register (`hook::EVENTS`).
         #[cfg(test)]
         pub const EVENT_NAMES: &[&str] = &[$($event),*];
     };
@@ -98,7 +86,6 @@ payloads! {
         tool_name: Option<String>, tool_input: Value, tool_use_id: Option<String>,
         error: Option<String>, duration_ms: Value, is_interrupt: Option<bool>,
     }
-    PostToolBatch: "PostToolBatch" { tool_calls: Vec<ToolCall> }
     Stop: "Stop" { last_assistant_message: Option<String>, stop_hook_active: Option<bool> }
     StopFailure: "StopFailure" { error: Option<String>, last_assistant_message: Option<String> }
     SubagentStart: "SubagentStart" { subagent_id: Option<String>, child_session_id: Option<String> }
@@ -107,21 +94,6 @@ payloads! {
         last_assistant_message: Option<String>, stop_hook_active: Option<bool>,
     }
     PreCompact: "PreCompact" { trigger: Option<String> }
-    PostCompact: "PostCompact" { trigger: Option<String> }
-    PreLLMCall: "PreLLMCall" {
-        attempt: Value, message_count: Value, messages: Value, options: Value, provider: Option<String>,
-        request_id: Option<String>, step: Value, tool_count: Value, tools: Value,
-    }
-    PostLLMCall: "PostLLMCall" {
-        attempt: Value, message_count: Value, messages: Value, options: Value, provider: Option<String>,
-        request_id: Option<String>, step: Value, tool_count: Value, tools: Value,
-        error: Value, finish_reason: Option<String>, output_text_preview: Option<String>,
-        response_id: Option<String>, status: Option<String>, tool_call_count: Value, usage: Value,
-    }
-    PermissionRequest: "PermissionRequest" {}
-    Notification: "Notification" {}
-    Interrupt: "Interrupt" {}
-    SessionFork: "SessionFork" {}
 }
 
 /// True when the event comes from an observer child session (research/59 D10): in every one of the 1,329 hook payloads
@@ -150,9 +122,6 @@ const CONTEXT_OK: &[&str] = &[
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
-    "PostToolBatch",
-    "PreLLMCall",
-    "PostLLMCall",
 ];
 const DEFAULT_REASON: &str =
     "Torpor stopped this turn from ending but gave no reason. Run `torpor status` to see why.";

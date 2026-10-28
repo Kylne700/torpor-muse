@@ -19,16 +19,16 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
-    /// Registered in the Muse settings; the payload goes to `torpor hook <Event>`.
+    /// The payload goes to `torpor hook <Event>`.
     Engine,
-    /// Registered; only the heartbeat is recorded (`liveness::beat`), the engine is not called.
+    /// Only the heartbeat is recorded (`liveness::beat`); the engine is not called.
     Beat,
-    /// Not registered.
-    Off,
 }
 
-/// One Muse hook event: what we do with it and why. `install` writes the settings from this table, so the table is
-/// the event coverage list (every event research/59 section 4 names, none blank).
+/// One Muse hook event we register: `install` writes the settings from this table. Muse events we do not register:
+/// PreLLMCall and PostLLMCall (8-9 KB of payload per model step, the engine has no use for it) and PermissionRequest,
+/// Notification, Interrupt, SessionFork (never fired in G0; an interrupted tool call arrives as PostToolUseFailure, a
+/// fork as SessionStart `fork`).
 pub struct Ev {
     pub name: &'static str,
     pub act: Act,
@@ -38,11 +38,13 @@ pub struct Ev {
     pub timeout_s: u32,
     /// We kill the engine after this many ms: its own deadline for the event plus 1.5 s.
     pub engine_ms: u64,
-    #[allow(dead_code)] // the coverage list for people and tests; no code reads it
-    pub why: &'static str,
 }
 
 const TOOLS: Option<&str> = Some("bash|edit_file|write_file");
+
+/// Events earlier versions registered for a heartbeat only. `init` and `uninstall` remove their rows; a settings file
+/// that still has them is answered with exit 0 and no output, and nothing is recorded.
+pub const RETIRED: &[&str] = &["PostToolBatch", "PostCompact"];
 
 pub const EVENTS: &[Ev] = &[
     Ev {
@@ -51,7 +53,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: Some("startup|resume|clear|compact|fork"),
         timeout_s: 10,
         engine_ms: 4_500,
-        why: "engine opens the session and hands its records back after clear, resume or compact; the matcher has `fork` (D1)",
     },
     Ev {
         name: "UserPromptSubmit",
@@ -59,7 +60,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 10,
         engine_ms: 6_500,
-        why: "engine starts the turn (save point, promise words, state note); then suggest::trigger runs",
     },
     Ev {
         name: "PreToolUse",
@@ -67,7 +67,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "engine saves a point before a destructive bash command, records an agent-run `torpor` call (AD3), denies edits of its own files",
     },
     Ev {
         name: "PostToolUse",
@@ -75,7 +74,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "engine records the call and captures the files an edit touched",
     },
     Ev {
         name: "PostToolUseFailure",
@@ -83,15 +81,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: TOOLS,
         timeout_s: 6,
         engine_ms: 3_500,
-        why: "a non-zero bash exit fires only this event (D11); same handling as PostToolUse, error reshaped to `Exit code N`",
-    },
-    Ev {
-        name: "PostToolBatch",
-        act: Act::Beat,
-        matcher: None,
-        timeout_s: 5,
-        engine_ms: 0,
-        why: "heartbeat only: every call of a batch also fires its own Pre/PostToolUse (42 of 42 in G0), so the engine saved per call; it has no batch entry point and nothing depends on PreCompact (D4)",
     },
     Ev {
         name: "Stop",
@@ -99,7 +88,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 35,
         engine_ms: 31_500,
-        why: "engine saves the end-of-turn point and runs the promise gate; at most 2 blocks per turn (engine and ours) against Muse's 8 (D8)",
     },
     Ev {
         name: "StopFailure",
@@ -107,7 +95,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 10,
         engine_ms: 6_500,
-        why: "engine closes the turn that a model or auth error ended",
     },
     Ev {
         name: "SessionEnd",
@@ -115,7 +102,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_700,
-        why: "engine closes the session (and its cleanup when due); our session state file is deleted",
     },
     Ev {
         name: "PreCompact",
@@ -123,15 +109,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_500,
-        why: "engine notes the compaction; no save depends on it, Muse does not fire it on a manual /compact (D4)",
-    },
-    Ev {
-        name: "PostCompact",
-        act: Act::Beat,
-        matcher: None,
-        timeout_s: 3,
-        engine_ms: 0,
-        why: "heartbeat only: the engine ignores it; the SessionStart with source compact brings its records back",
     },
     Ev {
         name: "SubagentStart",
@@ -139,7 +116,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 3,
         engine_ms: 0,
-        why: "heartbeat only: the engine ignores it; a child session's own events are ignored after the heartbeat (D10)",
     },
     Ev {
         name: "SubagentStop",
@@ -147,55 +123,6 @@ pub const EVENTS: &[Ev] = &[
         matcher: None,
         timeout_s: 5,
         engine_ms: 2_500,
-        why: "engine ends a subagent's work in the parent session (main sessions only; real shape not seen, K13 not run)",
-    },
-    Ev {
-        name: "PreLLMCall",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: 8 KB or more of payload per model step and the engine has no use for it",
-    },
-    Ev {
-        name: "PostLLMCall",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: 9 KB or more of payload per model step and the engine has no use for it",
-    },
-    Ev {
-        name: "PermissionRequest",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0 (contract unknown) and a Muse hook cannot ask the user anyway",
-    },
-    Ev {
-        name: "Notification",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0, contract unknown, nothing to save",
-    },
-    Ev {
-        name: "Interrupt",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0; an interrupted tool call arrives as PostToolUseFailure with is_interrupt",
-    },
-    Ev {
-        name: "SessionFork",
-        act: Act::Off,
-        matcher: None,
-        timeout_s: 0,
-        engine_ms: 0,
-        why: "not registered: never fired in G0; a fork starts with SessionStart source fork, which is registered (D1)",
     },
 ];
 
@@ -262,6 +189,9 @@ fn close_stdio() {
 }
 
 fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
+    if RETIRED.contains(&event) {
+        return Done::default();
+    }
     let Some(ev) = EVENTS.iter().find(|e| e.name == event) else {
         state::problem(dir, event, "", "unknown event name on the command line");
         return Done::default();
@@ -997,21 +927,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_muse_event_is_in_the_table_once_with_a_reason() {
+    fn every_registered_event_is_in_the_table_once_and_a_retired_one_is_not() {
         let mut names: Vec<&str> = EVENTS.iter().map(|e| e.name).collect();
         names.sort();
         let mut want = schema::EVENT_NAMES.to_vec();
         want.sort();
-        assert_eq!(names, want, "table and schema must name the same 19 events");
-        assert_eq!(names.len(), 19);
-        for e in EVENTS {
-            assert!(e.why.len() >= 20, "{} has no real reason", e.name);
+        assert_eq!(names, want, "table and schema must name the same 11 events");
+        assert_eq!(names.len(), 11);
+        for r in RETIRED {
+            assert!(!names.contains(r), "{r} is retired and registered");
         }
     }
 
     #[test]
     fn settings_timeouts_are_whole_seconds_and_outlast_the_engine_kill_time() {
-        for e in EVENTS.iter().filter(|e| e.act != Act::Off) {
+        for e in EVENTS {
             assert!(e.timeout_s >= 1, "{}", e.name);
             if e.act == Act::Engine {
                 // the kill time, plus the pipe grace (0.3 s), the state lock (0.5 s) and the transcript step
