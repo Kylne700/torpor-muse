@@ -178,7 +178,7 @@ To stop only the check-writer and keep Torpor saving, take its key away: delete 
 
 ## Who builds this
 
-AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo, except [`demo/`](demo/). The small login app and the live page there were written by Muse Code (model `muse-spark-1.3-contributor`) from English prompts. No demo code was pasted into a prompt and no line was edited by a person. [`demo/transcripts/`](demo/transcripts/) holds every prompt word for word and the redacted session logs.
+AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo, except [`demo/`](demo/). The small login app and the live page there were written by Muse Code (model `muse-spark-1.3-contributor`) from English prompts. No demo code was pasted into a prompt and no line was edited by a person (replaying the logged file writes gives the committed files byte for byte). The wording of `demo/README.md` was dictated in its prompt (two sentences and its last line verbatim). [`demo/transcripts/`](demo/transcripts/) holds every prompt word for word and the session logs, filtered and redacted: Meta's system messages, the tool definitions and the content of two scratch scripts are left out, and tool results are cut at 6000 characters.
 
 ## License
 
