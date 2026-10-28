@@ -342,7 +342,7 @@ impl Bad {
     }
 
     /// The kind the hook tells the user about when a run ends on this fault: `key` (Meta refused the key or its
-    /// billing), `api` (the call itself failed). "" = the model's own fault, which is not the user's news.
+    /// billing), `api` (the call itself failed). "" = the model's own fault: the run ends `rejected` (see `work`).
     pub fn code(&self) -> &'static str {
         match self {
             Bad::Billing(_) | Bad::Auth(_) => "key",

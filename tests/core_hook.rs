@@ -1083,6 +1083,36 @@ fn a_run_that_failed_is_told_to_the_user_once_per_kind_and_session_at_the_next_p
 }
 
 #[test]
+fn a_run_the_watchdog_stopped_is_told_once_per_session_in_one_fixed_sentence() {
+    let r = Rig::new("writer-slow");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let message = "the run took too long and was stopped";
+    leave_result(&r, SID, "advisory", "slow", message);
+    assert_eq!(
+        told_at_prompt(&r, SID),
+        "Torpor's check-writer took too long on an earlier prompt of yours and was stopped before it finished. Save points and undo are not affected."
+    );
+    leave_result(&r, SID, "advisory", "slow", message);
+    assert_eq!(told_at_prompt(&r, SID), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn an_answer_the_check_writer_could_not_use_is_told_once_per_session_without_the_raw_error() {
+    let r = Rig::new("writer-rejected");
+    key_setup(&r, "key_file = ~/key.txt\n", 0o600);
+    let message = "the model ran out of room before it finished its answer";
+    leave_result(&r, SID, "rejected", "rejected", message);
+    assert_eq!(
+        told_at_prompt(&r, SID),
+        "Torpor's check-writer could not use the model's answer to an earlier prompt of yours, so it wrote no check. Save points and undo are not affected."
+    );
+    leave_result(&r, SID, "rejected", "rejected", message);
+    assert_eq!(told_at_prompt(&r, SID), "");
+    assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
 fn what_is_normal_for_the_check_writer_is_not_told() {
     let r = Rig::new("writer-normal");
     key_setup(&r, "key_file = ~/key.txt\n", 0o600);
@@ -1103,11 +1133,6 @@ fn what_is_normal_for_the_check_writer_is_not_told() {
         (
             "advisory",
             "the engine turned the check down: the proof failed",
-        ),
-        ("advisory", "the run took too long and was stopped"),
-        (
-            "rejected",
-            "the model ran out of room before it finished its answer",
         ),
         ("skipped", "Torpor is not saving in this folder"),
     ];

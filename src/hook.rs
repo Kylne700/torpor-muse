@@ -441,7 +441,7 @@ fn writer_news(sid: &str, cwd: &str, skip: &str) -> Vec<(&'static str, String)> 
     // the run of this session that finished last; its words are the run's own, made safe once more
     let last = suggest::last_result(cwd).filter(|l| !l.saved && l.session.as_deref() == Some(sid));
     if let Some(l) = last {
-        let kind = ["key", "cap", "api", "app"]
+        let kind = ["key", "cap", "api", "slow", "rejected", "app"]
             .into_iter()
             .find(|k| *k == l.code)
             .or((l.outcome == "error").then_some("error"));
@@ -451,6 +451,12 @@ fn writer_news(sid: &str, cwd: &str, skip: &str) -> Vec<(&'static str, String)> 
                  `server` in package.json, or a server.js), and this folder has none, so it will write no checks here. \
                  Save points and undo still work."
                 .to_string(),
+            Some("slow") => format!(
+                "Torpor's check-writer took too long on an earlier prompt of yours and was stopped before it finished. {SAVING}"
+            ),
+            Some("rejected") => format!(
+                "Torpor's check-writer could not use the model's answer to an earlier prompt of yours, so it wrote no check. {SAVING}"
+            ),
             Some(_) => format!(
                 "Torpor's check-writer wrote no check from an earlier prompt of yours: {}. {SAVING}",
                 suggest::scrub(&l.message, 300).trim_end_matches('.')

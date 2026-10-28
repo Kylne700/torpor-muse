@@ -4,7 +4,8 @@
 //! Exit codes of `run`: 0 a promise was saved (proven or advisory), 3 nothing saved (the reason is printed),
 //! 1 the run could not work (no key, no engine, no state folder, another run holds the lock), 2 wrong use.
 //! Every run that got past the lock leaves `<state>/ws/<project>/result.json` (written whole, mode 0600). Its `code`
-//! (key, cap, api, app; empty for the rest) names the failures hook.rs tells the user at the next prompt.
+//! (key, cap, api, slow, rejected, app; empty for the rest) names the failures hook.rs tells the user at the next
+//! prompt.
 mod attach;
 mod client;
 mod prompt;
@@ -66,7 +67,8 @@ struct Outcome {
     saved: bool,
     promise: Option<u32>,
     message: String,
-    /// What the hook may tell the user at the next prompt: `key`, `cap`, `api`, `app` ("" = nothing to tell).
+    /// What the hook may tell the user at the next prompt: `key`, `cap`, `api`, `slow` (the watchdog stopped the run),
+    /// `rejected` (the model's answer could not be used), `app` ("" = nothing to tell).
     code: &'static str,
 }
 
@@ -328,12 +330,12 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
                 let wait = backoff(&bad)
                     .filter(|_| bad.retryable() && !last && c.time_left() > MIN_TIME_FOR_RETRY);
                 let Some(wait) = wait else {
-                    let kind = if bad.rejected() {
-                        Kind::Rejected
+                    let (kind, code) = if bad.rejected() {
+                        (Kind::Rejected, "rejected")
                     } else {
-                        Kind::Advisory
+                        (Kind::Advisory, bad.code())
                     };
-                    return Outcome::new(kind, bad.reason()).code(bad.code());
+                    return Outcome::new(kind, bad.reason()).code(code);
                 };
                 std::thread::sleep(wait);
                 retry = None;
@@ -342,7 +344,7 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
         };
         let mut answer = match schema::parse(&text) {
             Ok(a) => a,
-            Err(e) if last => return Outcome::new(Kind::Rejected, e),
+            Err(e) if last => return Outcome::new(Kind::Rejected, e).code("rejected"),
             Err(e) => {
                 retry = Some((c.safe(&text, 3000), e));
                 continue;
@@ -396,7 +398,7 @@ fn work(c: &mut Ctx, p: &Plan) -> Outcome {
         }
         let check = match schema::to_check(&answer, &p.starts) {
             Ok(v) => v,
-            Err(e) if last => return Outcome::new(Kind::Rejected, e),
+            Err(e) if last => return Outcome::new(Kind::Rejected, e).code("rejected"),
             Err(e) => {
                 retry = Some((c.safe(&text, 3000), e));
                 continue;
@@ -518,7 +520,7 @@ fn watchdog(c: &Ctx) {
         let message = "the run took too long and was stopped";
         if let Some(p) = result {
             let row = json!({"v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": Kind::Advisory.word(),
-                "saved": false, "promise": null, "message": message, "session": session});
+                "saved": false, "promise": null, "message": message, "code": "slow", "session": session});
             let _ = state::write_atomic(&p, row.to_string().as_bytes());
         }
         println!("{}: {message}", Kind::Advisory.word());

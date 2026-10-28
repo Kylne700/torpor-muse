@@ -218,9 +218,9 @@ fn the_ledger_names_the_files_that_were_sent() {
 fn every_fault_ends_rejected_or_advisory_with_the_reason() {
     // (fixture, outcome, requests made, a piece of the reason, the code the hook tells the user about: "" = none)
     let table = [
-        ("truncated", "rejected", 2, "ran out of room", ""),
-        ("refusal", "rejected", 2, "refused", ""),
-        ("empty", "rejected", 2, "no answer text", ""),
+        ("truncated", "rejected", 2, "ran out of room", "rejected"),
+        ("refusal", "rejected", 2, "refused", "rejected"),
+        ("empty", "rejected", 2, "no answer text", "rejected"),
         ("schema-400", "advisory", 1, "rejected the request", "api"),
         ("billing-402", "advisory", 1, "billing", "key"),
         ("server-500", "advisory", 2, "server error", "api"),
@@ -276,6 +276,7 @@ fn output_that_does_not_fit_the_schema_is_rejected_never_a_half_check() {
         let ctx = format!("{what}: out={:?} err={:?}", r.out, r.err);
         assert_eq!(r.code, 3, "{ctx}");
         assert!(r.out.starts_with("rejected: "), "{ctx}");
+        assert_eq!(sb.result()["code"], "rejected", "{ctx}");
         assert_eq!(mock.requests().len(), 2, "one retry, then stop: {ctx}");
         assert!(sb.adds().is_empty(), "nothing reached the engine: {ctx}");
         let second = mock.input(1);
@@ -427,7 +428,9 @@ fn a_stuck_engine_is_stopped_by_the_run_time_limit() {
         0,
         "nothing was sent before the engine answered"
     );
-    assert_eq!(sb.result()["outcome"], "advisory");
+    let res = sb.result();
+    assert_eq!(res["outcome"], "advisory");
+    assert_eq!(res["code"], "slow", "the hook tells the user about it");
 }
 
 /// Strings that look like secrets, built here so that no file of the repo holds a key-like literal.
@@ -577,6 +580,7 @@ fn a_planted_injection_ends_advisory_or_rejected_and_stays_data() {
         r.out.starts_with("rejected: ") && r.out.contains("start_script"),
         "{ctx}"
     );
+    assert_eq!(sb.result()["code"], "rejected", "{ctx}");
     assert!(
         sb.adds().is_empty(),
         "the engine never saw the command: {ctx}"
