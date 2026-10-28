@@ -1278,8 +1278,8 @@ fn the_model_gets_the_guide_at_every_session_start_and_nowhere_else() {
             "the engine's path, once: {ctx}"
         );
         assert!(
-            ctx.chars().count() - engine.len() <= 640,
-            "about 700 characters with a path of 60: {}",
+            ctx.chars().count() - engine.len() <= 670,
+            "about 730 characters with a path of 60: {}",
             ctx.chars().count()
         );
         for want in [
@@ -1287,7 +1287,7 @@ fn the_model_gets_the_guide_at_every_session_start_and_nowhere_else() {
             "torpor back --turn K or --id P",
             "torpor find-break --promise ID (or --check -)",
             "the database note's command, app stopped first",
-            "Never run off, on, gate, retain, forget, promise ok/drop/block, runner install",
+            "Never run off, on, gate, retain, forget, undo --force, promise ok/drop/block/show --spec, runner install",
         ] {
             assert!(ctx.contains(want), "{name}: {want:?} missing: {ctx}");
         }
@@ -1546,8 +1546,10 @@ fn real_engine_a_turn_that_rewrote_a_database_names_the_command_that_puts_it_bac
     r.hook_ok("SessionStart", &r.fixture("SessionStart"));
     let said = turn(&r, "notes.db");
     assert!(
-        said.contains("undo it: torpor undo 1"),
-        "the engine's line stays: {said}"
+        said.contains("Torpor: save point ")
+            && said.contains(" · turn 1 changed ")
+            && !said.contains("undo it"),
+        "the engine's line stays, without the command the person does not type: {said}"
     );
     // L3 N2: the database line comes first and ends with the command within 100 characters (the status bar is short)
     let first = said.split(" — ").next().unwrap_or("");
@@ -1771,7 +1773,7 @@ fn real_engine_a_command_that_would_delete_a_database_in_use_is_denied_until_its
     let cmd = format!("back --id {late} --with-data");
     let why = blocked(&told).unwrap_or_else(|| panic!("no block: {last_stop}"));
     assert!(
-        why.contains("This turn changed or deleted data/app.db (database files).")
+        why.contains("This turn deleted data/app.db (database files).")
             && why.contains(&format!("`{} {cmd}`", r.engine.display())),
         "{why}"
     );
@@ -2219,7 +2221,7 @@ fn corpus_the_stop_block_comes_only_for_what_is_deleted_or_lost() {
     // S4 (D07): the database is deleted after its app stopped, or while it ran: both stay blocked
     engine_turn(&r, 7, 50, &[51], &[("dev.db", "shell", "deleted")]);
     let v = stop_of(&r, 4);
-    if !blocked(&v).is_some_and(|w| w.contains("changed or deleted dev.db (database files)")) {
+    if !blocked(&v).is_some_and(|w| w.contains("deleted dev.db (database files)")) {
         wrong.push(format!("S4 deleted {v}"));
     }
     fs::remove_file(r.cwd.join("dev.db")).unwrap();
@@ -2571,10 +2573,11 @@ fn a_check_that_broke_is_told_to_the_model_in_one_stop_block_per_turn() {
         !why.contains("find-break") && !why.contains("deleted"),
         "{why}"
     );
-    // the user's line is the engine's own, with the failure in it
+    // the user's line is the engine's own, with the failure in it, said as a check and without the shadow sentence
     assert!(
         said(&first).starts_with("Torpor: save point 31")
-            && said(&first).contains("promise #1 (proof page answers) failed after this turn"),
+            && said(&first).contains("check #1 (proof page answers) failed after this turn")
+            && !said(&first).contains("shadow mode"),
         "{first}"
     );
     assert_eq!(
@@ -2702,7 +2705,51 @@ fn a_turn_that_broke_nothing_and_risked_nothing_gets_no_block() {
     assert_eq!(r.got("Stop").len(), before);
 }
 
-/// F4 item 3. A turn that deleted a file that existed before it, or changed or deleted a database, gets the same one Stop
+/// A Stop at which the engine says it is not saving. A disk that is almost full is told to the user alone, once per
+/// session; the engine's other reasons are about Claude Code's own settings (Muse's hooks save without them), and after
+/// `torpor off` the user knows: neither is told.
+#[test]
+fn a_full_disk_is_told_to_the_user_once_per_session_and_no_other_reason_for_not_saving_is() {
+    let r = Rig::new("f4-paused");
+    started(&r);
+    let status = |off: bool, problems: &[&str]| {
+        let s = json!({"saving": false, "off": off, "problems": problems, "last_turn": {"n": 5}});
+        r.set("out.status", &s.to_string());
+    };
+    let settings = "Hooks are turned off by disableAllHooks in /srv/work/settings.json, so nothing is being saved.";
+    let disk = "Save points are paused: the disk is almost full (0.4 GB free).";
+    let told = "Torpor is not saving this folder: Save points are paused: the disk is almost full (0.4 GB free).";
+    engine_stop(&r, &[SAVED]);
+    status(
+        false,
+        &[settings, "No Torpor hook has run in this folder yet."],
+    );
+    let v = stop_of(&r, 30);
+    assert!(
+        !said(&v).contains("not saving") && v["hookSpecificOutput"].is_null(),
+        "{v}"
+    );
+    status(true, &[disk]);
+    let v = stop_of(&r, 31);
+    assert!(!said(&v).contains("not saving"), "off: {v}");
+    // the disk, among other reasons: the user's line goes first, and the engine's own line stays
+    status(false, &[settings, disk]);
+    let v = stop_of(&r, 32);
+    assert!(
+        said(&v).starts_with(&format!("{told} — Torpor: save point 31")) && blocked(&v).is_none(),
+        "{v}"
+    );
+    assert!(v["hookSpecificOutput"].is_null(), "the user alone: {v}");
+    // the same session is not told again, another one is
+    assert!(!said(&stop_of(&r, 33)).contains("not saving"));
+    let mut other = r.fixture("Stop");
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000aa");
+    other["turn_id"] = json!("00000000-0000-7000-8000-0000000000ab");
+    let v: Value = serde_json::from_str(&r.hook_ok("Stop", &other).out).unwrap_or(Value::Null);
+    assert!(said(&v).starts_with(told), "{v}");
+}
+
+/// F4 item 3. A turn that deleted a file that existed before it, or deleted a database, gets the same one Stop
 /// block (merged with a broken check's): say it in one plain sentence, and a database names the command that brings it back.
 #[test]
 fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_block() {
@@ -2767,7 +2814,7 @@ fn a_turn_that_deleted_a_file_or_changed_a_database_is_told_in_the_same_one_bloc
     let why = blocked(&v).unwrap_or_else(|| panic!("no block: {v}"));
     has(
         why,
-        "This turn changed or deleted data/app.db (database files). Tell the user in one plain sentence",
+        "This turn deleted data/app.db (database files). Tell the user in one plain sentence",
     );
     has(
         why,
@@ -2945,9 +2992,14 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
     ] {
         assert!(why.contains(text), "{text}: {why}");
     }
+    let line = said(&bad);
     assert!(
-        said(&bad).contains("It would have stopped the AI, but it is in shadow mode."),
-        "the user's line keeps the engine's words: {bad}"
+        line.contains(
+            "Torpor: check #1 (proof page answers) failed after this turn (3 of 3 runs; "
+        ) && line.contains("). (ask the AI: torpor promise show 1)")
+            && !line.contains("shadow mode")
+            && !line.contains("Torpor: promise #"),
+        "the user's line says check, has no shadow sentence, and the command is for the AI: {bad}"
     );
     let (_, found) = engine_cli(&r, &["find-break", "--promise", "1"]);
     assert!(

@@ -456,7 +456,7 @@ fn gap_note(dir: &Path, event: &str, sid: &str, cwd: &str, body: Option<String>)
 }
 
 /// What the model is told at the start of every session (F4): the plain words a user says, the Torpor command for each
-/// (a dry run first), and the commands that are the user's own. At most about 700 characters with the engine's path,
+/// (a dry run first), and the commands that are the user's own. At most about 730 characters with the engine's path,
 /// which stands once for the word `torpor` in it. It goes in front of the database note (`db_note`).
 fn guide(bin: &Path) -> String {
     let at = engine_cmd(bin);
@@ -473,7 +473,8 @@ fn guide(bin: &Path) -> String {
          undoes it.\n\
          what broke ...: torpor find-break --promise ID (or --check -).\n\
          lost database data: the database note's command, app stopped first.\n\
-         Never run off, on, gate, retain, forget, promise ok/drop/block, runner install: the user's own."
+         Never run off, on, gate, retain, forget, undo --force, promise ok/drop/block/show --spec, runner install: the \
+         user's own."
     )
 }
 
@@ -666,6 +667,34 @@ fn project_root(cwd: &str) -> PathBuf {
         .map_or_else(|| PathBuf::from(cwd), PathBuf::from)
 }
 
+/// A Stop at which the engine's `status --json` says it is not saving, told to the user alone, once per session
+/// (`Session.told`, shared with `fail_open`; set only when the line goes out). The engine's reasons are about Claude
+/// Code (its settings, its sessions' hooks) except one, and Muse's hooks make save points without those, so only the
+/// disk that is almost full is told, and nothing after `torpor off`.
+fn not_saving(e: &Ended, status: &Value, body: Option<String>) -> Option<String> {
+    let disk = status["problems"].as_array().and_then(|p| {
+        p.iter()
+            .filter_map(Value::as_str)
+            .find(|p| p.starts_with("Save points are paused"))
+    });
+    let Some(why) = disk.filter(|_| status["off"] != true) else {
+        return body;
+    };
+    let line = format!(
+        "Torpor is not saving this folder: {}",
+        suggest::scrub(why, 200)
+    );
+    let Some(note) = schema::with_note("Stop", body.as_deref(), &line, "", true) else {
+        return body;
+    };
+    let first = |s: &mut state::Session| !std::mem::replace(&mut s.told, true);
+    if state::with_session(e.dir, e.sid, first).unwrap_or(false) {
+        Some(note)
+    } else {
+        body
+    }
+}
+
 /// What the turn that just ended did, from the engine's own records, told to the user and to the model. Only when the
 /// engine did not block the turn itself (its reason says the same), and not after `torpor off`.
 /// - The user's line (L3 N2), when the turn's own commands changed or deleted a database file: it starts with the command
@@ -675,7 +704,7 @@ fn project_root(cwd: &str) -> PathBuf {
 ///   the turn on with the reason (`stop::reason`), which makes the model say to the user in its reply what is broken or
 ///   what was deleted, and what to run. For a promise that failed after this turn (the engine's own fail line in its Stop
 ///   text, `stop::fails`: advisory or shadow; the engine has no other form of it) and for a turn that deleted a file that
-///   existed before it or changed or deleted a database (`stop::rows`).
+///   existed before it or deleted a database (`stop::rows`: a changed one only gets the user's line).
 ///
 /// Costs the `status` and `show` calls of L3, plus up to 3 dry runs of `back` to find a save point that has a database
 /// that was in use when the turn began and is gone now (`stop::restoring_point`): all within 4 s and `left`. A call that
@@ -710,9 +739,9 @@ fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<Strin
     let json =
         |args: &[&str]| ask(args).and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok());
     let status = json(&["status", "--json"]);
-    // not saving (`torpor off`): the last turn is an old one, already told
-    if status.as_ref().is_some_and(|s| s["saving"] != true) {
-        return body;
+    // not saving: the last turn is an old one, already told
+    if let Some(s) = status.as_ref().filter(|s| s["saving"] != true) {
+        return not_saving(e, s, body);
     }
     // shortcut: `last_turn` is the folder's, so with two sessions in one folder it can be the other session's turn, and this
     // Stop then tells about that one; upgrade when the engine can name the last turn of a session.
@@ -987,11 +1016,11 @@ mod tests {
 
     #[test]
     fn the_guide_names_each_plain_word_command_and_the_ones_that_are_the_users() {
-        // 62 characters of path: the guide stays within about 700 characters, and the path is said once
+        // 62 characters of path: the guide stays within about 730 characters, and the path is said once
         let long = "/data/someone/with/a/rather/long/folder/name/for/engine/torpor";
         assert_eq!(long.len(), 62);
         let g = guide(Path::new(long));
-        assert!(g.chars().count() <= 700, "{} characters", g.chars().count());
+        assert!(g.chars().count() <= 730, "{} characters", g.chars().count());
         assert_eq!(g.matches(long).count(), 1, "{g}");
         for want in [
             "torpor log -n 5",
@@ -1002,7 +1031,7 @@ mod tests {
             "the database note's command, app stopped first",
             "--dry-run first, tell them in one sentence",
             "Ask first if it also undoes later work, a database or unnamed files",
-            "Never run off, on, gate, retain, forget, promise ok/drop/block, runner install",
+            "Never run off, on, gate, retain, forget, undo --force, promise ok/drop/block/show --spec, runner install",
         ] {
             assert!(g.contains(want), "{want:?} missing from {g}");
         }
