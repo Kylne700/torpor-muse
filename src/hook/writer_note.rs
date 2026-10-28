@@ -145,7 +145,7 @@ fn writer_news(
                 "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not finish saving \
                  it (it timed out or ended with an error), so no check was saved. {SAVING}"
             ),
-            Some("nosave") => nosave_line(&suggest::scrub(&l.message, 300)),
+            Some("nosave") => nosave_line(&suggest::scrub(&l.message, 1500)),
             Some(_) => format!(
                 "Torpor's check-writer wrote no check from an earlier prompt of yours: {}. {SAVING}",
                 suggest::scrub(&l.message, 300).trim_end_matches('.')
@@ -206,18 +206,49 @@ fn nosave_line(words: &str) -> String {
     } else {
         format!(
             "Torpor's check-writer saved no check for an earlier claim of yours{}. {SAVING}",
-            because(words.trim_end_matches('.'))
+            because(suggest::scrub(words, 300).trim_end_matches('.'))
         )
     }
 }
 
-/// The engine's reason without the `Rejected: ` that heads each problem its lint names; the problems, `; ` between them.
+/// The engine's reason as one phrase: its first problem up to the end of its first sentence (what follows in a lint line
+/// is advice for the model), then `, and N more problems` for the others, so that nothing is said twice. The engine ends
+/// a long lint with its own `Rejected: and N more problems.`; that counts for N.
 fn engine_reason(s: &str) -> String {
-    s.split("Rejected:")
-        .map(|p| p.trim().trim_end_matches('.').trim_end())
+    let (mut first, mut all) = ("", 0);
+    for p in s
+        .split("Rejected:")
+        .map(str::trim)
         .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ")
+    {
+        match more_problems(p) {
+            Some(n) => all += n,
+            None => {
+                if first.is_empty() {
+                    first = p;
+                }
+                all += 1;
+            }
+        }
+    }
+    if first.is_empty() {
+        return String::new();
+    }
+    let head = suggest::scrub(first.split(". ").next().unwrap_or(first), 300);
+    let head = head.trim_end_matches('.');
+    match all {
+        1 => head.to_owned(),
+        2 => format!("{head}, and 1 more problem"),
+        n => format!("{head}, and {} more problems", n - 1),
+    }
+}
+
+/// N of the engine's closing line `and N more problems.`
+fn more_problems(p: &str) -> Option<usize> {
+    p.strip_prefix("and ")?
+        .strip_suffix(" more problems.")?
+        .parse()
+        .ok()
 }
 
 /// `: <why>` to end a sentence with, nothing when there is no why.

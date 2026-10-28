@@ -346,7 +346,24 @@ fn a_claim_whose_check_was_not_saved_is_told_once_per_session_in_one_plain_sente
         (
             "lint-more",
             "the engine turned the check down: Rejected: steps is empty. Rejected: and 2 more problems.",
-            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: steps is empty; and 2 more problems. Save points and undo are not affected.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: steps is empty, and 2 more problems. Save points and undo are not affected.",
+        ),
+        // a lint line has a second sentence of advice for the model: the user reads the first
+        (
+            "lint-advice",
+            "the engine turned the check down: Rejected: the check has no assertion (an expect_* step, or http with expect). A check that cannot fail proves nothing.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: the check has no assertion (an expect_* step, or http with expect). Save points and undo are not affected.",
+        ),
+        // one mistake in two steps is said once, with the number of the others
+        (
+            "lint-twice",
+            "the engine turned the check down: Rejected: step 1 uses an absolute URL (http://x.test/a). Paths must start with /. Rejected: step 2 uses an absolute URL (http://x.test/b). Paths must start with /.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: step 1 uses an absolute URL (http://x.test/a), and 1 more problem. Save points and undo are not affected.",
+        ),
+        (
+            "lint-twice-more",
+            "the engine turned the check down: Rejected: step 1 uses an absolute URL (http://x.test/a). Paths must start with /. Rejected: step 2 uses an absolute URL (http://x.test/b). Paths must start with /. Rejected: and 3 more problems.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but the Torpor engine did not save it: step 1 uses an absolute URL (http://x.test/a), and 4 more problems. Save points and undo are not affected.",
         ),
         (
             "cannot-run",
