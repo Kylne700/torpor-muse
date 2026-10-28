@@ -100,7 +100,7 @@ After the block:
 
 The check-writer needs your Meta API key. Put the key alone on one line in a file only you can read (`chmod 600`), and add the line `key_file = ~/path/to/that/file` to `~/.config/torpor-muse/config` (`chmod 600` that file too). The run that starts after a prompt in Muse Code takes the key from that file. With no usable key file it takes `META_API_KEY` from the environment Muse Code runs its hooks in, and with neither no run starts. `torpor-muse suggest` and `torpor-muse say` typed by hand take `META_API_KEY` when it is set, and the file otherwise.
 
-With no key file, `torpor-muse doctor` shows a `check-writer off` line with the reason. With no key at all, the first prompt of each Muse Code session says so once.
+With no key file, `torpor-muse doctor` shows a `check-writer off` line with the reason. With no key at all, the first prompt in each folder says so once.
 
 When the check-writer could not do its work on a prompt, the next prompt of that session says so in one plain line, once for each kind in the session: Meta refused the key or has no billing for it; the daily spend cap would be passed; the Meta API failed; the run ended in an error of its own; an earlier run still held the project, so your last prompt was not looked at; or the run could not be started. In a folder without an app that starts from a script (`start`, `dev`, `serve` or `server` in `package.json`, or a `server.js`) the line comes once per folder, says that no check is written there, and says that save points and undo still work. A prompt that makes no claim, and an answer from the model that gives no usable check, are normal and show nothing.
 
@@ -174,7 +174,7 @@ The Torpor engine sends nothing to Meta. Its own README (Privacy section) says i
 
 Muse's model can read Torpor's stored checks; the engine refuses only changes to its store.
 
-To stop only the check-writer and keep Torpor saving, take its key away: delete the `key_file` line from `~/.config/torpor-muse/config` (or put a `#` in front of it), and do not have `META_API_KEY` set in the environment Muse Code runs its hooks in. The next prompt then starts no run and sends nothing to Meta, the first prompt of each session says that the check-writer is off, and save points, undo and the notes to the AI go on as before. `day_cap_usd = 0` in the same file also sends nothing, but a run still starts after each prompt, and each session hears once that the daily spend cap would be passed. `torpor off` in a project also ends the writer's runs there (a run asks the engine first and stops before it reads your key or sends anything), but it stops saving too.
+To stop only the check-writer and keep Torpor saving, take its key away: delete the `key_file` line from `~/.config/torpor-muse/config` (or put a `#` in front of it), and do not have `META_API_KEY` set in the environment Muse Code runs its hooks in. The next prompt then starts no run and sends nothing to Meta, the first prompt in each folder says, once, that the check-writer is off, and save points, undo and the notes to the AI go on as before. `day_cap_usd = 0` in the same file also sends nothing, but a run still starts after each prompt, and each session hears once that the daily spend cap would be passed. `torpor off` in a project also ends the writer's runs there (a run asks the engine first and stops before it reads your key or sends anything), but it stops saving too.
 
 ## Who builds this
 

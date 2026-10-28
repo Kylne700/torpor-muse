@@ -870,7 +870,7 @@ fn note_parts(out: &str) -> (String, String) {
 }
 
 #[test]
-fn the_first_prompt_of_a_session_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on() {
+fn the_first_prompt_in_a_folder_says_once_that_the_check_writer_is_off_and_how_to_turn_it_on() {
     let r = Rig::unseeded("writer-note");
     let first = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     let (said, ctx) = note_parts(&first.out);
@@ -884,15 +884,47 @@ fn the_first_prompt_of_a_session_says_once_that_the_check_writer_is_off_and_how_
     );
     // the notice is for the user: the model's context gets nothing (an eval arm without a key sees what the others see)
     assert!(ctx.is_empty(), "{ctx}");
-    // once for this session: its next prompt hears nothing more; another session hears it again
+    // once for this folder: its next prompt hears nothing more, and neither does a new session in the same folder
     let again = r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
     assert!(again.out.is_empty(), "{}", again.out);
     let mut other = r.fixture("UserPromptSubmit");
-    other["session_id"] = json!("00000000-0000-7000-8000-0000000000aa");
+    other["session_id"] = json!(OTHER);
+    let new_session = r.hook_ok("UserPromptSubmit", &other);
+    assert!(new_session.out.is_empty(), "{}", new_session.out);
+    // another folder hears it again, once
+    let elsewhere = r.dir.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    other["session_id"] = json!("00000000-0000-7000-8000-0000000000dd");
+    other["cwd"] = json!(elsewhere);
     let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", &other).out);
     assert!(said.contains("check-writer is off"), "{said}");
     assert!(r.hook_ok("UserPromptSubmit", &other).out.is_empty());
     assert!(r.problems().is_empty(), "{}", r.problems());
+}
+
+#[test]
+fn the_off_note_is_told_once_per_session_where_the_folder_is_unknown_or_cannot_be_marked() {
+    let heard_twice = |r: &Rig, p: &mut Value| {
+        let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", p).out);
+        assert!(said.contains("check-writer is off"), "{said}");
+        assert!(
+            r.hook_ok("UserPromptSubmit", p).out.is_empty(),
+            "same session"
+        );
+        p["session_id"] = json!(OTHER);
+        let (said, _) = note_parts(&r.hook_ok("UserPromptSubmit", p).out);
+        assert!(said.contains("check-writer is off"), "new session: {said}");
+    };
+    // no folder in the payload: nothing to mark, so nothing is shared between sessions
+    let r = Rig::unseeded("writer-note-no-cwd");
+    let mut p = r.fixture("UserPromptSubmit");
+    p["cwd"] = json!("");
+    heard_twice(&r, &mut p);
+    // a mark that cannot be written (a file is in the way of its folder): the session still hears it once only
+    let r = Rig::unseeded("writer-note-no-mark");
+    fs::create_dir_all(r.store().join("muse")).unwrap();
+    fs::write(r.store().join("muse/no-key"), "").unwrap();
+    heard_twice(&r, &mut r.fixture("UserPromptSubmit"));
 }
 
 #[test]

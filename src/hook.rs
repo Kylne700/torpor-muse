@@ -368,11 +368,13 @@ fn engine_cmd(bin: &Path) -> String {
     }
 }
 
-/// What the check-writer has to tell the user at a prompt: one note at most, each kind once per session (`app`: once per
-/// folder). In this order: the key it lacks (`no-key`), why a run could not start on the last prompt (`busy`, `start`),
-/// why the last run of this session wrote no check (`key`, `cap`, `api`, `error`, `app`). The notes are for the user
-/// only (`systemMessage`; doctor says the first too): the model's context stays as it is, so a run without a key gives
-/// the model the same text as one with a key. A kind is recorded only when its note really is printed.
+/// What the check-writer has to tell the user at a prompt: one note at most, each kind once per session, except the two
+/// that are a setting of the folder, `no-key` and `app`: once per folder (a mark that is never swept; where the folder
+/// is not known, or the mark cannot be written, once per session). In this order: the key it lacks (`no-key`), why a
+/// run could not start on the last prompt (`busy`, `start`), why the last run of this session wrote no check (`key`,
+/// `cap`, `api`, `slow`, `rejected`, `error`, `app`). The notes are for the user only (`systemMessage`; doctor says the
+/// first too): the model's context stays as it is, so a run without a key gives the model the same text as one with a
+/// key. A kind is recorded only when its note really is printed.
 fn writer_note(
     dir: &Path,
     event: &str,
@@ -385,9 +387,9 @@ fn writer_note(
     else {
         return body;
     };
-    let new = |kind: &str| match kind {
-        "app" => !state::marked(dir, "app", cwd),
-        _ => !told.iter().any(|t| t == kind),
+    let by_folder = |kind: &str| matches!(kind, "app" | "no-key") && !cwd.is_empty();
+    let new = |kind: &str| {
+        !told.iter().any(|t| t == kind) && !(by_folder(kind) && state::marked(dir, kind, cwd))
     };
     let Some((kind, line)) = writer_news(sid, cwd, &skip)
         .into_iter()
@@ -398,9 +400,7 @@ fn writer_note(
     let Some(merged) = schema::with_note(event, body.as_deref(), &line, "", false) else {
         return body;
     };
-    if kind == "app" {
-        state::mark(dir, "app", cwd);
-    } else {
+    if !(by_folder(kind) && state::mark(dir, kind, cwd)) {
         state::with_session(dir, sid, |s| {
             s.writer_told.push(kind.into());
             if s.writer_skip == kind {
