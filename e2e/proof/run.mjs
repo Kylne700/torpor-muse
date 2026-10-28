@@ -136,7 +136,9 @@ const writerLedger = (T) => walkFiles(path.join(T, 'torpor-home'), (p) => path.b
 class Stop extends Error { constructor(msg, why, stage = false) { super(msg); this.why = why; this.stage = stage; } }
 let active = null;
 function killActive() { if (active) { tm(active.S, 'kill-server'); killEp(active.T); } }
-for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { killActive(); process.exit(130); });
+process.removeAllListeners('SIGINT'); process.removeAllListeners('SIGTERM'); // drill/harness/live.mjs registers its own handlers on import, which exit at once and would pre-empt ours
+let aborting = null; // first SIGINT/SIGTERM during a run: stop at the next tick and still write calls.json and run.json (spend must be counted); a second one, or none running: exit now
+for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { if (aborting || !active) { killActive(); process.exit(130); } aborting = s; });
 process.on('exit', killActive);
 
 // -> workspace path. demo = the login app of demo/ with one baseline commit; d06 / d07 = the drill's database workspaces.
@@ -230,6 +232,7 @@ async function runSession(ctx, spec, o) {
 
     let diskAt = 0;
     const tick = () => {
+      if (aborting) throw new Stop(`${aborting}: the run was stopped from outside`, 'signal', true);
       if (Date.now() - diskAt > 30000) {
         diskAt = Date.now();
         if (freeGiB('/') < ctx.minRoot || freeGiB('/tmp') < ctx.minTmp) throw new Stop(`disk: / ${freeGiB('/').toFixed(1)} GiB, /tmp ${freeGiB('/tmp').toFixed(1)} GiB free`, 'disk', true);
@@ -267,6 +270,8 @@ async function runSession(ctx, spec, o) {
         mark.restored_before_undo = baseline ? harmedSame().same : null;
         poll = setInterval(() => { if (restoredAt === null && undoSentAt !== null && baseline && harmedSame().same) restoredAt = Date.now(); }, 200);
       }
+      // A person types after the last answer, not at the same instant: the detached check-writer of the earlier prompt gets to finish (else the adapter skips the next prompt as "busy").
+      if (n > 1) { const w0 = Date.now(); await soft('the check-writer of the earlier prompt to finish', 90000, () => !epProcs(T).some((p) => /\bsuggest\b/.test(p.cmd))); mark.writer_wait_s = round((Date.now() - w0) / 1000, 1); }
       mark.sent = Date.now();
       if (t.role === 'undo') undoSentAt = mark.sent;
       rec.turns.push(mark);

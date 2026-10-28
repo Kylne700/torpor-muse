@@ -71,6 +71,8 @@ export function isE1b(run, h) {
   return had > 0 && (changedIn(run, h.turn) ?? []).some((f) => APP_FILES.includes(f));
 }
 
+const SLOW_STOP_MS = 300; // a Stop that runs a saved check takes about a second (one app start + one request)
+
 export function e1(runs) {
   const all = runs.flatMap((r) => r.hooks.map((h) => ({ ev: h.ev, ms: h.ms, turn: h.turn, run: r.label, e1b: isE1b(r, h) })));
   const plain = all.filter((h) => !h.e1b);
@@ -83,6 +85,9 @@ export function e1(runs) {
     line: LINES.e1, hook_runs: all.length, overall_without_e1b: { ...without, pass: ok(without) }, overall_with_e1b: stats(ms(all)), events,
     pass_overall: ok(without), pass_each_event_type: Object.values(events).every((s) => s.pass),
     e1b: { ...stats(ms(e1b)), runs: e1b.map((h) => ({ run: h.run, turn: h.turn, ms: r2(h.ms) })) },
+    // Cross-check of the rule above against time. It only reports; it never moves a Stop in or out of E1b.
+    e1b_vs_time: { slow_ms: SLOW_STOP_MS, e1b_stops: e1b.length, e1b_slow: e1b.filter((h) => h.ms >= SLOW_STOP_MS).length,
+      other_stops_slow: plain.filter((h) => h.ev === 'Stop' && h.ms >= SLOW_STOP_MS).map((h) => ({ run: h.run, turn: h.turn, ms: r2(h.ms) })) },
     slowest_without_e1b: [...plain].sort((a, b) => b.ms - a.ms).slice(0, 5).map((h) => ({ run: h.run, ev: h.ev, turn: h.turn, ms: r2(h.ms) })),
     killed: runs.reduce((s, r) => s + r.wl.killed.length, 0), bad_lines: runs.reduce((s, r) => s + r.wl.bad.length, 0),
   };
@@ -243,6 +248,8 @@ export function markdown(rep) {
   const a = o.e1.overall_without_e1b;
   L.push(`E1 hook time, ${o.e1.hook_runs} hook runs (the ${o.e1.e1b.n} E1b Stops taken out): p50 ${r2(a.p50)} ms, p99 ${r2(a.p99)} ms, max ${r2(a.max)} ms (lines: p50 <= ${LINES.e1.p50_ms}, p99 <= ${LINES.e1.p99_ms}). All hook runs pooled: ${yn(o.e1.pass_overall)}; every event type on its own: ${yn(o.e1.pass_each_event_type)}. With the E1b Stops back in: p50 ${r2(o.e1.overall_with_e1b.p50)} ms, p99 ${r2(o.e1.overall_with_e1b.p99)} ms.`, '');
   L.push('| event | hook runs | p50 ms | p99 ms | max ms |', '|---|---|---|---|---|', ...Object.entries(o.e1.events).map(([ev, s]) => `| ${ev} | ${s.n} | ${r2(s.p50)} | ${r2(s.p99)} | ${r2(s.max)} |`), '');
+  const bt = o.e1.e1b_vs_time;
+  L.push(`E1b rule against time (cross-check only, the rule decides): ${bt.e1b_slow} of ${bt.e1b_stops} E1b Stops took ${bt.slow_ms} ms or more; other Stops that took ${bt.slow_ms} ms or more: ${bt.other_stops_slow.length ? bt.other_stops_slow.map((x) => `${x.run} turn ${x.turn} ${x.ms} ms`).join('; ') : 'none'}.`, '');
   if (o.e1.e1b.n) L.push(`E1b (Stops that ran a saved check, no pass line): ${o.e1.e1b.n} runs, p50 ${r2(o.e1.e1b.p50)} ms, p99 ${r2(o.e1.e1b.p99)} ms, max ${r2(o.e1.e1b.max)} ms.`, '');
   for (const [k, e] of Object.entries(o.e2)) L.push(`E2 ${k}: ${e.session_total_model_chars} characters added to the AI in ${o.runs.find((r) => r.label === k)?.turns_done ?? '?'} turns (${e.session_start_chars} at session start, ${e.session_total_after_start} after); ${e.clean_turns_with_added_chars.length} of ${e.clean_turns} clean turns added any; user-only characters ${e.user_only_chars}; the Muse log shows ${e.cross_check.transcript_hook_block_chars} characters in ${e.cross_check.transcript_hook_blocks} hook context blocks; engine status ${JSON.stringify(e.cross_check.engine_status)}: ${yn(e.pass)}.`);
   for (const [k, e] of Object.entries(o.e3)) L.push(`E3 ${k}: check-writer ${e.writer_calls} calls, USD ${e.writer_usd_lo.toFixed(4)} lo / ${e.writer_usd_hi.toFixed(4)} hi (line ${LINES.e3.usd}); voice ${e.voice_calls} calls; the Muse model itself ${e.muse_calls} calls, USD ${e.muse_usd_hi.toFixed(4)} hi: ${yn(e.pass)}.`);

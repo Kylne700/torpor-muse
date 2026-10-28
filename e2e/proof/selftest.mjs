@@ -258,9 +258,11 @@ t('analyze E1: a Stop after an edit of server.js with a saved check present is E
   assert.equal(r.overall_without_e1b.max, 20);
   assert.equal(r.overall_with_e1b.max, 2000);
   assert.ok(r.pass_overall && r.pass_each_event_type);
+  assert.deepEqual([r.e1b_vs_time.e1b_stops, r.e1b_vs_time.e1b_slow, r.e1b_vs_time.other_stops_slow.length], [1, 1, 0]);
   const noPromise = fakeRun('clean-1', [{ promises_after: 0, manifest: { 'server.js': 'a' } }, { promises_after: 0, manifest: { 'server.js': 'b' } }], hooks.slice(0, 5), [], { manifest_start: { 'server.js': 'a' } });
   assert.equal(e1([noPromise]).e1b.n, 0, 'no saved check, no E1b: a slow plain Stop stays in E1');
   assert.equal(e1([noPromise]).pass_overall, false);
+  assert.deepEqual(e1([noPromise]).e1b_vs_time.other_stops_slow.map((x) => x.turn), [2], 'the time cross-check names the slow Stop the rule did not take out');
 });
 t('analyze E1: the pass line is p50 36 and p99 150, event types judged on their own too', () => {
   const hooks = Array.from({ length: 100 }, (_, i) => hookRun(i % 2 ? 'Stop' : 'UserPromptSubmit', 1100 + i, i === 99 ? 151 : 10));
