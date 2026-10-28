@@ -6,7 +6,7 @@
 2. Muse Spark, Meta's model, writes a check from your words (Node apps for now).
 3. At the end of a later turn that could have broken it, Torpor runs the check. If it fails, the AI is told before it says "Done", and "undo that" puts it back.
 
-**Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, then `torpor-muse init` and [add your Meta API key](#add-your-meta-api-key). After that you type nothing.
+**Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, then `torpor-muse init` and [add your Meta API key](#add-your-meta-api-key). After that you run no Torpor commands; you just talk to the AI.
 
 **Cost:** about half a US cent per prompt in a Node app (measured once: USD 0.005265). The check-writer sends your prompt, file names and up to 14 KB of your code to Meta's API, with your own key, at most USD 2 a day. The engine makes no AI calls.
 
