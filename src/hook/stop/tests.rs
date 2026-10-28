@@ -1,4 +1,4 @@
-//! Tests of the one Stop block's words: the engine's fail lines, the rows of a turn, the save points and the reason text.
+//! Tests of the one Stop block's words: the engine's fail lines, the rows of a turn, the save points, the reason.
 
 use super::*;
 use serde_json::json;
