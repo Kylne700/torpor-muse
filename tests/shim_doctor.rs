@@ -908,7 +908,7 @@ fn bad_lines_are_skipped_and_only_the_end_of_a_big_log_is_read() {
             "y".repeat(pad)
         )
     };
-    let cap = doctor::PROBLEMS_READ as usize;
+    let cap = doctor::problems::PROBLEMS_READ as usize;
     let rest = cap - fake.len() - routine(0).len();
     let start = format!("{} Stop 01a10000 start of a long line ", now_s - 300);
     let mut cut = start.as_bytes().to_vec();
@@ -1384,7 +1384,7 @@ fn xdg_data_home_is_seen_by_muse_but_not_by_the_hooks() {
 
 #[test]
 fn words_follow_the_quoting_of_a_shell_line() {
-    let w = doctor::words;
+    let w = doctor::hook_command::words;
     assert_eq!(
         w(r#"env A=1 'b c' "d\"e" f\ g"#),
         Some(
@@ -1418,7 +1418,7 @@ fn quote_and_words_round_trip() {
         "emoji \u{2713}",
     ] {
         assert_eq!(
-            doctor::words(&util::quote(s)),
+            doctor::hook_command::words(&util::quote(s)),
             Some(vec![s.to_string()]),
             "{s:?}"
         );
@@ -1435,7 +1435,7 @@ fn ours_is_a_torpor_muse_hook_command() {
         "torpor-muse hook Stop",
         "env 'TORPOR_HOME=/v w' /x/torpor-muse hook PreToolUse",
     ] {
-        assert!(doctor::is_ours(c), "{c}");
+        assert!(doctor::hook_command::is_ours(c), "{c}");
     }
     for c in [
         "echo torpor-muse hook",
@@ -1447,13 +1447,13 @@ fn ours_is_a_torpor_muse_hook_command() {
         "/x/torpor-muse init Stop",
         "",
     ] {
-        assert!(!doctor::is_ours(c), "{c:?}");
+        assert!(!doctor::hook_command::is_ours(c), "{c:?}");
     }
 }
 
 #[test]
 fn the_vault_is_what_the_command_carries() {
-    let v = |c: &str| doctor::vault_of(c);
+    let v = |c: &str| doctor::hook_command::vault_of(c);
     assert_eq!(
         v("env TORPOR_HOME=/v/w TORPOR_BIN=/e /x/torpor-muse hook Stop"),
         Some(PathBuf::from("/v/w"))
@@ -1470,10 +1470,10 @@ fn the_vault_is_what_the_command_carries() {
 #[test]
 fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
     let vault = Path::new("/tmp/probe vault");
-    let p = |c: &str| doctor::probe_command(c, vault, "SubagentStart");
+    let p = |c: &str| doctor::hook_command::probe_command(c, vault, "SubagentStart");
     let a = p("env TORPOR_HOME=/real TORPOR_BIN=/e /x/torpor-muse hook Stop").unwrap();
     assert_eq!(
-        doctor::words(&a).unwrap(),
+        doctor::hook_command::words(&a).unwrap(),
         [
             "env",
             "TORPOR_HOME=/tmp/probe vault",
@@ -1483,14 +1483,15 @@ fn the_probe_command_swaps_the_vault_and_the_event_and_nothing_else() {
             "SubagentStart"
         ]
     );
-    assert!(doctor::is_ours(&a));
+    assert!(doctor::hook_command::is_ours(&a));
     // a command that carries no vault gets one, and one that does not start with env gets env
-    let b = doctor::words(&p("env TORPOR_BIN=/e /x/torpor-muse hook Stop").unwrap()).unwrap();
+    let b = doctor::hook_command::words(&p("env TORPOR_BIN=/e /x/torpor-muse hook Stop").unwrap())
+        .unwrap();
     assert_eq!(
         b[..3],
         ["env", "TORPOR_HOME=/tmp/probe vault", "TORPOR_BIN=/e"]
     );
-    let c = doctor::words(&p("/x/torpor-muse hook Stop").unwrap()).unwrap();
+    let c = doctor::hook_command::words(&p("/x/torpor-muse hook Stop").unwrap()).unwrap();
     assert_eq!(
         c,
         [
