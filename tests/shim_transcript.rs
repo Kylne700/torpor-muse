@@ -1,4 +1,4 @@
-//! Muse's own session log -> the Claude-style transcript the engine reads (src/transcript.rs).
+//! Muse's own session log -> the Claude-style transcript the engine reads (src/transcript/translate.rs).
 //! The fixtures are redacted copies of real Muse Code 1.4.13 logs; see tests/fixtures/shim.
 // Each test crate compiles these src files on its own: what only the binary or another test crate calls looks unused.
 #[allow(dead_code)]
@@ -54,7 +54,7 @@ fn attachment(uuid: &str, text: &Value) -> Value {
            "attachment": {"type": "hook_additional_context", "content": [text]}})
 }
 
-/// A second reading of a log, written apart from src/transcript.rs: plain `Value`s, no serde structs, no text prefilter.
+/// A second reading of a log, written apart from src/transcript/translate.rs: plain `Value`s, no serde structs, no text prefilter.
 fn oracle(text: &str) -> Vec<Value> {
     let mut out = Vec::new();
     for l in text.lines() {
@@ -654,7 +654,7 @@ fn a_long_log_is_first_read_from_its_newest_part_only() {
 
 #[test]
 fn the_first_line_of_the_newest_part_is_not_lost_when_the_cut_is_a_line_start() {
-    const TAIL: usize = 8 << 20; // transcript.rs COLD_TAIL
+    const TAIL: usize = 8 << 20; // src/transcript/translate.rs COLD_TAIL
     let w = world("cut");
     let mut b = LogBuilder::new("s-cut");
     b.accepted("chat", "main");

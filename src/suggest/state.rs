@@ -126,7 +126,14 @@ mod tests {
         assert!(a.is_some());
         assert!(try_lock(&d).unwrap().is_none());
         drop(a);
-        assert!(try_lock(&d).unwrap().is_some());
+        // a child forked by a parallel test can hold the inherited lock fd until it execs: wait for it, up to 2 s
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let mut b = try_lock(&d).unwrap();
+        while b.is_none() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            b = try_lock(&d).unwrap();
+        }
+        assert!(b.is_some());
         let _ = fs::remove_dir_all(&d);
     }
 

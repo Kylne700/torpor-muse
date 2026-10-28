@@ -1,6 +1,7 @@
 //! Finds the released `torpor` CLI (env TORPOR_BIN, then PATH), checks it against engine.lock, runs it with a hard
 //! timeout. Never passes a key on argv: the callers only hand over fixed words (`hook <Event>`, `version`, the read-only
-//! looks of hook.rs, and `gate off` once per folder). Owner: S3a-core.
+//! looks of src/hook/handle.rs, stop_note.rs and gate.rs, and `gate off` once per folder in gate.rs). Owner:
+//! S3a-core.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -158,8 +159,8 @@ pub(crate) fn exec(
     exec_without(bin, args, stdin, dir, timeout, &[])
 }
 
-/// `exec` with the variables in `unset` taken out of the child's environment. Its one caller (`hook::gate_default`) drops
-/// CLAUDECODE: the engine refuses the user's own commands, `gate off` among them, where it is set (cli.rs).
+/// `exec` with the variables in `unset` taken out of the child's environment. Its one caller (`hook::gate::gate_default`)
+/// drops CLAUDECODE: the engine refuses the user's own commands, `gate off` among them, where it is set (cli.rs).
 pub(crate) fn exec_without(
     bin: &Path,
     args: &[&str],

@@ -5,291 +5,21 @@
 //! `timeout` that is not a whole number, makes Muse refuse to start or drop every hook in the file. So `init` checks
 //! the file before and the result after, writes through a temp file and a rename, and refuses rather than guesses.
 
+mod entries;
+mod key;
+mod settings;
+#[cfg(test)]
+mod tests;
+
 use crate::engine;
-use crate::hook::{EVENTS, Ev, RETIRED};
-use crate::util::{self, quote};
-use serde_json::{Map, Value, json};
+use crate::hook::EVENTS;
+use entries::{check_result, command, group, prune, strip_empty};
+use serde_json::{Value, json};
+use settings::{backup_path, check_foreign, pretty, read_settings, write_atomic};
 use std::fs;
-use std::io::{self, Read};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// The Muse Code settings file that `init` edits; doctor reads it: `$XDG_CONFIG_HOME/muse/settings.json`, else
-/// `$HOME/.config/muse/settings.json` (the lookup Muse 1.4.13 itself does).
-pub fn settings_path() -> PathBuf {
-    let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
-        Some(x) => PathBuf::from(x),
-        None => PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"),
-    };
-    base.join("muse/settings.json")
-}
-
-fn backup_path(settings: &Path) -> PathBuf {
-    let mut s = settings.as_os_str().to_owned();
-    s.push(".torpor-muse.bak");
-    PathBuf::from(s)
-}
-
-/// Muse runs hooks with a cleared environment (D5/AD8), so the store and the engine are baked into the command.
-fn command(home: &str, bin: &str, exe: &str, event: &str) -> String {
-    format!(
-        "env TORPOR_HOME={} TORPOR_BIN={} {} hook {event}",
-        quote(home),
-        quote(bin),
-        quote(exe)
-    )
-}
-
-/// Is this handler one of ours (written by any earlier `init`, from any install path)?
-fn is_ours(handler: &Value, event: &str) -> bool {
-    handler["command"].as_str().is_some_and(|c| {
-        c.starts_with("env TORPOR_HOME=")
-            && c.contains("torpor-muse")
-            && c.ends_with(&format!(" hook {event}"))
-    })
-}
-
-fn group(ev: &Ev, cmd: String) -> Value {
-    let mut g = Map::new();
-    if let Some(m) = ev.matcher {
-        g.insert("matcher".into(), m.into());
-    }
-    g.insert(
-        "hooks".into(),
-        json!([{"type": "command", "command": cmd, "timeout": ev.timeout_s}]),
-    );
-    Value::Object(g)
-}
-
-/// Removes our handlers, also those an earlier version registered for an event we no longer use (RETIRED); a group or
-/// event that only we filled goes with them. Returns how many handlers went.
-fn prune(doc: &mut Value) -> usize {
-    let mut removed = 0;
-    let Some(hooks) = doc.get_mut("hooks").and_then(Value::as_object_mut) else {
-        return 0;
-    };
-    for name in EVENTS.iter().map(|e| e.name).chain(RETIRED.iter().copied()) {
-        let Some(groups) = hooks.get_mut(name).and_then(Value::as_array_mut) else {
-            continue;
-        };
-        let before = removed;
-        let mut kept = Vec::new();
-        for mut g in std::mem::take(groups) {
-            let mut here = 0;
-            if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
-                let n = hs.len();
-                hs.retain(|h| !is_ours(h, name));
-                here = n - hs.len();
-                if here > 0 && hs.is_empty() {
-                    removed += here;
-                    continue;
-                }
-            }
-            removed += here;
-            kept.push(g);
-        }
-        *groups = kept;
-        if removed > before && groups.is_empty() {
-            hooks.remove(name);
-        }
-    }
-    if removed > 0 && hooks.is_empty() {
-        drop_hooks(doc);
-    }
-    removed
-}
-
-/// For comparisons: empty event lists and an empty `hooks` object do not count.
-fn strip_empty(doc: &mut Value) {
-    if let Some(hooks) = doc.get_mut("hooks").and_then(Value::as_object_mut) {
-        hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-        if hooks.is_empty() {
-            drop_hooks(doc);
-        }
-    }
-}
-
-fn drop_hooks(doc: &mut Value) {
-    if let Some(o) = doc.as_object_mut() {
-        o.remove("hooks");
-    }
-}
-
-/// The file as Muse needs it, or why we must not touch it. Ok(None) = no file.
-fn read_settings(path: &Path) -> Result<Option<(Vec<u8>, Value)>, String> {
-    match fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_symlink() => {
-            return Err(format!(
-                "{} is a symbolic link; refusing to edit through it",
-                path.display()
-            ));
-        }
-        Ok(m) if !m.is_file() => return Err(format!("{} is not a regular file", path.display())),
-        Ok(_) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("{}: {e}", path.display())),
-    }
-    let mut bytes = Vec::new();
-    fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .and_then(|mut f| f.read_to_end(&mut bytes))
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    let doc: Value = serde_json::from_slice(&bytes).map_err(|e| {
-        format!(
-            "{} is not valid JSON ({e}); fix or remove it first",
-            path.display()
-        )
-    })?;
-    if !doc.is_object() {
-        return Err(format!(
-            "{}: the top level is not a JSON object",
-            path.display()
-        ));
-    }
-    Ok(Some((bytes, doc)))
-}
-
-/// Things in the file that would make Muse drop or refuse hooks, ours included. We do not repair them.
-fn check_foreign(doc: &Value, path: &Path) -> Result<(), String> {
-    let at = path.display();
-    if doc["schema_version"] != json!(1) {
-        return Err(format!(
-            "{at}: schema_version is {}, Muse Code 1.4.13 needs 1",
-            doc["schema_version"]
-        ));
-    }
-    let Some(hooks) = doc.get("hooks") else {
-        return Ok(());
-    };
-    let Some(hooks) = hooks.as_object() else {
-        return Err(format!("{at}: `hooks` is not an object"));
-    };
-    for (event, groups) in hooks.iter().filter(|(k, _)| k.as_str() != "state") {
-        let Some(groups) = groups.as_array() else {
-            return Err(format!("{at}: hooks.{event} is not a list"));
-        };
-        for h in groups
-            .iter()
-            .filter_map(|g| g["hooks"].as_array())
-            .flatten()
-        {
-            if h.get("timeout").is_some_and(|t| !t.is_u64()) {
-                return Err(format!(
-                    "{at}: a hooks.{event} handler has a timeout that is not a whole number of seconds \
-                     ({}); Muse would drop every hook in the file, ours too",
-                    h["timeout"]
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Why `init` would refuse the settings file as it is (None = it would not). `doctor` names this instead of a
-/// remedy that `init` then refuses.
-pub fn refusal(path: &Path) -> Option<String> {
-    match read_settings(path) {
-        Err(e) => Some(e),
-        Ok(Some((_, doc))) => check_foreign(&doc, path).err(),
-        Ok(None) => None,
-    }
-}
-
-/// Our (group, handler) pairs under one event name.
-fn ours_in<'a>(doc: &'a Value, name: &str) -> Vec<(&'a Value, &'a Value)> {
-    doc["hooks"][name]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(|g| {
-            g["hooks"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(move |h| (g, h))
-        })
-        .filter(|(_, h)| is_ours(h, name))
-        .collect()
-}
-
-/// The finished document must hold exactly our entries, as Muse reads them, and leave everything else as it was.
-fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
-    let mut rest = new.clone();
-    prune(&mut rest);
-    strip_empty(&mut rest);
-    let mut old = before_ours.clone();
-    strip_empty(&mut old);
-    if rest != old {
-        return Err("internal check failed: the edit would change more than our entries".into());
-    }
-    for name in RETIRED {
-        if !ours_in(new, name).is_empty() {
-            return Err(format!(
-                "internal check failed: {name} must not be registered"
-            ));
-        }
-    }
-    for ev in EVENTS {
-        let ours = ours_in(new, ev.name);
-        let [(g, h)] = ours[..] else {
-            return Err(format!(
-                "internal check failed: {} entries for {}",
-                ours.len(),
-                ev.name
-            ));
-        };
-        let keys_ok = h.as_object().is_some_and(|o| {
-            o.keys()
-                .all(|k| ["type", "command", "timeout"].contains(&k.as_str()))
-        });
-        let matcher_ok = g.get("matcher").and_then(Value::as_str) == ev.matcher;
-        let fork_ok = ev.name != "SessionStart"
-            || g["matcher"]
-                .as_str()
-                .is_some_and(|m| m.split('|').any(|x| x == "fork"));
-        if h["type"] != "command"
-            || h["timeout"] != json!(ev.timeout_s)
-            || !keys_ok
-            || !matcher_ok
-            || !fork_ok
-        {
-            return Err(format!(
-                "internal check failed: the {} entry is wrong: {h}",
-                ev.name
-            ));
-        }
-    }
-    if new["hooks"].get("state") != before_ours["hooks"].get("state") {
-        return Err("internal check failed: hooks.state changed".into());
-    }
-    Ok(())
-}
-
-/// `util::write_atomic` with the folder made, the mode of an existing file kept (`mode` is for a new one) and the
-/// folder fsynced after the rename.
-fn write_atomic(
-    path: &Path,
-    bytes: &[u8],
-    mode: u32,
-    before_rename: impl FnOnce() -> io::Result<()>,
-) -> io::Result<()> {
-    let dir = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(dir)?;
-    let mode = fs::metadata(path).map_or(mode, |m| m.permissions().mode() & 0o777);
-    util::write_atomic(path, bytes, mode, true, before_rename)?;
-    if let Ok(d) = fs::File::open(dir) {
-        let _ = d.sync_all();
-    }
-    Ok(())
-}
-
-fn pretty(doc: &Value) -> Vec<u8> {
-    let mut s = serde_json::to_string_pretty(doc).unwrap_or_default();
-    s.push('\n');
-    s.into_bytes()
-}
+pub(crate) use settings::{refusal, settings_path};
 
 /// An absolute path as text, or why not.
 fn abs_text(p: &Path) -> Result<String, String> {
@@ -345,7 +75,7 @@ fn try_init() -> Result<(), String> {
             "torpor-muse hooks are already installed in {}",
             path.display()
         );
-        return Ok(());
+        return key::offer();
     }
     let mut note = String::new();
     if let Some(orig) = &old_bytes {
@@ -360,7 +90,7 @@ fn try_init() -> Result<(), String> {
         .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     println!("torpor-muse hooks installed in {}{note}", path.display());
     println!("store {home}, engine {bin}; start a new Muse session to use them");
-    Ok(())
+    key::offer()
 }
 
 pub fn init() -> u8 {
@@ -455,6 +185,12 @@ fn try_uninstall() -> Result<(), String> {
     if let Some(line) = tidy(&settings_path(), &engine::state_dir()) {
         println!("{line}");
     }
+    if let Some(f) = key::kept() {
+        println!(
+            "kept: your Meta API key in {}; deleting it is your choice",
+            f.display()
+        );
+    }
     Ok(())
 }
 
@@ -465,225 +201,5 @@ pub fn uninstall() -> u8 {
             eprintln!("torpor-muse uninstall: {e}");
             1
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::testing::scratch;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    fn foreign() -> Value {
-        json!({
-            "schema_version": 1,
-            "runtime_capabilities": {"plugin:x": {"enabled": false}},
-            "unknown_future_key": {"a": [1, 2, {"b": null}]},
-            "hooks": {
-                "state": {"approved": ["x"]},
-                "Stop": [{"hooks": [{"type": "command", "command": "echo foreign-stop", "timeout": 7}]}],
-                "PreToolUse": [{"matcher": "bash", "hooks": [{"type": "command", "command": "echo foreign-pre", "timeout": 3}]}]
-            }
-        })
-    }
-
-    fn ours_doc(extra: Value) -> Value {
-        let mut doc = extra;
-        let root = doc.as_object_mut().unwrap();
-        let hooks = root
-            .entry("hooks")
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-            .unwrap();
-        for ev in EVENTS {
-            let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", ev.name);
-            hooks
-                .entry(ev.name)
-                .or_insert_with(|| json!([]))
-                .as_array_mut()
-                .unwrap()
-                .push(group(ev, cmd));
-        }
-        doc
-    }
-
-    #[test]
-    fn prune_removes_exactly_our_entries() {
-        let mut doc = ours_doc(foreign());
-        assert_eq!(prune(&mut doc), EVENTS.len());
-        assert_eq!(doc, foreign());
-        let mut fresh = ours_doc(json!({"schema_version": 1}));
-        prune(&mut fresh);
-        assert_eq!(
-            fresh,
-            json!({"schema_version": 1}),
-            "an empty hooks object goes too"
-        );
-    }
-
-    #[test]
-    fn retired_rows_are_removed_and_never_written_but_a_foreign_one_stays() {
-        let mut before = foreign();
-        before["hooks"]["PostCompact"] = json!([{"hooks": [{"type": "command", "command": "echo foreign-compact", "timeout": 3}]}]);
-        let mut doc = ours_doc(before.clone());
-        for name in RETIRED {
-            let cmd = command("/s/home", "/s/bin/torpor", "/s/bin/torpor-muse", name);
-            let row = json!({"hooks": [{"type": "command", "command": cmd, "timeout": 5}]});
-            doc["hooks"]
-                .as_object_mut()
-                .unwrap()
-                .entry(*name)
-                .or_insert_with(|| json!([]))
-                .as_array_mut()
-                .unwrap()
-                .push(row);
-        }
-        let err = check_result(&doc, &before).unwrap_err();
-        assert!(
-            err.contains("PostToolBatch must not be registered"),
-            "{err}"
-        );
-        assert_eq!(prune(&mut doc), EVENTS.len() + RETIRED.len());
-        assert_eq!(doc, before);
-    }
-
-    #[test]
-    fn what_we_write_passes_our_own_check_and_a_broken_edit_does_not() {
-        let before = foreign();
-        let mut doc = ours_doc(before.clone());
-        check_result(&doc, &before).unwrap();
-        // a string timeout (Muse drops the whole file), a missing fork, an extra key, a changed foreign hook
-        for (path, bad) in [
-            ("/hooks/Stop/1/hooks/0/timeout", json!("35")),
-            ("/hooks/Stop/1/hooks/0/timeout", json!(35.5)),
-            (
-                "/hooks/SessionStart/0/matcher",
-                json!("startup|resume|clear|compact"),
-            ),
-            ("/hooks/Stop/1/hooks/0/async", json!(true)),
-            ("/hooks/Stop/0/hooks/0/command", json!("echo changed")),
-            ("/hooks/state", json!({})),
-            ("/unknown_future_key", json!(1)),
-        ] {
-            let mut broken = doc.clone();
-            let (parent, key) = path.rsplit_once('/').unwrap();
-            let slot = broken.pointer_mut(parent).unwrap().as_object_mut().unwrap();
-            slot.insert(key.into(), bad);
-            assert!(
-                check_result(&broken, &before).is_err(),
-                "{path} should be refused"
-            );
-        }
-        doc["hooks"]["Stop"][1]["hooks"][0]["timeout"] = json!(35);
-        check_result(&doc, &before).unwrap();
-    }
-
-    #[test]
-    fn foreign_problems_are_refused_not_repaired() {
-        let p = Path::new("settings.json");
-        let mut d = foreign();
-        d["hooks"]["Stop"][0]["hooks"][0]["timeout"] = json!("7");
-        assert!(check_foreign(&d, p).unwrap_err().contains("whole number"));
-        let mut d = foreign();
-        d["hooks"]["Stop"] = json!({"not": "a list"});
-        assert!(check_foreign(&d, p).is_err());
-        let mut d = foreign();
-        d["schema_version"] = json!(2);
-        assert!(check_foreign(&d, p).is_err());
-        d.as_object_mut().unwrap().remove("schema_version");
-        assert!(check_foreign(&d, p).is_err());
-        check_foreign(&foreign(), p).unwrap();
-    }
-
-    #[test]
-    fn commands_survive_odd_paths_and_are_recognised_from_any_install() {
-        let c = command("/a b/h'ome", "/x/torpor", "/x/torpor-muse", "Stop");
-        assert_eq!(
-            c,
-            r"env TORPOR_HOME='/a b/h'\''ome' TORPOR_BIN=/x/torpor /x/torpor-muse hook Stop"
-        );
-        assert!(is_ours(&json!({"command": c}), "Stop"));
-        assert!(!is_ours(&json!({"command": c}), "SessionStart"));
-        assert!(!is_ours(
-            &json!({"command": "env TORPOR_HOME=/h torpor hook Stop"}),
-            "Stop"
-        ));
-        assert!(!is_ours(
-            &json!({"command": "echo torpor-muse hook Stop"}),
-            "Stop"
-        ));
-        assert!(!is_ours(&json!({"type": "http"}), "Stop"));
-    }
-
-    #[test]
-    fn a_crash_between_the_temp_write_and_the_rename_leaves_the_old_file() {
-        let dir = scratch("install-crash");
-        let target = dir.join("settings.json");
-        fs::write(&target, b"old contents").unwrap();
-        let leftovers = || {
-            fs::read_dir(&dir)
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_name() != "settings.json")
-                .count()
-        };
-        // an error at that moment: old file intact, temp file cleaned up
-        let r = write_atomic(&target, b"new contents", 0o600, || {
-            Err(io::Error::other("disk gone"))
-        });
-        assert!(r.is_err());
-        assert_eq!(fs::read(&target).unwrap(), b"old contents");
-        assert_eq!(leftovers(), 0);
-        // a hard stop at that moment (the panic skips the cleanup): old file intact, temp file stays
-        let r = catch_unwind(AssertUnwindSafe(|| {
-            let _ = write_atomic(&target, b"new contents", 0o600, || panic!("power cut"));
-        }));
-        assert!(r.is_err());
-        assert_eq!(fs::read(&target).unwrap(), b"old contents");
-        assert_eq!(leftovers(), 1, "the stale temp file is what a crash leaves");
-        // the next write succeeds even with that stale file around
-        write_atomic(&target, b"new contents", 0o600, || Ok(())).unwrap();
-        assert_eq!(fs::read(&target).unwrap(), b"new contents");
-        assert_eq!(
-            leftovers(),
-            0,
-            "a stale temp file with our process id is replaced"
-        );
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn refusal_says_what_init_would_refuse() {
-        let dir = scratch("install-refusal");
-        let target = dir.join("settings.json");
-        assert_eq!(refusal(&target), None, "no file: init makes one");
-        let plant = |text: &str| fs::write(&target, text).unwrap();
-        plant(r#"{"schema_version":1,"hooks":{}}"#);
-        assert_eq!(refusal(&target), None);
-        plant(r#"{"schema_version":2}"#);
-        assert!(refusal(&target).unwrap().contains("schema_version is 2"));
-        plant("{}");
-        assert!(refusal(&target).unwrap().contains("schema_version is null"));
-        plant("[1]");
-        assert!(refusal(&target).unwrap().contains("not a JSON object"));
-        let real = dir.join("real.json");
-        fs::rename(&target, &real).unwrap();
-        std::os::unix::fs::symlink(&real, &target).unwrap();
-        assert!(refusal(&target).unwrap().contains("symbolic link"));
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn the_file_mode_is_kept() {
-        let dir = scratch("install-mode");
-        let target = dir.join("settings.json");
-        fs::write(&target, b"{}").unwrap();
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
-        write_atomic(&target, b"{\"a\":1}", 0o600, || Ok(())).unwrap();
-        assert_eq!(
-            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
-            0o640
-        );
-        let _ = fs::remove_dir_all(&dir);
     }
 }

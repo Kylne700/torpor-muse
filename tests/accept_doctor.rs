@@ -1,5 +1,6 @@
 //! Regression tests for defects the S3a-accept run found in `torpor-muse doctor` (e2e/RESULTS.md, check A8).
-//! doctor.rs is compiled in with the same stubs as tests/shim_doctor.rs; only its look at Muse's session logs is used.
+//! doctor.rs is compiled in with the same stubs as tests/doctor_common/mod.rs (the shim_doctor_* test crates); only its
+//! look at Muse's session logs is used.
 // Each test crate compiles these src files on its own: what only the binary or another test crate calls looks unused.
 #[allow(dead_code)]
 #[path = "../src/doctor.rs"]
@@ -14,7 +15,7 @@ mod transcript;
 #[path = "../src/util.rs"]
 mod util;
 
-/// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
+/// doctor.rs reads the engine's time limit per event from src/hook/events.rs; one event is enough here.
 mod hook {
     pub struct Ev {
         pub name: &'static str,
@@ -26,8 +27,8 @@ mod hook {
     }];
 }
 
-/// doctor.rs asks install.rs where Muse's settings file is and why `init` would refuse it; these tests hand doctor the
-/// path directly and leave the refusal to tests/core_install.rs and the unit tests.
+/// doctor.rs asks src/install/settings.rs where Muse's settings file is and why `init` would refuse it; these tests
+/// hand doctor the path directly and leave the refusal to tests/core_install.rs and the unit tests.
 #[allow(dead_code)]
 mod install {
     pub fn settings_path() -> std::path::PathBuf {
@@ -38,7 +39,7 @@ mod install {
     }
 }
 
-/// doctor.rs asks suggest.rs whether the check-writer has a key; here it always has.
+/// doctor.rs asks `suggest::writer_off` (src/suggest/trigger.rs) if the check-writer has a key; here it always has.
 #[allow(dead_code)]
 mod suggest {
     pub fn writer_off(_: bool) -> Option<String> {

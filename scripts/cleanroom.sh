@@ -9,7 +9,9 @@
 #    engine.lock (engine commit and the four sha256) and Cargo.toml (the version in the release URL).
 # 2. Runs that block as written, in an empty HOME with a bare environment. Only its release base URL is changed, to
 #    <dir>, so the README cannot drift from what is tested. The pinned engine still comes from GitHub. Then asserts which
-#    platform the block picked: the installed torpor-muse is byte-identical to exactly one of the four assets.
+#    platform the block picked: the installed torpor-muse is byte-identical to exactly one of the four assets. The
+#    block ends by running `torpor-muse init` (no terminal here, so it asks for no key): its hooks must be in, and
+#    uninstall takes them out again before step 3.
 # 3. Does the offline first-run steps (version, init, doctor, uninstall) and asserts what each prints without Muse Code
 #    and without a key, and that HOME after uninstall is exactly as it was before init. What needs Muse Code or a Meta
 #    key is printed at the end as keyed, not faked.
@@ -117,8 +119,12 @@ only "torpor-muse $ver"
 step "torpor version (the pinned engine)" 0 torpor version
 only "torpor $(lock version)"
 
-snap > "$tmp/before"
 s=$H/.config/muse/settings.json
+grep -Fq "$H/.local/bin/torpor-muse hook Stop\"" "$s" || fail "the block did not run torpor-muse init: $s has no Stop hook"
+step "torpor-muse uninstall (the init the block ran)" 0 torpor-muse uninstall
+only "torpor-muse hooks removed; $s was created by init and is deleted"
+
+snap > "$tmp/before"
 step "torpor-muse init" 0 torpor-muse init
 [ "$(sed -n 1p "$tmp/out")" = "torpor-muse hooks installed in $s" ] || fail "init line 1 is not 'torpor-muse hooks installed in $s'"
 [ "$(sed -n 2p "$tmp/out")" = "store $H/.torpor, engine $H/.local/bin/torpor; start a new Muse session to use them" ] ||

@@ -3,7 +3,7 @@
 A zero-dependency Node (>= 20) server that imitates `POST /v1/responses` of the Meta Model API, failures included, so the check-writer is tested offline and in CI. It also imitates `POST /v1/asr/transcribe` (Muse Voice Transcribe), see "Voice route" below.
 
 ```
-node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] [--delay-ms <n>] [--log <file>] [--asr ok,429,...] [--transcript <text>]
+node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] [--delay-ms <n>] [--log <file>] [--asr ok,429,...] [--transcript <text>] [--first-fixture a,b] [--first-text-file <path>] [--first-usage <input>,<cached>,<output>]
 ```
 
 - Binds 127.0.0.1 only. The first stdout line is `listening <port>` (use `--port 0` and read it). Bad arguments exit with code 2 and a message on stderr.
@@ -12,6 +12,7 @@ node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] 
 - `--delay-ms`: how long `slow` waits (default 2000).
 - `--log`: appended (created if missing). One JSON line per request, any path, written before the answer is sent: `{"method","path","headers","body"}`. Header names are lowercase. `body` is a JSON string holding the body as received, so parse each line with `JSON.parse` before searching it. Only `authorization` is redacted: `<redacted len=N>`, N being the length of the whole value including `Bearer `.
 - Every response gets a fresh `id` (`resp_mock_<n>`) and `created_at` (and `completed_at` where the fixture has one). Everything else, `usage` too, is as recorded.
+- The check-writer's first question (the words alone) is told by `text.format.name` `torpor_muse_first_pass` in the request body. Such requests have their own count and answers, so they never use up `--fixture` entries and `--fixture` never changes their answers. `--first-fixture a,b,c`: as `--fixture`, for these requests (default `ok`). `--first-text-file`: as `--output-text-file`; without it the text is `{"verdict":"claim","reason":""}`. `--first-usage <input>,<cached>,<output>`: the token counts in their answers (the recorded ones otherwise; a large output makes a cost the day cap can see). Their ids are `resp_mock_first_<n>`.
 - Not covered on `/v1/responses`: no 401 (the Authorization header is not checked), no request validation, no streaming.
 
 ## Fixtures

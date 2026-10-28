@@ -21,3 +21,8 @@ check torpor-muse.sha256
 mkdir -p "$HOME/.local/bin"
 install -m 755 torpor "$HOME/.local/bin/torpor"
 install -m 755 "torpor-muse-$p" "$HOME/.local/bin/torpor-muse"
+# connect Muse Code and ask for the Meta API key; if that fails, the install still stands
+trap '{ stty echo </dev/tty; } 2>/dev/null || :' INT # a Ctrl-C ends init, not this script; show typing again (the key prompt hid it)
+{ e=$(PATH="$HOME/.local/bin:$PATH" "$HOME/.local/bin/torpor-muse" init 2>&1 >&3) ||
+  echo "${e:-torpor-muse init stopped}; the install is done, run torpor-muse init later" >&2; } 3>&1
+trap - INT
