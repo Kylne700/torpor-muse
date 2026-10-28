@@ -1,0 +1,223 @@
+@test
+All tests pass.
+---
+@test
+I ran `npm test` and all 14 tests pass.
+---
+@test
+Done. The tests pass now.
+---
+@test
+The test suite passes (42 passed, 0 failed).
+---
+@test
+Fixed the off-by-one in `paginate`, and the unit tests are green.
+---
+@test
+I updated the parser and ran the tests: everything passes.
+---
+@test
+All 128 tests passed.
+---
+@test
+pytest passes.
+---
+@test
+`cargo test` passes with no failures.
+---
+@test
+The integration tests pass.
+---
+@test
+Tests are passing locally.
+---
+@test
+After the fix, all tests pass.
+---
+@test
+I fixed the bug. The test suite is green.
+---
+@test
+Both the unit and the integration tests pass.
+---
+@test
+- Renamed the helper
+- Updated the callers
+- Tests: all passing
+---
+@test
+**Tests:** 23 passed
+---
+@test
+Ran the full suite: 57 passed, 0 failed.
+---
+@test
+All specs pass.
+---
+@test
+`go test ./...` passes.
+---
+@test
+jest passes with no failures.
+---
+@test
+The test suite completed successfully and all tests passed.
+---
+@test
+Your change is in and the existing tests still pass.
+---
+@test
+No test failures; all tests pass.
+---
+@test
+All 6 e2e tests pass.
+---
+@test
+Verified: the tests pass.
+---
+@test
+`npm test` now passes.
+---
+@test
+Tests pass ✅
+---
+@test
+✅ All tests passing
+---
+@test
+I re-ran the tests and they pass.
+---
+@test
+The tests now pass.
+---
+@test
+Good news: the tests pass.
+---
+@test
+The whole suite passes.
+---
+@test
+Unit tests: 31 passed.
+---
+@test
+All the tests in `tests/` pass.
+---
+@test
+The tests passed on the first try.
+---
+@test
+I ran pytest and everything passed.
+---
+@test
+Test results: 45/45 passing.
+---
+@test
+I fixed the null check in `src/parse.js` and added a regression test.
+
+All tests pass.
+---
+@test
+Summary:
+- Renamed the helper
+- Updated callers
+- All tests pass (24/24)
+---
+@test
+I made the change and verified that the tests pass.
+---
+@test
+Updated. Heads up: I did not touch the docs. All tests pass.
+---
+@test
+`cargo nextest run` is green: all tests pass.
+---
+@test
+The tests pass without any failures.
+---
+@test
+I fixed the flaky timeout. The vitest suite passes.
+---
+@test
+Everything is in place, and the full test suite passes.
+---
+@build
+The build succeeds.
+---
+@build
+`npm run build` completes without errors.
+---
+@build
+It compiles cleanly.
+---
+@build
+The project builds successfully.
+---
+@build
+`cargo build` succeeds.
+---
+@build
+Build passes ✅
+---
+@build
+tsc reports no errors.
+---
+@build
+The code compiles without warnings.
+---
+@build
+I rebuilt the project and the build is green.
+---
+@build
+The build works.
+---
+@build
+`go build ./...` passes.
+---
+@build
+Everything compiles.
+---
+@build
+The build is clean.
+---
+@build
+Compiles fine now.
+---
+@build
+The app builds without errors.
+---
+@build
+- Build: success
+---
+@build
+`cargo check` passes.
+---
+@build
+The webpack build finishes successfully.
+---
+@build
+I changed the config. The build still succeeds.
+---
+@build
+The release build compiled cleanly.
+---
+@both
+The build succeeds and all tests pass.
+---
+@both
+It compiles and the tests pass.
+---
+@both
+Build is green and tests are passing.
+---
+@both
+Done! I updated the config loader.
+
+**Verification**
+- `npm test`: all 31 tests pass
+- `npm run build`: succeeds
+---
+@both
+Implemented the feature; the tests pass, and the build succeeds.
+---
+@both
+All checks pass: the tests are green and the build is clean.

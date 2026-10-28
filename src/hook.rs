@@ -8,6 +8,7 @@
 
 mod busy;
 mod db_note;
+mod done;
 mod events;
 mod gate;
 mod handle;

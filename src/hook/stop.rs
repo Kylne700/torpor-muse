@@ -223,6 +223,9 @@ fn list(names: &[String]) -> String {
     }
 }
 
+/// The first line of the reason (`reason`, and `done::join` when the false-Done sentence is the only item).
+pub(super) const HEAD: &str = "[Torpor] Before you finish:";
+
 /// The reason Muse gives the model with the one Stop block (`cmd` = how the model writes `torpor`, see `engine_cmd`;
 /// this text does not pass `schema::sanitise`). None = nothing to say.
 pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
@@ -301,7 +304,7 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
         }
         parts.push(s);
     }
-    (!parts.is_empty()).then(|| format!("[Torpor] Before you finish:\n{}", parts.join("\n")))
+    (!parts.is_empty()).then(|| format!("{HEAD}\n{}", parts.join("\n")))
 }
 
 #[cfg(test)]

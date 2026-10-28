@@ -48,6 +48,9 @@ pub struct Session {
     /// Why the check-writer could not start on the last prompt (`busy`, `start`), to tell at the next prompt.
     #[serde(default)]
     pub writer_skip: String,
+    /// What this session ran and edited, to catch a false Done (`hook::done`).
+    #[serde(default)]
+    pub done: super::done::Log,
 }
 
 /// A turn whose own commands changed or deleted a database file: its number, its start save point, the files.

@@ -1,0 +1,385 @@
+@hedge
+The tests should pass now.
+---
+@hedge
+This should make the build succeed.
+---
+@hedge
+I expect the tests to pass.
+---
+@hedge
+Hopefully the build is green.
+---
+@hedge
+The tests probably pass.
+---
+@hedge
+I think the tests pass.
+---
+@hedge
+It looks like the tests pass.
+---
+@hedge
+The tests ought to pass.
+---
+@hedge
+I believe all tests pass.
+---
+@hedge
+That change might make the build succeed.
+---
+@hedge
+It seems the build is clean.
+---
+@hedge
+The code likely compiles.
+---
+@future
+The tests will pass once the dependency is updated.
+---
+@future
+I'll run the tests next.
+---
+@future
+Once you merge, the build will succeed.
+---
+@future
+Next I will make sure the tests pass.
+---
+@future
+After you restart the server, the tests will pass.
+---
+@future
+The build will succeed when the env vars are set.
+---
+@future
+Until the tests pass I will keep the change on a branch.
+---
+@future
+I am going to run the build now.
+---
+@conditional
+If the tests pass, we can merge.
+---
+@conditional
+The tests pass if you use Node 20.
+---
+@conditional
+Unless the tests fail, the release can go ahead.
+---
+@conditional
+Assuming the build succeeds, deploy it.
+---
+@conditional
+When the tests pass you can commit.
+---
+@conditional
+As long as the tests pass, I'll keep the change.
+---
+@conditional
+Whether the tests pass depends on the database.
+---
+@conditional
+If the build succeeds on your side, tell me.
+---
+@question
+Do the tests pass on your machine?
+---
+@question
+Should I run the tests to see if they pass?
+---
+@question
+Want me to check that the build succeeds?
+---
+@question
+Did the build succeed for you?
+---
+@question
+Can you tell me whether the tests pass?
+---
+@question
+Is the build passing?
+---
+@question
+I changed the parser. Do all the tests pass?
+---
+@question
+Shall I confirm the build is green before you merge?
+---
+@negation
+I did not run the tests.
+---
+@negation
+I couldn't run the test suite because of the sandbox.
+---
+@negation
+The tests have not been run.
+---
+@negation
+Tests not run.
+---
+@negation
+I haven't verified that the build succeeds.
+---
+@negation
+The build does not succeed yet.
+---
+@negation
+The tests don't pass.
+---
+@negation
+Not all tests pass: 2 fail.
+---
+@negation
+Two tests fail.
+---
+@negation
+The build fails with a type error.
+---
+@negation
+I was unable to run the tests.
+---
+@negation
+The tests never ran.
+---
+@negation
+The build is broken.
+---
+@negation
+Tests: 3 failed, 12 passed.
+---
+@negation
+No tests were run.
+---
+@negation
+I skipped the tests.
+---
+@negation
+Cannot confirm that the build succeeds.
+---
+@negation
+I fixed the typo. Tests were not run, so I cannot say whether they pass.
+---
+@advice
+Run `npm test` to check that everything passes.
+---
+@advice
+Run the tests to confirm they pass.
+---
+@advice
+Please verify that the build succeeds before merging.
+---
+@advice
+To make sure the tests pass, run `pytest`.
+---
+@advice
+You can run `cargo build` to confirm it compiles.
+---
+@advice
+Make sure the tests pass before you push.
+---
+@advice
+Try `npm run build`; it should succeed.
+---
+@advice
+Check that all tests pass in your own environment.
+---
+@advice
+Before you merge, run the full suite and make sure it passes.
+---
+@quote
+You said "the tests pass", but I could not reproduce that.
+---
+@quote
+The CI log says: "build succeeded".
+---
+@quote
+> All tests pass
+
+That is the output you pasted.
+---
+@quote
+The README claims the build succeeds out of the box.
+---
+@quote
+The commit message says "tests pass", which I did not check.
+---
+@quote
+You mentioned that the tests pass on your side.
+---
+@quote
+The previous reply said all tests pass.
+---
+@quote
+> 14 passed in 0.5s
+> The build succeeded
+
+Those two lines are what the earlier run printed.
+---
+@quote
+The output shows all tests pass.
+---
+@quote
+According to the docs, the build succeeds on Linux.
+---
+@code
+Here is the script:
+
+```bash
+npm test # all tests pass
+```
+
+Adjust the path first.
+---
+@code
+Example output:
+
+```
+12 passed
+Build succeeded
+```
+---
+@code
+Add this to the README:
+
+```
+All tests pass.
+```
+---
+@code
+```
+The build succeeds.
+```
+---
+@code
+~~~
+Tests pass
+~~~
+---
+@code
+I wrote a helper:
+
+```js
+// the tests pass when this returns true
+function ok() { return true; }
+```
+---
+@partial
+Most tests pass; the rest are skipped.
+---
+@partial
+Some tests pass.
+---
+@partial
+41 of 42 tests pass.
+---
+@partial
+All tests pass except the flaky one.
+---
+@partial
+The build mostly succeeds.
+---
+@partial
+Almost all of the tests pass.
+---
+@partial
+Only the unit tests pass.
+---
+@partial
+The first test passes, the others are still red.
+---
+@history
+The tests passed before my change, so I need to look at what I broke.
+---
+@history
+Earlier the build succeeded, but that was before the refactor.
+---
+@history
+Before the rename all the tests passed.
+---
+@history
+The build was green last week.
+---
+@remote
+The tests pass on CI but not locally.
+---
+@remote
+The build succeeds in production.
+---
+@remote
+On your machine the tests pass.
+---
+@remote
+The upstream repository builds fine.
+---
+@remote
+Their pipeline reports a green build.
+---
+@subject
+The linter passes.
+---
+@subject
+Authentication passes the token to the next handler.
+---
+@subject
+The function passes the callback through.
+---
+@subject
+The new test passes a string instead of a number.
+---
+@subject
+This change makes the build faster.
+---
+@subject
+I updated the build script to pass the flag.
+---
+@subject
+The tests directory now has a README.
+---
+@subject
+I added a test for the parser.
+---
+@subject
+The build config lives in `webpack.config.js`.
+---
+@subject
+Added tests for the new endpoint; see `tests/api.test.js`.
+---
+@subject
+The pipeline for the build step now passes the cache key.
+---
+@subject
+Formatting is clean and the lint rules pass.
+---
+@goal
+The goal is to make the tests pass.
+---
+@goal
+The tests must pass before merging.
+---
+@goal
+I want the build to succeed on the first try.
+---
+@goal
+Getting the tests to pass took most of the day.
+---
+@goal
+The change needs the build to succeed first.
+---
+@plain
+done ONYX-8820-QUILL
+---
+@plain
+Renamed the file and updated the imports.
+---
+@plain
+I changed the default port to 8080.
+---
+@plain
+Here is what I found: the config is read twice.
+---
+@plain
+The function now returns early when the list is empty.
+---
+@partial
+The regression test I added passes.

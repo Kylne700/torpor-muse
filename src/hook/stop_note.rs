@@ -2,7 +2,7 @@
 
 use super::handle::turn_ended;
 use super::paths::{engine_cmd, project_root};
-use super::{state, stop};
+use super::{done, state, stop};
 use crate::{engine, schema, suggest};
 use serde_json::Value;
 use std::path::Path;
@@ -17,6 +17,8 @@ pub(super) struct Ended<'a> {
     pub(super) bin: &'a Path,
     /// What is left of the event's engine time.
     pub(super) left: Duration,
+    /// The AI's last message, to read for a false Done (`done::said`; empty at the Stop that follows a block).
+    pub(super) said: &'a str,
 }
 
 /// The user's line for a database turn (L3 N2): at most 100 characters, the command at its end is never cut, long names
@@ -115,6 +117,7 @@ pub(super) fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> O
     }
     // shortcut: `last_turn` is the folder's, so with two sessions in one folder it can be the other session's turn, and this
     // Stop then tells about that one; upgrade when the engine can name the last turn of a session.
+    let saving = status.is_some();
     let n = status.and_then(|s| s["last_turn"]["n"].as_u64());
     let show = n.and_then(|n| json(&["show", &n.to_string(), "--json"]));
     let root = project_root(e.cwd);
@@ -181,7 +184,13 @@ pub(super) fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> O
         dbs: rows.risky,
         lost,
     };
-    let Some(reason) = stop::reason(&engine_cmd(e.bin), &broke, &risk) else {
+    // a false Done (`done`) joins the one block; without a status the engine may be off, and then nothing is said
+    let ours = if saving {
+        done::verdict(e.dir, e.sid, e.turn, e.said)
+    } else {
+        None
+    };
+    let Some(reason) = done::join(stop::reason(&engine_cmd(e.bin), &broke, &risk), ours) else {
         return body;
     };
     // the block is built before the turn is marked as told: a block that cannot go out must not use up the turn's one
