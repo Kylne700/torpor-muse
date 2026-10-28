@@ -102,26 +102,26 @@ fn all_below(s: &str, d: &Path) -> bool {
         .is_some_and(|r| r.starts_with('/'))
 }
 
-/// True when a delete or move of `t` must be stopped. The rules, first match wins: (2) `/`, the home folder, a folder
-/// that holds it, Torpor's store, a folder that holds it or anything in it: stopped; (1) inside the project: left to
-/// the engine; (3) below a usable `$TMPDIR`: allowed; (4) below the home folder: stopped; (5) below /tmp or /var/tmp:
-/// allowed; (6) anywhere else: stopped. A cut-short target is stopped when any path it could be is (2), else judged by
-/// the folder all of them lie in.
+/// True when a delete or move of `t` must be stopped. The rules, first match wins: (1) inside the project: left to
+/// the engine; (2) `/`, the home folder, a folder that holds it, Torpor's store, a folder that holds it or anything in
+/// it: stopped; (3) below a usable `$TMPDIR`: allowed; (4) below the home folder: stopped; (5) below /tmp or /var/tmp:
+/// allowed; (6) anywhere else: stopped. A cut-short target is left to the engine when every path it could be is inside
+/// the project, stopped when any of them is (2), else judged by the folder all of them lie in.
 pub(super) fn stopped(t: &Target, env: &Env) -> bool {
     let temp = [Path::new("/tmp"), Path::new("/var/tmp")];
     match t {
         Target::Path(p) => {
             let holds = |x: &Option<PathBuf>| x.as_ref().is_some_and(|x| x.starts_with(p));
             let below = |d: &Path| p.starts_with(d) && p != d;
+            if env.root.iter().any(|r| p.starts_with(r)) {
+                return false;
+            }
             if p == Path::new("/")
                 || holds(&env.home)
                 || holds(&env.store)
                 || env.store.as_ref().is_some_and(|s| p.starts_with(s))
             {
                 return true;
-            }
-            if env.root.iter().any(|r| p.starts_with(r)) {
-                return false;
             }
             if env.tmp.as_deref().is_some_and(below) {
                 return false;
@@ -139,10 +139,13 @@ pub(super) fn stopped(t: &Target, env: &Env) -> bool {
                 })
             };
             let below = |d: &Path| all_below(s, d);
+            if env.root.iter().any(|r| below(r)) {
+                return false;
+            }
             if could(&env.home) || could(&env.store) || env.store.as_deref().is_some_and(below) {
                 return true;
             }
-            if env.root.iter().any(|r| below(r)) || env.tmp.as_deref().is_some_and(below) {
+            if env.tmp.as_deref().is_some_and(below) {
                 return false;
             }
             env.home.as_deref().is_some_and(below) || !temp.into_iter().any(below)

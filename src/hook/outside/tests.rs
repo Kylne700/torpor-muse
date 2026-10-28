@@ -227,18 +227,25 @@ fn a_target_cut_short_is_stopped_only_when_its_fixed_start_is_outside() {
     }
 }
 
-/// Rule 2 comes before rule 1: a project that is the home folder (Muse started in `~`) still keeps it and the store.
+/// Rule 1 comes first: in a project that is the home folder (Muse started in `~`), the engine judges what is in it.
 #[test]
-fn the_home_folder_and_the_store_are_stopped_from_a_project_that_holds_them() {
+fn a_project_that_is_the_home_folder_leaves_what_is_in_it_to_the_engine() {
     let e = Env {
         root: vec!["/Users/u".into()],
         ..desk()
     };
-    for cmd in ["rm -rf ~", "rm -rf .", "rm -rf .torpor", "rm -rf ./.*"] {
-        assert!(stops(&e, cmd), "{cmd}");
+    for cmd in [
+        "rm -rf ~",
+        "rm -rf .",
+        "rm -rf .torpor",
+        "rm -rf ./.*",
+        "rm -rf ./*",
+        "rm -rf notes",
+    ] {
+        assert!(!stops(&e, cmd), "{cmd}");
     }
-    assert!(!stops(&e, "rm -rf ./*")); // `*` does not name `.torpor`
-    assert!(!stops(&e, "rm -rf notes"));
+    assert_eq!(hits(&e, "rm -rf /Users"), ["/Users"]); // holds the home folder, outside the project
+    assert_eq!(hits(&e, "rm -rf ../*"), ["/Users/*"]);
 }
 
 /// research/71c probes C01-C09.
