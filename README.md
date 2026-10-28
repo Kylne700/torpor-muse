@@ -6,13 +6,13 @@ Work in progress, for the Meta Global AI Developer Hackathon (October 26 to Nove
 
 1. You say what works in Muse Code ("login works now"), typed or from a sound clip with `torpor-muse say`.
 2. Muse Spark, Meta's model, writes a check from your words.
-3. At the end of a later turn that could have broken it, Torpor runs the check. If it fails, the AI is told what broke before it says "Done". Say "undo that" and the AI puts it back.
+3. At the end of a later turn that could have broken it, Torpor runs the check; if it fails, the AI is told before it says "Done", and "undo that" puts it back.
 
-**Set up once** (Linux or macOS): copy the block under [Install](#install) into a terminal, run `torpor-muse init`, then [add your Meta API key](#add-your-meta-api-key). After that you type nothing. Optional: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
+**Install** (Linux or macOS), once: copy the block under [Install](#install) below into a terminal, run `torpor-muse init`, then [add your Meta API key](#add-your-meta-api-key). After install you type nothing. Optional: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
 
-**Cost.** Only Meta's API costs money (the check-writer after every prompt, and `say`). It uses your own Meta API key and stops at a daily spend cap. One recorded run (one spoken claim) cost USD 0.00015 for the transcription and USD 0.005265 for the check-writer ([docs/voice.md](docs/voice.md)). The Torpor engine makes no AI calls. In its own test (2026-10-22, 3,200 runs, an earlier build, no check running) it took a median 36.8 ms when a prompt is sent, and no step took longer than 128.9 ms ([record](https://github.com/Kylne700/torpor/blob/v2.3.1/NOTES-S1.md#L71-L89)).
+**Cost.** Only Meta's API costs money (the check-writer, after each prompt), with your own key and a daily cap. One recorded run (a spoken claim) cost USD 0.00015 for the transcription and USD 0.005265 for the check-writer ([details](docs/voice.md)). The engine makes no AI calls; in its own test (earlier build, no check running) no step took longer than 128.9 ms ([record](https://github.com/Kylne700/torpor/blob/v2.3.1/NOTES-S1.md#L71-L89)).
 
-**If Torpor fails**, your Muse turn goes on and you are told once per session that Torpor is not saving. A failed check only tells the AI; it can stop the AI only after you run `torpor gate on` yourself. Torpor refuses commands that are yours alone, such as `torpor off`, if the AI tries them.
+**If Torpor itself stops working**, your Muse turn goes on and you are told once per session that Torpor is not saving. A check that fails only tells the AI; it stops the AI only after you run `torpor gate on` yourself.
 
 Everything in this repo was built during the hackathon. The Torpor engine it drives is the declared older base and is not judged ([details](#built-during-the-hackathon-judge-this)).
 
