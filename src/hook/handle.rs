@@ -6,7 +6,7 @@ use super::gate::gate_default;
 use super::paths::{engine_cmd, project_root};
 use super::stop_note::{Ended, stop_note};
 use super::writer_note::{gap_line, will_send, writer_note};
-use super::{Done, busy, normalise, outside, state};
+use super::{Done, busy, done, normalise, outside, state};
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
 use std::path::Path;
@@ -53,6 +53,7 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
         state::open_set(dir, &cwd, &sid, &turn);
     }
     let told = outside::text_line(event, &payload); // before `normalise` drops the file bodies
+    done::record(dir, event, &sid, &payload);
     if let Some(m) = payload.as_object_mut() {
         normalise::apply(event, m);
     }
@@ -87,6 +88,7 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
             done.stdout = gap_note(dir, event, &sid, &cwd, done.stdout.take());
             done.stdout = if event == "Stop" {
                 let left = Duration::from_millis(ev.engine_ms).saturating_sub(started.elapsed());
+                let said = done::said(&payload);
                 let end = Ended {
                     dir,
                     sid: &sid,
@@ -94,6 +96,7 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
                     cwd: &cwd,
                     bin: &out.bin,
                     left,
+                    said: &said,
                 };
                 stop_note(&end, &out.stdout, done.stdout.take())
             } else {
