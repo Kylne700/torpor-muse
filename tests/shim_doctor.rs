@@ -36,9 +36,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -1334,140 +1333,6 @@ fn a_background_process_that_keeps_the_pipes_open_does_not_hold_doctor() {
     end(w.seen("sleeper.pid").trim().parse().unwrap());
     must(&r, Level::Ok, "prints one JSON object");
     assert!(took < Duration::from_secs(4), "{took:?}");
-}
-
-// ---------------------------------------------------------------- orphans of killed checks
-
-#[test]
-fn leftover_folders_of_killed_checks_are_listed_and_nothing_is_deleted() {
-    let w = World::new("orphans");
-    let old = T0 - 3_600_000;
-    let scratch = w.vault.join("0123456789abcdef/scratch/run1");
-    fs::create_dir_all(&scratch).unwrap();
-    fs::write(scratch.join("app.pgid"), "999999\n").unwrap();
-    let tp = w.tmp.join("tp-old-1");
-    let fresh = w.tmp.join("tp-new-1");
-    let future = w.tmp.join("tp-future-1");
-    let other = w.tmp.join("not-a-browser-folder");
-    for d in [&tp, &fresh, &future, &other] {
-        fs::create_dir_all(d).unwrap();
-    }
-    for d in [&scratch, &tp, &other] {
-        set_mtime(d, old);
-    }
-    set_mtime(&fresh, T0 + 30_000); // 30 s before "now": a check that may still be running
-    set_mtime(&future, T0 + 120_000); // a clock that stepped back: younger than young, not ancient
-    let r = w.examine();
-    must(
-        &r,
-        Level::Warn,
-        &format!("leftover folder of a killed check: {}", scratch.display()),
-    );
-    must(
-        &r,
-        Level::Warn,
-        &format!("rm -rf {}", doctor::quote(&scratch.to_string_lossy())),
-    );
-    must(
-        &r,
-        Level::Warn,
-        &format!("leftover folder of a killed check: {}", tp.display()),
-    );
-    mustnt(&r, Level::Warn, "tp-new-1");
-    mustnt(&r, Level::Warn, "tp-future-1");
-    mustnt(&r, Level::Warn, "not-a-browser-folder");
-    mustnt(&r, Level::Warn, "kill -9");
-    every_problem_says_how(&r);
-    // leftovers alone are a warning, and doctor removes nothing
-    mustnt(&r, Level::Fix, "leftover folder");
-    for d in [&scratch, &tp, &fresh, &future, &other] {
-        assert!(d.is_dir(), "{} is gone", d.display());
-    }
-    assert!(scratch.join("app.pgid").is_file());
-}
-
-/// A process that keeps working in the folder of a killed check (its command line names the folder), in a process
-/// group of its own or in the group of this test.
-fn holder(dir: &Path, own_group: bool) -> std::process::Child {
-    let mut c = Command::new("/bin/sh");
-    c.args(["-c", "while :; do sleep 1; done", "sh"])
-        .arg(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if own_group {
-        c.process_group(0);
-    }
-    c.spawn().unwrap()
-}
-
-fn pgid_of(pid: u32) -> u32 {
-    let out = Command::new("ps")
-        .args(["-o", "pgid=", "-p", &pid.to_string()])
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
-}
-
-#[test]
-fn a_process_left_behind_is_named_with_the_commands_that_end_it_and_not_killed() {
-    let w = World::new("holder");
-    let dir = w.tmp.join("tp-holder-1");
-    fs::create_dir_all(&dir).unwrap();
-    let mut child = holder(&dir, true);
-    let pid = child.id();
-    fs::write(dir.join("app.pgid"), format!("{pid}\n")).unwrap();
-    set_mtime(&dir, T0 - 3_600_000);
-    let r = w.examine();
-    let still_running = child.try_wait().unwrap().is_none();
-    let _ = child.kill(); // the process this test started
-    let _ = child.wait();
-    must(&r, Level::Fix, "a killed check left processes running for");
-    must(&r, Level::Fix, &format!("{pid} /bin/sh -c while"));
-    must(&r, Level::Fix, &format!("kill -9 -- -{pid}"));
-    must(
-        &r,
-        Level::Fix,
-        &format!("rm -rf {}", doctor::quote(&dir.to_string_lossy())),
-    );
-    every_problem_says_how(&r);
-    assert_eq!(doctor::finish(&r), 1);
-    assert!(still_running, "doctor must not kill anything itself");
-    assert!(dir.is_dir(), "doctor must not delete anything itself");
-}
-
-#[test]
-fn a_process_in_no_listed_group_is_ended_alone_and_a_stale_group_number_is_never_used() {
-    let w = World::new("loose");
-    let dir = w.tmp.join("tp-loose-1");
-    fs::create_dir_all(&dir).unwrap();
-    let mut child = holder(&dir, true);
-    let pid = child.id();
-    fs::write(dir.join("app.pgid"), "1\n").unwrap(); // a recycled number: the init group
-    set_mtime(&dir, T0 - 3_600_000);
-    let r = w.examine();
-    let _ = child.kill();
-    let _ = child.wait();
-    must(&r, Level::Fix, &format!("kill -9 {pid}; rm -rf"));
-    mustnt(&r, Level::Fix, "kill -9 --");
-}
-
-#[test]
-fn a_process_in_the_group_doctor_runs_in_is_never_proposed_for_a_kill() {
-    let w = World::new("owngroup");
-    let dir = w.tmp.join("tp-own-1");
-    fs::create_dir_all(&dir).unwrap();
-    let mut child = holder(&dir, false); // shares the group of this test, as a sibling of doctor's shell would
-    let group = pgid_of(std::process::id());
-    assert_eq!(pgid_of(child.id()), group);
-    fs::write(dir.join("app.pgid"), format!("{group}\n")).unwrap();
-    set_mtime(&dir, T0 - 3_600_000);
-    let r = w.examine();
-    let _ = child.kill();
-    let _ = child.wait();
-    must(&r, Level::Fix, "a killed check left processes running for");
-    must(&r, Level::Fix, "rm -rf");
-    mustnt(&r, Level::Fix, "kill -9");
 }
 
 // ---------------------------------------------------------------- where Muse keeps its logs

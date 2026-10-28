@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -39,7 +38,6 @@ const ENGINE_MS: [(&str, u64); 10] = [
     ("SessionEnd", 1200),
 ];
 const LOGS_SCANNED: usize = 6;
-const ORPHAN_AGE_S: u64 = 120;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Muse keeps at most this much of a hook's stdout or stderr (it fails the hook beyond it); so does the probe.
 const PIPE_CAP: usize = 16 * 1024;
@@ -176,7 +174,6 @@ pub fn examine(c: &Ctx) -> Report {
         check_writer(&mut r);
     }
     check_xdg(c, &mut r);
-    check_orphans(c, &vault, &mut r);
     r
 }
 
@@ -1299,146 +1296,6 @@ fn check_xdg(c: &Ctx, r: &mut Report) {
     );
 }
 
-// ---------------------------------------------------------------- orphans of killed checks
-
-struct Proc {
-    pid: u32,
-    pgid: u32,
-    args: String,
-}
-
-fn processes() -> Vec<Proc> {
-    let Ok(out) = Command::new("ps")
-        .args(["-A", "-ww", "-o", "pid=,pgid=,command="])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let (pid, rest) = l.trim_start().split_once(' ')?;
-            let (pgid, args) = rest.trim_start().split_once(' ')?;
-            Some(Proc {
-                pid: pid.parse().ok()?,
-                pgid: pgid.parse().ok()?,
-                args: args.trim_start().to_string(),
-            })
-        })
-        .collect()
-}
-
-fn ms_of(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
-}
-
-/// A killed check can leave its app, its runner, its browser and a `tp-...` folder behind (README:213). The engine's
-/// scratch folders are `<vault>/<workspace>/scratch/<run>` (with `*.pgid` files naming the process groups) and the
-/// browser's is `tp-*` in the temp folder.
-fn check_orphans(c: &Ctx, vault: &Path, r: &mut Report) {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    for w in fs::read_dir(vault).into_iter().flatten().flatten() {
-        let name = w.file_name().to_string_lossy().into_owned();
-        if (name.len() == 16 || name.len() == 20) && name.bytes().all(|b| b.is_ascii_hexdigit()) {
-            dirs.extend(
-                fs::read_dir(w.path().join("scratch"))
-                    .into_iter()
-                    .flatten()
-                    .flatten()
-                    .map(|e| e.path()),
-            );
-        }
-    }
-    let me = fs::metadata(&c.home).map(|m| m.uid()).ok();
-    for t in &c.temps {
-        for e in fs::read_dir(t).into_iter().flatten().flatten() {
-            let owned = me.is_none_or(|u| e.metadata().is_ok_and(|m| m.uid() == u));
-            if e.file_name().to_string_lossy().starts_with("tp-") && owned {
-                dirs.push(e.path());
-            }
-        }
-    }
-    dirs.retain(|d| {
-        d.is_dir()
-            && fs::metadata(d)
-                .and_then(|m| m.modified())
-                .is_ok_and(|m| c.now_ms.saturating_sub(ms_of(m)) > ORPHAN_AGE_S * 1000)
-    });
-    dirs.sort();
-    dirs.dedup();
-    if dirs.is_empty() {
-        return;
-    }
-    let procs = processes();
-    let own_pgid = procs
-        .iter()
-        .find(|p| p.pid == std::process::id())
-        .map(|p| p.pgid);
-    let have_proc = Path::new("/proc/self").exists();
-    for d in dirs {
-        let ds = d.to_string_lossy().into_owned();
-        let holders: Vec<&Proc> = procs
-            .iter()
-            .filter(|p| p.pid != std::process::id())
-            .filter(|p| {
-                p.args.contains(&ds)
-                    || (have_proc
-                        && fs::read_link(format!("/proc/{}/cwd", p.pid))
-                            .is_ok_and(|w| w.starts_with(&d)))
-            })
-            .collect();
-        let listed: BTreeSet<u32> = fs::read_dir(&d)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with(".pgid"))
-            .filter_map(|e| fs::read_to_string(e.path()).ok()?.trim().parse().ok())
-            .collect();
-        let mut cmds: Vec<String> = Vec::new();
-        // A group is killed only when a process that works in this folder belongs to it (a recycled number is not ours).
-        let groups: BTreeSet<u32> = holders
-            .iter()
-            .map(|p| p.pgid)
-            .filter(|g| listed.contains(g) && *g > 1 && Some(*g) != own_pgid)
-            .collect();
-        cmds.extend(groups.iter().map(|g| format!("kill -9 -- -{g}")));
-        let loose: Vec<String> = holders
-            .iter()
-            .filter(|p| !groups.contains(&p.pgid) && Some(p.pgid) != own_pgid)
-            .map(|p| p.pid.to_string())
-            .collect();
-        if !loose.is_empty() {
-            cmds.push(format!("kill -9 {}", loose.join(" ")));
-        }
-        cmds.push(format!("rm -rf {}", quote(&ds)));
-        let age = fs::metadata(&d)
-            .and_then(|m| m.modified())
-            .map_or("?".into(), |m| ago(c.now_ms, ms_of(m)));
-        let (l, what) = if holders.is_empty() {
-            (
-                Level::Warn,
-                format!(
-                    "leftover folder of a killed check: {ds} ({age} old, no process works in it)"
-                ),
-            )
-        } else {
-            let list: Vec<String> = holders
-                .iter()
-                .map(|p| format!("{} {}", p.pid, clip(&p.args, 60)))
-                .collect();
-            (
-                Level::Fix,
-                format!(
-                    "a killed check left processes running for {ds} ({age} old): {}",
-                    list.join("; ")
-                ),
-            )
-        };
-        r.problem(l, what, cmds.join("; "));
-    }
-}
-
 // ---------------------------------------------------------------- small helpers
 
 fn ago(now_ms: u64, t_ms: u64) -> String {
@@ -1467,4 +1324,9 @@ fn clip(s: &str, n: usize) -> String {
 
 fn short(id: &str) -> String {
     id.chars().take(13).collect()
+}
+
+fn ms_of(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
