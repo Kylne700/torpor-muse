@@ -48,13 +48,32 @@ pub fn writer_off(env: bool) -> Option<String> {
     (!(env && client::env_key_ok())).then_some(gap)
 }
 
+/// A prompt with less than three characters besides spaces has nothing to check.
+fn too_short(prompt: &str) -> bool {
+    prompt.chars().filter(|c| !c.is_whitespace()).count() < 3
+}
+
+/// Would a run started by this prompt in `cwd` send the prompt to Meta? The local reasons it would not, read the way the
+/// trigger and the plan read them: the writer is off (no usable key), the prompt is too short, no project folder, a day
+/// cap of 0 (or one that is not a number), no script to start the app with. Not asked here: whether Torpor saves in the
+/// folder (the engine's word; the run stops there after `torpor off`, before it sends anything), a run already under
+/// way, and a day cap that is used up.
+pub fn would_send(cwd: &str, prompt: &str) -> bool {
+    !too_short(prompt)
+        && writer_off(true).is_none()
+        && client::load_config()
+            .and_then(|c| client::day_cap(&c))
+            .is_ok_and(|cap| cap > 0.0)
+        && repo::resolve_root(Some(cwd)).is_ok_and(|root| !repo::start_choices(&root).is_empty())
+}
+
 /// Cheap, local checks only (no network, no engine, no model): a prompt with something in it, a usable folder, a key
 /// source, no run under way here. Then a detached `suggest -` in its own process group with the prompt in its
 /// environment (not on its command line, where every user could read it). The key stays out of its environment when
 /// the config names a key file it can read; with no usable key file, a `META_API_KEY` of ours goes along.
 /// The judgment whether the prompt says "this works" is the model's, in the run.
 fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result<Child, Skip> {
-    if prompt.chars().filter(|c| !c.is_whitespace()).count() < 3 {
+    if too_short(prompt) {
         return Err(Skip("the prompt is too short"));
     }
     let root = repo::resolve_root(Some(cwd)).map_err(|_| Skip("no usable project folder"))?;

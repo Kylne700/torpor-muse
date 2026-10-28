@@ -3,6 +3,18 @@
 use super::state::{Gap, Last};
 use super::{client, repo, state};
 
+// How the words of a run that ended with the code `nosave` begin. src/suggest/work.rs makes them from these and
+// src/hook/writer_note.rs tells them apart to say what happened; each is followed by `: ` and the reason, except the last.
+
+/// Every step of the check needed a record already in the user's data.
+pub const NO_CHECK_SAVED: &str = "no check saved";
+/// The engine's lint, or its try of the check, turned it down.
+pub const TURNED_DOWN: &str = "the engine turned the check down";
+/// The engine had another reason to save nothing.
+pub const NOT_SAVED: &str = "Torpor did not save the check";
+/// The end of the work loop, which no run reaches (the last try returns on every path).
+pub const NO_CHECK_MADE: &str = "no check was made";
+
 /// What the saved checks of the project in `cwd` do not cover, newest first (src/hook/writer_note.rs tells the user,
 /// src/hook/handle.rs the model).
 pub fn gaps(cwd: &str) -> Vec<Gap> {

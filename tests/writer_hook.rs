@@ -124,8 +124,9 @@ fn a_run_that_failed_is_told_to_the_user_at_the_next_prompt_of_the_session_once(
     let first = hook(&sb, &engine, &mock.base(), "s1", PRAISE);
     assert_eq!(first.status.code(), Some(0));
     let said = |o: &std::process::Output| String::from_utf8_lossy(&o.stdout).to_string();
+    // (this first prompt carries the notice of what the check-writer sends; it is no news about an earlier run)
     assert!(
-        !said(&first).contains("check-writer"),
+        !said(&first).contains("earlier"),
         "nothing has failed yet: {}",
         said(&first)
     );
