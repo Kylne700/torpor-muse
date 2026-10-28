@@ -361,7 +361,7 @@ fn engine_cmd(bin: &Path) -> String {
     let named = bin.file_name().is_some_and(|n| n == "torpor")
         && bin.parent().is_some_and(|p| !p.as_os_str().is_empty());
     match std::path::absolute(bin) {
-        Ok(p) if named => p.to_str().map_or("torpor".into(), crate::doctor::quote),
+        Ok(p) if named => p.to_str().map_or("torpor".into(), crate::util::quote),
         _ => "torpor".into(),
     }
 }

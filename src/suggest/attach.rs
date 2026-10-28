@@ -118,7 +118,7 @@ fn exec_with(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    let mut child = crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start the Torpor engine `{bin}` ({e}): set TORPOR_BIN or put `torpor` on the PATH"))?;
+    let mut child = crate::util::spawn_retry(&mut cmd).map_err(|e| format!("cannot start the Torpor engine `{bin}` ({e}): set TORPOR_BIN or put `torpor` on the PATH"))?;
     let pgid = i32::try_from(child.id()).unwrap_or(0);
     GROUP.store(pgid, Ordering::SeqCst);
     if let (Some(text), Some(mut si)) = (stdin, child.stdin.take()) {

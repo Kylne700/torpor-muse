@@ -505,7 +505,7 @@ fn watchdog(c: &Ctx) {
         attach::kill_running();
         let message = "the run took too long and was stopped";
         if let Some(p) = result {
-            let row = json!({"v": 1, "at": crate::ledger::iso(crate::ledger::now_secs()), "outcome": Kind::Advisory.word(),
+            let row = json!({"v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": Kind::Advisory.word(),
                 "saved": false, "promise": null, "message": message, "session": session});
             let _ = state::write_atomic(&p, row.to_string().as_bytes());
         }
@@ -524,7 +524,7 @@ fn finish(c: &Ctx, o: Outcome) -> u8 {
     let message = c.safe(&o.message, 1500);
     if let Some(p) = &c.result {
         let row = json!({
-            "v": 1, "at": crate::ledger::iso(crate::ledger::now_secs()), "outcome": o.kind.word(), "saved": o.saved,
+            "v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": o.kind.word(), "saved": o.saved,
             "promise": o.promise, "message": message, "session": c.session, "model": c.model, "calls": c.calls,
             "usd": (c.usd * 1e6).round() / 1e6, "ms": u64::try_from(c.started.elapsed().as_millis()).unwrap_or(u64::MAX),
         });
@@ -611,7 +611,7 @@ fn trigger_with(exe: &Path, session_id: &str, cwd: &str, prompt: &str) -> Result
     if file_ok {
         cmd.env_remove("META_API_KEY");
     }
-    crate::liveness::spawn_retry(&mut cmd).map_err(|_| Skip("cannot start the run"))
+    crate::util::spawn_retry(&mut cmd).map_err(|_| Skip("cannot start the run"))
 }
 
 #[cfg(test)]

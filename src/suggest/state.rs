@@ -1,8 +1,7 @@
 //! Files of the check-writer that live outside the project: a lock and a result per project. Owner: S3b-writer.
-use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
-use std::io::Write;
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// Tests that change the process environment hold this, one at a time.
@@ -27,29 +26,15 @@ pub fn state_dir() -> Result<PathBuf, String> {
     Ok(crate::engine::state_dir().join("suggest"))
 }
 
-pub fn private_dir(p: &Path) -> Result<(), String> {
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(p)
-        .map_err(|e| format!("cannot create {}: {e}", p.display()))
-}
-
-fn fnv1a(b: &[u8]) -> u64 {
-    b.iter().fold(0xcbf2_9ce4_8422_2325, |h, &x| {
-        (h ^ u64::from(x)).wrapping_mul(0x0100_0000_01b3)
-    })
-}
-
 /// The folder of one project (by its canonical path) under the state dir; created private.
 pub fn ws_dir(root: &Path) -> Result<PathBuf, String> {
     let d = ws_path(root)?;
-    private_dir(&d)?;
+    crate::util::private_dir(&d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
     Ok(d)
 }
 
 fn ws_path(root: &Path) -> Result<PathBuf, String> {
-    let name = format!("{:016x}", fnv1a(root.as_os_str().as_bytes()));
+    let name = format!("{:016x}", crate::util::fnv1a(root.as_os_str().as_bytes()));
     Ok(state_dir()?.join("ws").join(name))
 }
 
@@ -102,22 +87,8 @@ pub fn try_lock(dir: &Path) -> Result<Option<Lock>, String> {
 
 /// Writes next to the target and renames, so a reader never sees half a file.
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-    let put = || -> std::io::Result<()> {
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
-        f.write_all(data)?;
-        f.sync_all()?;
-        fs::rename(&tmp, path)
-    };
-    put().map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        format!("cannot write {}: {e}", path.display())
-    })
+    crate::util::write_atomic(path, data, 0o600, true, || Ok(()))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 #[cfg(test)]
@@ -198,6 +169,6 @@ mod tests {
 
     #[test]
     fn two_projects_get_two_folders() {
-        assert_ne!(fnv1a(b"/a/one"), fnv1a(b"/a/two"));
+        assert_ne!(crate::util::fnv1a(b"/a/one"), crate::util::fnv1a(b"/a/two"));
     }
 }

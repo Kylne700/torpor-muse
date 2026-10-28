@@ -16,7 +16,8 @@
 //! Files in `<vault>/muse/transcripts/`: `<sid>.jsonl` (the transcript, append only: the engine keeps byte offsets),
 //! `<sid>.state` (where the translation stands and what it has seen), `<sid>.lock`.
 
-use crate::liveness::{log_error, mkdir_private, safe_id, shim_dir, vault};
+use crate::liveness::{log_error, safe_id, shim_dir, vault};
+use crate::util::{private_dir, write_atomic};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -106,7 +107,7 @@ pub fn path_for_in(p: &Paths, event: &str, payload: &Value) -> Option<String> {
 /// Brings `<vault>/muse/transcripts/<sid>.jsonl` up to date with Muse's log. Err = it could not (the old file stays).
 pub fn translate(p: &Paths, sid: &str) -> Result<PathBuf, String> {
     let dir = dir_of(&p.vault);
-    mkdir_private(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    private_dir(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
     let tpath = dir.join(format!("{sid}.jsonl"));
     let lock = OpenOptions::new()
         .create(true)
@@ -224,16 +225,14 @@ pub fn translate(p: &Paths, sid: &str) -> Result<PathBuf, String> {
     }
     st.off = pos;
     st.tlen = fs::metadata(&tpath).map_or(0, |m| m.len());
-    let tmp = dir.join(format!("{sid}.state.tmp"));
-    OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(&tmp)
-        .and_then(|mut f| f.write_all(&serde_json::to_vec(&st).unwrap_or_default()))
-        .and_then(|()| fs::rename(&tmp, &spath))
-        .map_err(|e| format!("save state: {e}"))?;
+    write_atomic(
+        &spath,
+        &serde_json::to_vec(&st).unwrap_or_default(),
+        0o600,
+        false,
+        || Ok(()),
+    )
+    .map_err(|e| format!("save state: {e}"))?;
     Ok(tpath)
 }
 

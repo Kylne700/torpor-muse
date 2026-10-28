@@ -1,6 +1,6 @@
 //! `torpor-muse doctor` (src/doctor.rs) against made-up worlds: a settings file, a vault with heartbeats, Muse logs and
 //! fake hooks. doctor must never delete or kill anything but its own probe: the tests check that as well.
-// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+// Each test crate compiles these src files on its own: what only the binary or another test crate calls looks unused.
 #[allow(dead_code)]
 #[path = "../src/doctor.rs"]
 mod doctor;
@@ -10,6 +10,9 @@ mod liveness;
 #[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
+#[allow(dead_code)]
+#[path = "../src/util.rs"]
+mod util;
 
 /// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
 mod hook {
@@ -186,9 +189,9 @@ impl World {
     fn command(&self, event: &str) -> String {
         format!(
             "env TORPOR_HOME={} TORPOR_BIN={} {} hook {event}",
-            doctor::quote(&self.vault.to_string_lossy()),
-            doctor::quote(&self.engine().to_string_lossy()),
-            doctor::quote(&self.exe().to_string_lossy())
+            util::quote(&self.vault.to_string_lossy()),
+            util::quote(&self.engine().to_string_lossy()),
+            util::quote(&self.exe().to_string_lossy())
         )
     }
 
@@ -513,7 +516,7 @@ fn another_vault_in_this_shell_is_a_warning_with_the_export_line() {
         Level::Warn,
         &format!(
             "export TORPOR_HOME={}",
-            doctor::quote(&w.vault.to_string_lossy())
+            util::quote(&w.vault.to_string_lossy())
         ),
     );
 }
@@ -748,7 +751,7 @@ fn a_problem_line_saying_the_engine_did_not_run_is_a_fix_and_says_how() {
         must(
             &r,
             Level::Fix,
-            &format!(": > {}", doctor::quote(&f.to_string_lossy())),
+            &format!(": > {}", util::quote(&f.to_string_lossy())),
         );
         assert_eq!(r.fixes(), 1, "{msg}: {}", r.text());
         every_problem_says_how(&r);
@@ -1415,13 +1418,13 @@ fn quote_and_words_round_trip() {
         "emoji \u{2713}",
     ] {
         assert_eq!(
-            doctor::words(&doctor::quote(s)),
+            doctor::words(&util::quote(s)),
             Some(vec![s.to_string()]),
             "{s:?}"
         );
     }
-    assert_eq!(doctor::quote("plain"), "plain");
-    assert_eq!(doctor::quote("it's"), r"'it'\''s'");
+    assert_eq!(util::quote("plain"), "plain");
+    assert_eq!(util::quote("it's"), r"'it'\''s'");
 }
 
 #[test]
@@ -1575,8 +1578,8 @@ fn doctor_has_no_gate_line_when_the_hook_commands_do_not_say_which_engine_they_u
     for e in ["SessionStart", "UserPromptSubmit", "Stop"] {
         let cmd = format!(
             "env TORPOR_HOME={} {} hook {e}",
-            doctor::quote(&w.vault.to_string_lossy()),
-            doctor::quote(&w.exe().to_string_lossy())
+            util::quote(&w.vault.to_string_lossy()),
+            util::quote(&w.exe().to_string_lossy())
         );
         v["hooks"][e][0]["hooks"][0]["command"] = json!(cmd);
     }

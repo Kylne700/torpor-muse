@@ -232,9 +232,32 @@ pub(super) fn net(e: ureq::Error) -> Net {
     }
 }
 
-/// One POST to `/v1/responses`. Redirects are not followed (the key must not travel on), and a status of 4xx or 5xx
-/// is a reply, not an error, so that its body and Retry-After can be read.
+/// One POST to `/v1/responses`.
 pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Reply, Net> {
+    let json = [("Content-Type", "application/json")];
+    post_to(
+        base,
+        "/v1/responses",
+        key,
+        &json,
+        body.as_bytes(),
+        MAX_BODY,
+        timeout,
+    )
+}
+
+/// One POST to `path` under `base`, with the key and `headers`. Redirects are not followed (the key must not travel
+/// on), and a status of 4xx or 5xx is a reply, not an error, so that its body and Retry-After can be read. A body
+/// longer than `limit` bytes is an error.
+pub(super) fn post_to(
+    base: &Base,
+    path: &str,
+    key: &Key,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    limit: u64,
+    timeout: Duration,
+) -> Result<Reply, Net> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .max_redirects(0)
@@ -243,12 +266,13 @@ pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Rep
         .user_agent(concat!("torpor-muse/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
-    let mut resp = agent
-        .post(format!("{}/v1/responses", base.url))
-        .header("Authorization", key.bearer())
-        .header("Content-Type", "application/json")
-        .send(body)
-        .map_err(net)?;
+    let mut req = agent
+        .post(format!("{}{path}", base.url))
+        .header("Authorization", key.bearer());
+    for (name, value) in headers {
+        req = req.header(*name, *value);
+    }
+    let mut resp = req.send(body).map_err(net)?;
     let status = resp.status().as_u16();
     let retry_after = resp
         .headers()
@@ -258,7 +282,7 @@ pub fn post(base: &Base, key: &Key, body: &str, timeout: Duration) -> Result<Rep
     let body = resp
         .body_mut()
         .with_config()
-        .limit(MAX_BODY)
+        .limit(limit)
         .read_to_string()
         .map_err(net)?;
     Ok(Reply {

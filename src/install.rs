@@ -7,9 +7,10 @@
 
 use crate::engine;
 use crate::hook::{EVENTS, Ev, RETIRED};
+use crate::util::{self, quote};
 use serde_json::{Map, Value, json};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -27,18 +28,6 @@ fn backup_path(settings: &Path) -> PathBuf {
     let mut s = settings.as_os_str().to_owned();
     s.push(".torpor-muse.bak");
     PathBuf::from(s)
-}
-
-/// Single quotes only when the shell needs them. Works in sh, bash, zsh and fish.
-fn quote(s: &str) -> String {
-    let plain = !s.is_empty()
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"_-./:=+,@%".contains(&b));
-    if plain {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
-    }
 }
 
 /// Muse runs hooks with a cleared environment (D5/AD8), so the store and the engine are baked into the command.
@@ -278,8 +267,8 @@ fn check_result(new: &Value, before_ours: &Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Writes `bytes` to `path` through a temp file in the same directory: write, fsync, `before_rename`, rename.
-/// A failure (or a crash) before the rename leaves `path` as it was. `mode` is for a new file.
+/// `util::write_atomic` with the folder made, the mode of an existing file kept (`mode` is for a new one) and the
+/// folder fsynced after the rename.
 fn write_atomic(
     path: &Path,
     bytes: &[u8],
@@ -288,28 +277,12 @@ fn write_atomic(
 ) -> io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir)?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let tmp = dir.join(format!(".{name}.tmp{}", std::process::id()));
-    let _ = fs::remove_file(&tmp); // left over from a crash of an earlier run with the same process id
-    let put = || -> io::Result<()> {
-        let mode = fs::metadata(path).map_or(mode, |m| m.permissions().mode() & 0o777);
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        before_rename()?;
-        fs::rename(&tmp, path)
-    };
-    let r = put();
-    if r.is_err() {
-        let _ = fs::remove_file(&tmp);
-    } else if let Ok(d) = fs::File::open(dir) {
+    let mode = fs::metadata(path).map_or(mode, |m| m.permissions().mode() & 0o777);
+    util::write_atomic(path, bytes, mode, true, before_rename)?;
+    if let Ok(d) = fs::File::open(dir) {
         let _ = d.sync_all();
     }
-    r
+    Ok(())
 }
 
 fn pretty(doc: &Value) -> Vec<u8> {

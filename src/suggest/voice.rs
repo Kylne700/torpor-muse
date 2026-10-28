@@ -306,7 +306,7 @@ fn multipart(wav: &[u8], keywords: &[String]) -> (String, Vec<u8>) {
     (boundary, body)
 }
 
-/// The same kind of call as `client::post`: no redirects (the key must not travel on), a 4xx or 5xx is a reply.
+/// The same kind of call as `client::post`, with the audio as a multipart body.
 fn post_audio(
     base: &client::Base,
     key: &Key,
@@ -314,41 +314,22 @@ fn post_audio(
     body: &[u8],
     timeout: Duration,
 ) -> Result<Reply, Net> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .timeout_global(Some(timeout))
-        .timeout_connect(Some(timeout.min(Duration::from_secs(10))))
-        .user_agent(concat!("torpor-muse/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .into();
-    let mut resp = agent
-        .post(format!("{}/v1/asr/transcribe", base.url))
-        .header("Authorization", key.bearer())
-        .header("Accept", "application/json")
-        .header(
+    let headers = [
+        ("Accept", "application/json"),
+        (
             "Content-Type",
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .send(body)
-        .map_err(client::net)?;
-    let status = resp.status().as_u16();
-    let retry_after = resp
-        .headers()
-        .get("retry-after")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
-    let body = resp
-        .body_mut()
-        .with_config()
-        .limit(MAX_REPLY)
-        .read_to_string()
-        .map_err(client::net)?;
-    Ok(Reply {
-        status,
-        retry_after,
+            &format!("multipart/form-data; boundary={boundary}"),
+        ),
+    ];
+    client::post_to(
+        base,
+        "/v1/asr/transcribe",
+        key,
+        &headers,
         body,
-    })
+        MAX_REPLY,
+        timeout,
+    )
 }
 
 /// One answer, read: what it cost, what was heard, and the audio length the server billed (when it said).

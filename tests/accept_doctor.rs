@@ -1,6 +1,6 @@
 //! Regression tests for defects the S3a-accept run found in `torpor-muse doctor` (e2e/RESULTS.md, check A8).
 //! doctor.rs is compiled in with the same stubs as tests/shim_doctor.rs; only its look at Muse's session logs is used.
-// Each test crate compiles these src files on its own, so what only the binary (or another test crate) calls looks unused here.
+// Each test crate compiles these src files on its own: what only the binary or another test crate calls looks unused.
 #[allow(dead_code)]
 #[path = "../src/doctor.rs"]
 mod doctor;
@@ -10,6 +10,9 @@ mod liveness;
 #[allow(dead_code)]
 #[path = "../src/transcript.rs"]
 mod transcript;
+#[allow(dead_code)]
+#[path = "../src/util.rs"]
+mod util;
 
 /// doctor.rs reads the engine's time limit per event from hook.rs; one event is enough here.
 mod hook {

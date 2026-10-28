@@ -7,6 +7,7 @@
 
 use crate::hook::EVENTS;
 use crate::liveness::{self, PROBE_SID};
+use crate::util::{quote, spawn_retry};
 use crate::{install, transcript};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -273,15 +274,6 @@ pub fn words(s: &str) -> Option<Vec<String>> {
         out.push(cur);
     }
     Some(out)
-}
-
-pub fn quote(s: &str) -> String {
-    let plain = |c: char| c.is_ascii_alphanumeric() || "_-./=:@%+,".contains(c);
-    if !s.is_empty() && s.chars().all(plain) {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
-    }
 }
 
 /// A handler that runs `.../torpor-muse hook <Event>`, which is what `init` writes.
@@ -1065,8 +1057,7 @@ fn run_shell(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    let mut child =
-        crate::liveness::spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
+    let mut child = spawn_retry(&mut cmd).map_err(|e| format!("cannot start {shell}: {e}"))?;
     if let Some(mut si) = child.stdin.take() {
         let _ = si.write_all(stdin); // small; a hook that does not read it is fine
     }

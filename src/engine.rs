@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -48,33 +48,13 @@ pub fn state_dir() -> PathBuf {
     home_dir().join("muse")
 }
 
-/// Creates `dir` (and parents) with mode 0700, like the engine does for its own directories.
-pub fn private_dir(dir: &Path) -> std::io::Result<()> {
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-}
-
-/// Writes `path` (mode 0600) through a temp file and a rename, so a reader never sees half a file.
+/// Writes `path` (mode 0600, its folder made 0700) through a temp file and a rename, so a reader never sees half a
+/// file. Not fsynced: this is for state a hook can lose.
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
-        private_dir(dir)?;
+        crate::util::private_dir(dir)?;
     }
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-    let put = || -> std::io::Result<()> {
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
-        f.write_all(bytes)?;
-        fs::rename(&tmp, path)
-    };
-    put().inspect_err(|_| {
-        let _ = fs::remove_file(&tmp);
-    })
+    crate::util::write_atomic(path, bytes, 0o600, false, || Ok(()))
 }
 
 fn is_exec(p: &Path) -> bool {
@@ -204,7 +184,7 @@ pub(crate) fn exec_without(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0); // own group: a timeout can kill the engine and everything it started in it
-    let mut child = crate::liveness::spawn_retry(&mut cmd)
+    let mut child = crate::util::spawn_retry(&mut cmd)
         .map_err(|e| format!("cannot run {}: {e}", bin.display()))?;
     let pgid = child.id() as libc::pid_t;
     if let (Some(mut pipe), Some(data)) = (child.stdin.take(), stdin) {

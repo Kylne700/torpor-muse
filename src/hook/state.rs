@@ -10,7 +10,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 const LOG_CAP: u64 = 32 << 10;
 const KEYS_CAP: u64 = 16 << 10;
@@ -88,12 +88,6 @@ impl Session {
     }
 }
 
-fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 fn append(path: &Path, bytes: &[u8]) {
     let open = || {
         OpenOptions::new()
@@ -107,7 +101,7 @@ fn append(path: &Path, bytes: &[u8]) {
         Err(_) => {
             // the directory may not exist yet
             if let Some(d) = path.parent() {
-                let _ = crate::engine::private_dir(d);
+                let _ = crate::util::private_dir(d);
             }
             match open() {
                 Ok(f) => f,
@@ -142,7 +136,7 @@ pub fn problem(dir: &Path, event: &str, sid: &str, msg: &str) {
     let sid: String = safe(sid).chars().take(8).collect();
     append(
         &path,
-        format!("{} {event} {sid} {msg}\n", unix_now()).as_bytes(),
+        format!("{} {event} {sid} {msg}\n", crate::util::now_secs()).as_bytes(),
     );
     if fs::metadata(&path).is_ok_and(|m| m.len() > LOG_CAP)
         && let Ok(text) = fs::read_to_string(&path)
@@ -208,7 +202,7 @@ fn locked<T: Serialize + serde::de::DeserializeOwned + Default, R>(
     path: &Path,
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
-    crate::engine::private_dir(path.parent()?).ok()?;
+    crate::util::private_dir(path.parent()?).ok()?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -301,11 +295,9 @@ struct Open {
 const OPEN_MAX_S: u64 = 12 * 3600;
 
 fn folder_file(dir: &Path, sub: &str, cwd: &str) -> PathBuf {
-    // FNV-1a: the same hash on every run (std's hasher promises none); the folder is stored inside and compared whole.
-    let h = cwd.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    });
-    dir.join(sub).join(format!("{h:016x}.json"))
+    // the folder is stored inside the file and compared whole
+    dir.join(sub)
+        .join(format!("{:016x}.json", crate::util::fnv1a(cwd.as_bytes())))
 }
 
 /// A main session's UserPromptSubmit: `turn` of session `sid` is the one open in `cwd`.
@@ -314,7 +306,7 @@ pub fn open_set(dir: &Path, cwd: &str, sid: &str, turn: &str) {
         cwd: cwd.into(),
         sid: sid.into(),
         turn: turn.into(),
-        at: unix_now(),
+        at: crate::util::now_secs(),
     };
     if let Ok(b) = serde_json::to_vec(&o) {
         let _ = crate::engine::write_private(&folder_file(dir, "open", cwd), &b);
@@ -324,7 +316,8 @@ pub fn open_set(dir: &Path, cwd: &str, sid: &str, turn: &str) {
 /// (session id, turn id) of the main turn open in `cwd`, if there is one.
 pub fn open_get(dir: &Path, cwd: &str) -> Option<(String, String)> {
     let o: Open = serde_json::from_slice(&fs::read(folder_file(dir, "open", cwd)).ok()?).ok()?;
-    (o.cwd == cwd && unix_now().saturating_sub(o.at) < OPEN_MAX_S).then_some((o.sid, o.turn))
+    (o.cwd == cwd && crate::util::now_secs().saturating_sub(o.at) < OPEN_MAX_S)
+        .then_some((o.sid, o.turn))
 }
 
 /// The turn of `sid` is over (a Stop that let it end, StopFailure, SessionEnd). A record of another session stays.
@@ -343,6 +336,7 @@ pub fn open_clear(dir: &Path, cwd: &str, sid: &str) {
 mod tests {
     use super::*;
     use crate::engine::testing::scratch;
+    use std::time::UNIX_EPOCH;
 
     #[test]
     fn the_stop_cap_is_two_per_turn_and_old_turns_are_forgotten() {
@@ -437,7 +431,7 @@ mod tests {
             cwd: "/w".into(),
             sid: "s".into(),
             turn: "t".into(),
-            at: unix_now() - OPEN_MAX_S - 1,
+            at: crate::util::now_secs() - OPEN_MAX_S - 1,
         };
         crate::engine::write_private(
             &folder_file(&dir, "open", "/w"),
@@ -446,7 +440,7 @@ mod tests {
         .unwrap();
         assert_eq!(open_get(&dir, "/w"), None);
         // sweep: 15 days untouched goes, in every folder; a fresh file stays
-        let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
+        let stale = UNIX_EPOCH + Duration::from_secs(crate::util::now_secs() - 15 * 86_400);
         let old_ones = [
             "db/old.json",
             "open/old.json",
@@ -476,7 +470,7 @@ mod tests {
         assert!(gate_done(&dir, "/w/a"));
         assert!(!gate_done(&dir, "/w/b"), "another folder");
         // 15 days untouched: `sweep` takes the other kinds of file, not this one
-        let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
+        let stale = UNIX_EPOCH + Duration::from_secs(crate::util::now_secs() - 15 * 86_400);
         let f = folder_file(&dir, "gate", "/w/a");
         fs::File::open(&f).unwrap().set_modified(stale).unwrap();
         sweep(&dir);
