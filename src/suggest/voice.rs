@@ -87,8 +87,8 @@ pub fn say(args: &[&str]) -> u8 {
         Ok(r) => r,
         Err(e) => return bail(&e),
     };
-    if let Err(o) = super::local_checks(&root) {
-        if o.kind == super::Kind::Error {
+    if let Err(o) = super::plan::local_checks(&root) {
+        if o.kind == super::types::Kind::Error {
             return bail(&o.message);
         }
         println!("{}: {}", o.kind.word(), o.message);
