@@ -345,5 +345,7 @@ fn the_ledger_has_a_row_for_every_response_including_failed_ones() {
     );
     assert!(rows[0]["usd"].as_f64().unwrap() > 0.0);
     assert_eq!(rows[1]["est"], false);
-    assert_eq!(sb.result()["calls"], 2);
+    // the first question about the words and the two tries: three requests, three rows
+    assert_eq!(sb.result()["calls"], 3);
+    assert_eq!(sb.ledger_all().len(), 3);
 }

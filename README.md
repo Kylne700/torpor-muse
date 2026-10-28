@@ -8,7 +8,7 @@
 
 **Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, then `torpor-muse init` and [add your Meta API key](#add-your-meta-api-key). After that you run no Torpor commands; you just talk to the AI.
 
-**Cost:** about half a US cent per prompt in a Node app (measured once: USD 0.005265). The check-writer sends your prompt, file names and up to 14 KB of your code to Meta's API, with your own key, at most USD 2 a day. The engine makes no AI calls.
+**Cost:** about half a US cent per prompt in a Node app (measured once: USD 0.005265). For each prompt the check-writer sends the cleaned words (at most 1,500 characters) to Meta's API for a yes/no answer to "does this say something works?". File names and up to 14 KB of your code go only when the answer is yes, or when that question gets no usable answer. It uses your own key, at most USD 2 a day. The engine makes no AI calls.
 
 **If Torpor fails**, your Muse turn goes on, and you are told once per session that Torpor is not saving.
 
@@ -159,16 +159,16 @@ That run was recorded before Torpor started to switch the gate off at the first 
 
 ## What is sent to Meta
 
-The check-writer runs in the background after a prompt in Muse Code, or when you run `torpor-muse suggest` by hand. One run sends two things to Muse Spark through the Meta Model API (model id `muse-spark-1.3`):
+The check-writer runs in the background after a prompt in Muse Code, or when you run `torpor-muse suggest` by hand. One run makes up to two requests to Muse Spark through the Meta Model API (model id `muse-spark-1.3`):
 
-1. The words you typed, whether or not they say that something works (the model decides that). A prompt over 1500 characters is cut in the middle (the first 1000 and the last 500 characters go), and the words are redacted.
-2. A look at the project's code, redacted: a list of up to 120 names of files that may go, then the start of those files: `package.json` first, then entry files such as `server.js`, then top-level files and routes, test files last. At most 6,000 bytes of one file and 300 characters of one line go, and about 14,000 bytes in all, the list included. A file over 64,000 bytes is not read.
+1. For every prompt, the words you typed, cleaned and redacted (at most 1,500 characters: a prompt over 1500 characters is cut in the middle, the first 1000 and the last 500 characters go), for a yes/no question: does this say something works? No file name and no code go with them. If the answer is no, the run ends there and nothing more is sent.
+2. Only when the answer is yes, or when the first request got no usable answer (a failed call, a timeout, an answer that cannot be read): the same words again and a look at the project's code, redacted: a list of up to 120 names of files that may go, then the start of those files: `package.json` first, then entry files such as `server.js`, then top-level files and routes, test files last. At most 6,000 bytes of one file and 300 characters of one line go, and about 14,000 bytes in all, the list included. A file over 64,000 bytes is not read.
 
 Only code files may go (`.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.jsx`, `.html`, `.ejs`, `.hbs`, `.pug`, `.py`, `.rb`, `.php`, `.go`, `.java`, `.rs`, `.cs`, `.vue`) and the manifests `package.json` and `tsconfig*.json`. In a git project only those git tracks or does not ignore may go; without git only those in the top folder. Nothing else goes: no data or notes (other `.json`, `.txt`, `.md`, `.csv`, `.sql`, database files), no README, nothing whose path has a part that starts with a dot, nothing in `node_modules`, `dist`, `build`, `target`, `vendor`, `coverage`, `__pycache__`, `venv`, `out`, `tmp` or `logs`, no `.min.js` or `.d.ts` file, and no file whose name holds `secret` or `credential`. Data written inside a code file (for example a `data.js` that holds the app's records) still goes with that file.
 
 Redaction is best effort, by name and by shape. It replaces with `[redacted]` the value after a name such as `secret`, `token`, `apikey`, `private_key`, `credential`, `authorization` or `password`, the user and password in a URL, the word after `Bearer` or `Basic`, and anything shaped like a key (a long mixed string, or one that starts like a known token: `sk-`, `AKIA`, `AIza`, `LLM_`, `eyJ`, and the prefixes of GitHub, GitLab and Slack tokens); a PEM key block is cut out. Only in a folder with a `.synthetic` file (made-up content, for tests and demos) a password stays, so that the model can use a demo login. A secret in another shape can get through: keep real secrets out of code files.
 
-`torpor-muse say <clip.wav>` first sends the audio file to Meta's Voice Transcribe API (model `muse-voice-transcribe-1.0`) and, unless `--no-keywords` is given, up to 24 words from the names of the project's code files and the URL paths in its code. The words that come back then go to the check-writer as typed words, so the two things above are sent as well.
+`torpor-muse say <clip.wav>` first sends the audio file to Meta's Voice Transcribe API (model `muse-voice-transcribe-1.0`) and, unless `--no-keywords` is given, up to 24 words from the names of the project's code files and the URL paths in its code. The words that come back then go to the check-writer as typed words, so the requests above are made as well.
 
 The Torpor engine sends nothing to Meta. Its own README (Privacy section) says it makes no AI model calls and uploads nothing of the project. The same section says its only download is `torpor runner install`, which runs after you confirm.
 

@@ -51,6 +51,11 @@ fn block(name: &str, nonce: &str, body: &str) -> String {
     )
 }
 
+/// The data part of the first question (src/suggest/first.rs): the developer's words alone, no file and no script.
+pub fn words_input(nonce: &str, words: &str) -> String {
+    block("developer_words", nonce, words)
+}
+
 /// The previous try that the engine turned down: the check we sent and the engine's own words.
 pub struct Rejected<'a> {
     pub answer: &'a str,

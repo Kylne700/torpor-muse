@@ -3,6 +3,7 @@
 // Transcribe). Node >= 20, no dependencies. See README.md.
 //   node mock/server.mjs --port <n|0> [--fixture a,b,c] [--output-text-file <path>] [--delay-ms <n>] [--log <file>]
 //                        [--asr ok,429,...] [--transcript <text>]
+//                        [--first-fixture a,b] [--first-text-file <path>] [--first-usage <input>,<cached>,<output>]
 import fs from 'node:fs';
 import http from 'node:http';
 import { parseArgs } from 'node:util';
@@ -13,6 +14,8 @@ const ENVELOPES = ['ok', 'truncated', 'refusal', 'empty', 'schema-400', 'rate-42
 const BEHAVIOURS = ['slow', 'hang', 'drop-mid-body']; // slow and drop-mid-body send the ok envelope
 const NAMES = [...ENVELOPES, ...BEHAVIOURS];
 const DEFAULT_DELAY_MS = 2000; // when slow runs without --delay-ms (not in the lead's interface; the report says so)
+const FIRST_PASS_FORMAT = 'torpor_muse_first_pass'; // text.format.name of the check-writer's first question (words only)
+const FIRST_PASS_TEXT = '{"verdict":"claim","reason":""}';
 
 const die = (msg) => {
   console.error(`mock: ${msg}`);
@@ -25,6 +28,7 @@ try {
     options: {
       port: { type: 'string' }, fixture: { type: 'string' }, 'output-text-file': { type: 'string' }, 'delay-ms': { type: 'string' }, log: { type: 'string' },
       asr: { type: 'string' }, transcript: { type: 'string' },
+      'first-fixture': { type: 'string' }, 'first-text-file': { type: 'string' }, 'first-usage': { type: 'string' },
     },
     strict: true,
   }).values;
@@ -41,8 +45,20 @@ const asrSequence = (opts.asr ?? 'ok').split(',').map((s) => s.trim());
 for (const n of asrSequence) if (!['ok', 'hang', 'drop'].includes(n) && !/^(?!200$)[1-5]\d\d$/.test(n)) die(`unknown --asr entry "${n}"; valid: ok, hang, drop, or an HTTP status such as 429`);
 const transcript = opts.transcript ?? 'login works now for alice and bob';
 const textFile = opts['output-text-file'];
+const firstTextFile = opts['first-text-file'];
+const firstSequence = (opts['first-fixture'] ?? 'ok').split(',').map((s) => s.trim());
+for (const n of firstSequence) if (!NAMES.includes(n)) die(`unknown first-pass fixture "${n}"; valid: ${NAMES.join(', ')}`);
+// "input,cached,output" token counts for the first question's answers (the recorded usage when not given)
+function parseUsage(s) {
+  if (s === undefined) return undefined;
+  const v = s.split(',').map((x) => (/^\d+$/.test(x.trim()) ? Number(x) : NaN));
+  if (v.length !== 3 || v.some(Number.isNaN) || v[1] > v[0]) die('--first-usage must be <input>,<cached>,<output>: whole numbers, cached <= input');
+  return { input_tokens: v[0], input_tokens_details: { cached_tokens: v[1] }, output_tokens: v[2], output_tokens_details: { reasoning_tokens: 0 }, total_tokens: v[0] + v[2] };
+}
+const firstUsage = parseUsage(opts['first-usage']);
 try {
   if (textFile !== undefined) fs.readFileSync(textFile, 'utf8');
+  if (firstTextFile !== undefined) fs.readFileSync(firstTextFile, 'utf8');
   if (opts.log !== undefined) fs.appendFileSync(opts.log, '');
 } catch (e) {
   die(`cannot use a file given on the command line: ${e.message}`);
@@ -63,15 +79,31 @@ function withText(name, body, text) {
   }
 }
 
-function build(name, n) {
+// The two kinds of /v1/responses request count and are answered apart: the check-writer's own, and the first question
+// about the words alone (told by the name of its answer format), so one never uses up the other's fixtures.
+const channels = {
+  main: { tag: '', sequence, served: 0, textFile, text: undefined, usage: undefined },
+  first: { tag: 'first_', sequence: firstSequence, served: 0, textFile: firstTextFile, text: FIRST_PASS_TEXT, usage: firstUsage },
+};
+const isFirstPass = (raw) => {
+  try {
+    return JSON.parse(raw.toString('utf8'))?.text?.format?.name === FIRST_PASS_FORMAT;
+  } catch {
+    return false;
+  }
+};
+
+function build(name, n, ch) {
   const fx = fixtures[name];
   const body = structuredClone(fx.body);
   if (body.object === 'response') {
     const now = Math.floor(Date.now() / 1000);
-    body.id = `resp_mock_${n}`;
+    body.id = `resp_mock_${ch.tag}${n}`;
     body.created_at = now;
     if ('completed_at' in body) body.completed_at = now;
-    if (textFile !== undefined) withText(name, body, fs.readFileSync(textFile, 'utf8'));
+    const text = ch.textFile === undefined ? ch.text : fs.readFileSync(ch.textFile, 'utf8');
+    if (text !== undefined) withText(name, body, text);
+    if (ch.usage !== undefined) body.usage = ch.usage;
   }
   const buf = Buffer.from(JSON.stringify(body));
   return { status: fx.status, headers: { ...fx.headers, 'content-length': buf.length }, buf };
@@ -144,7 +176,6 @@ function asr(req, mp, n, name) {
   return { status: 200, headers: { 'content-type': 'application/json', 'content-length': buf.length }, buf };
 }
 
-let served = 0; // only POST /v1/responses requests are counted
 let asrServed = 0; // transcribe requests have their own count, so a voice run never uses up the writer fixtures
 const server = http.createServer((req, res) => {
   const chunks = [];
@@ -171,11 +202,12 @@ const server = http.createServer((req, res) => {
       res.writeHead(404, { 'content-length': 0 }); // the real API sends no body for an unknown path
       return res.end();
     }
-    const name = sequence[Math.min(served, sequence.length - 1)];
-    const n = ++served;
+    const ch = isFirstPass(raw) ? channels.first : channels.main;
+    const name = ch.sequence[Math.min(ch.served, ch.sequence.length - 1)];
+    const n = ++ch.served;
     try {
       if (name === 'hang') return; // never answers; the socket stays open until the client or this process ends
-      const { status, headers: h, buf } = build(name === 'slow' || name === 'drop-mid-body' ? 'ok' : name, n);
+      const { status, headers: h, buf } = build(name === 'slow' || name === 'drop-mid-body' ? 'ok' : name, n, ch);
       if (name === 'drop-mid-body') {
         res.writeHead(status, h); // full content-length, half of the bytes, then the socket dies
         return res.write(buf.subarray(0, Math.max(1, buf.length >> 1)), () => req.socket.destroy());

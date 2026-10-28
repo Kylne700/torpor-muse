@@ -1,5 +1,6 @@
 //! `suggest "<what works>"`: Muse Spark (Responses API, text.format json_schema) writes a check from the user's words;
-//! the engine proves it or keeps it advisory. `trigger` starts a detached run from UserPromptSubmit. Owner: S3b-writer.
+//! the engine proves it or keeps it advisory. `first` asks about the words alone before any code is sent. `trigger`
+//! starts a detached run from UserPromptSubmit. Owner: S3b-writer.
 //!
 //! Exit codes of `run`: 0 a promise was saved (proven or advisory), 3 nothing saved (the reason is printed),
 //! 1 the run could not work (no key, no engine, no state folder, another run holds the lock), 2 wrong use.
@@ -9,6 +10,7 @@
 mod attach;
 mod client;
 mod finish;
+mod first;
 mod plan;
 mod prompt;
 mod read;
@@ -103,7 +105,7 @@ pub fn run(words: &str) -> u8 {
     };
     watchdog(&c);
     let outcome = match plan(&mut c, &root, &words, hook.is_some(), base, http) {
-        Ok(p) => work(&mut c, &p),
+        Ok(p) => first::pass(&mut c, &p).unwrap_or_else(|| work(&mut c, &p)),
         Err(o) => o,
     };
     finish(&c, outcome)
