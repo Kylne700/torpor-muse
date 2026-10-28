@@ -723,6 +723,20 @@ fn the_day_cap_stops_the_run_before_the_call() {
     );
     assert_eq!(r.code, 3, "out={:?} err={:?}", r.out, r.err);
     assert_eq!(mock.requests().len(), 0);
+
+    // a cap of zero in the config file (the README names it): every run stops before the call
+    let sb = Sandbox::new("cap4");
+    let cfg_dir = sb.home().join(".config/torpor-muse");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    let cfg = cfg_dir.join("config");
+    fs::write(&cfg, "day_cap_usd = 0\n").unwrap();
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o600)).unwrap();
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+    assert_eq!(r.code, 3, "out={:?} err={:?}", r.out, r.err);
+    assert!(r.out.contains("Nothing was sent"), "{}", r.out);
+    assert_eq!(sb.result()["code"], "cap");
+    assert_eq!(mock.requests().len(), 0);
 }
 
 #[test]
@@ -897,6 +911,25 @@ fn from_the_hook_the_run_asks_the_engine_first_and_spends_nothing_when_it_should
     assert_eq!(r.code, 0, "out={:?} err={:?}", r.out, r.err);
     assert_eq!(mock.requests().len(), 1);
     assert_eq!(sb.result()["session"], "session-1");
+}
+
+/// A folder with no start script is news for the user only where Torpor is saving: after `torpor off` the run ends
+/// at the engine's answer, as in any other folder, and the next prompt says nothing about an app.
+#[test]
+fn a_folder_that_is_no_app_is_news_only_where_torpor_is_saving() {
+    let saving = "{\"saving\":true,\"off\":false,\"last_turn\":{\"n\":2}}";
+    let off = "{\"saving\":false,\"off\":true,\"last_turn\":{\"n\":2}}";
+    for (tag, status, code) in [("hook-app-on", saving, "app"), ("hook-app-off", off, "")] {
+        let sb = Sandbox::new(tag);
+        sb.write("package.json", "{\"name\":\"x\"}\n");
+        fs::remove_file(sb.ws.join("server.js")).unwrap();
+        sb.engine_file("status.json", status);
+        let mock = Mock::ok(&sb.dir, &good_answer());
+        let r = sb.suggest(Some(&mock.base()), "-", &hook_env(WORDS));
+        assert_eq!(r.code, 3, "{tag}: out={:?} err={:?}", r.out, r.err);
+        assert_eq!(sb.result()["code"], code, "{tag}: {}", r.out);
+        assert_eq!(mock.requests().len(), 0, "{tag}");
+    }
 }
 
 #[test]

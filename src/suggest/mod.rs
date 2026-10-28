@@ -279,7 +279,7 @@ fn plan(
     }
     let cfg = client::load_config().map_err(fail)?;
     let cap = client::day_cap(&cfg).map_err(fail)?;
-    let starts = local_checks(root)?;
+    // first: where Torpor is not saving, nothing about the folder (no start script) is news for the user
     if hook {
         let turn = attach::hook_turn(root).map_err(|why| Outcome::new(Kind::Skipped, why))?;
         if attach::promised_at(root, turn.n) {
@@ -289,6 +289,7 @@ fn plan(
             ));
         }
     }
+    let starts = local_checks(root)?;
     let key = client::load_key(&cfg).map_err(|m| fail(m).code("key"))?;
     c.key = Some(key.clone());
     Ok(Plan {
