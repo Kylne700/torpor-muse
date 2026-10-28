@@ -14,7 +14,14 @@ mod transcript;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: torpor-muse init | uninstall | hook <Event> | doctor | suggest \"<what works>\" | say <clip.wav> | version";
+const USAGE: &str = "usage: torpor-muse <command>
+  init                    connect Torpor to Muse Code (run once)
+  doctor                  check that the connection works
+  suggest \"<what works>\"  write a check from your words
+  say <clip.wav>          the same, from a spoken clip
+  uninstall               disconnect Torpor from Muse Code
+  version                 print the version
+  hook <Event>            internal: Muse Code runs this, not you";
 
 fn main() -> ExitCode {
     // not `args()`: it panics on an argument that is not UTF-8

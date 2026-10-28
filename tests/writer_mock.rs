@@ -39,6 +39,50 @@ fn a_saved_check_says_which_part_of_the_words_it_cannot_prove() {
     assert!(!r.out.contains("Not covered"), "{:?}", r.out);
 }
 
+/// S2 on F4b: the engine's "In shadow for now ..." tail (the fake engine's is short) is true only with the gate on, and
+/// the gate is off in a new folder. The line the user reads follows what `torpor gate` says.
+#[test]
+fn a_proven_checks_line_promises_a_stop_only_when_the_gate_is_on() {
+    let off = "The gate is off. Promises show failures but do not stop the AI. Turn it on: torpor gate on\n";
+    let cases = [
+        ("on", Some("The gate is on.\n"), true),
+        ("none", None, true), // the fake engine's own default is "on"
+        ("off", Some(off), false),
+        (
+            "advisory",
+            Some("The gate is advisory: two disputes were upheld within 7 days.\n"),
+            false,
+        ),
+        (
+            "unknown",
+            Some("Torpor has no save points for this folder yet.\n"),
+            false,
+        ),
+    ];
+    for (tag, gate, keeps_tail) in cases {
+        let sb = Sandbox::new(&format!("gate-{tag}"));
+        say_proven(&sb);
+        if let Some(g) = gate {
+            sb.engine_file("gate.txt", g);
+        }
+        let mock = Mock::ok(&sb.dir, &good_answer());
+        let r = sb.suggest(Some(&mock.base()), WORDS, &[]);
+        let ctx = format!("{tag}: out={:?} err={:?}", r.out, r.err);
+        assert_eq!(r.code, 0, "{ctx}");
+        assert!(
+            r.out
+                .starts_with("proven: Promise #1 \"login works\" saved. Proof: passed 5 of 5"),
+            "{ctx}"
+        );
+        assert_eq!(r.out.contains("In shadow for now"), keeps_tail, "{ctx}");
+        assert_eq!(r.out.contains("blocks nothing yet"), keeps_tail, "{ctx}");
+        let says_told =
+            r.out.contains("it does not stop the AI") && r.out.contains("`torpor gate on`");
+        assert_eq!(says_told, !keeps_tail && tag != "unknown", "{ctx}");
+        assert_eq!(sb.result()["outcome"], "proven", "{ctx}");
+    }
+}
+
 /// dogfood1 M5: a step on a record already in the user's data (a note id the check did not create) is left out and
 /// named as not covered; when no step is left, nothing is saved.
 #[test]
