@@ -225,8 +225,9 @@ pub fn redact(text: &str, synthetic: bool) -> String {
             continue;
         }
         let l = mask_url_credentials(line);
-        let l = mask_assignments(&l, synthetic);
+        // Bearer first: in `Authorization: Bearer x` the name rule masks the word "Bearer" and would leave x
         let l = mask_bearer(&l);
+        let l = mask_assignments(&l, synthetic);
         out.push_str(&mask_key_like(&l));
         out.push('\n');
     }

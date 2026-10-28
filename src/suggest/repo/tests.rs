@@ -41,6 +41,23 @@ fn secrets_by_shape_and_by_name_are_masked() {
 }
 
 #[test]
+fn a_bearer_token_after_a_sensitive_name_is_masked() {
+    let tok = format!("{}{}", "abc123", "def456");
+    for line in [
+        format!("curl -H \"Authorization: Bearer {tok}\" https://api.example.com"),
+        format!("token: Bearer {tok}"),
+        format!("password = Bearer {tok}"),
+        format!("apikey=Bearer {tok}"),
+        format!("Authorization: Basic {tok}"),
+    ] {
+        for synthetic in [true, false] {
+            let out = redact(&line, synthetic);
+            assert!(!out.contains(&tok), "{tok} leaked in: {out}");
+        }
+    }
+}
+
+#[test]
 fn pem_blocks_are_dropped() {
     let pem = format!(
         "a\n-----BEGIN {} KEY-----\nMIIBVQIBADANBgkq\n-----END {} KEY-----\nb",
