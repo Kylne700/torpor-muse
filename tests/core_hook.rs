@@ -2522,6 +2522,8 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         why.contains("Promise #1 \"proof page answers\" (turn 5 broke it) failed after this turn."),
         "{why}"
     );
+    // the engine words its own block "... fails now ..." (asserted below with the gate on); with the gate off it sends none
+    assert!(!why.contains("fails now"), "{why}");
     assert!(said(&off).contains("The AI was not stopped."), "{off}");
     assert!(blocked(&stop_of(&r, 6)).is_none());
     // fixed again, gate on, broken again: the engine's own block goes out as it is; ours is not added, and the next Stop
