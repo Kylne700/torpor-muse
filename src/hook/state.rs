@@ -1,7 +1,8 @@
 //! Our own small files in `<TORPOR_HOME>/muse/` (best effort: a failure here never stops a hook):
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
 //! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
-//! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd).
+//! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
+//! (the folder's engine gate was switched off once, `hook::gate_default`; never swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
@@ -264,6 +265,27 @@ pub fn sweep(dir: &Path) {
     }
 }
 
+/// A folder whose engine gate `hook::gate_default` has switched off once; stored inside and compared whole. Kept without an
+/// end (`sweep` leaves `gate/` alone): the file is what lets a later `torpor gate on` of the user's stay on.
+#[derive(Serialize, Deserialize)]
+struct GateDone {
+    cwd: String,
+}
+
+/// Was the gate default set for folder `cwd`?
+pub fn gate_done(dir: &Path, cwd: &str) -> bool {
+    fs::read(folder_file(dir, "gate", cwd))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<GateDone>(&b).ok())
+        .is_some_and(|d| d.cwd == cwd)
+}
+
+/// Marks `cwd`; false when that could not be written.
+pub fn gate_mark(dir: &Path, cwd: &str) -> bool {
+    serde_json::to_vec(&GateDone { cwd: cwd.into() })
+        .is_ok_and(|b| crate::engine::write_private(&folder_file(dir, "gate", cwd), &b).is_ok())
+}
+
 /// The main turn open in a folder. Muse gives a subagent's tool events no parent id (its session id and turn id are its
 /// own), only the folder, so hook.rs files them under the turn recorded here. One file per folder, replaced whole
 /// (the hooks of a parent and its subagents run at the same time).
@@ -444,6 +466,21 @@ mod tests {
         sweep(&dir);
         assert!(old_ones.iter().all(|f| !dir.join(f).exists()));
         assert!(dir.join("open/new.json").exists() && dir.join("beats/new.jsonl").exists());
+    }
+
+    #[test]
+    fn the_gate_default_is_marked_per_folder_and_the_mark_is_never_swept() {
+        let dir = scratch("state-gate");
+        assert!(!gate_done(&dir, "/w/a"));
+        assert!(gate_mark(&dir, "/w/a"));
+        assert!(gate_done(&dir, "/w/a"));
+        assert!(!gate_done(&dir, "/w/b"), "another folder");
+        // 15 days untouched: `sweep` takes the other kinds of file, not this one
+        let stale = UNIX_EPOCH + Duration::from_secs(unix_now() - 15 * 86_400);
+        let f = folder_file(&dir, "gate", "/w/a");
+        fs::File::open(&f).unwrap().set_modified(stale).unwrap();
+        sweep(&dir);
+        assert!(gate_done(&dir, "/w/a"));
     }
 
     #[test]
