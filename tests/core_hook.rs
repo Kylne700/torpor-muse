@@ -2040,14 +2040,22 @@ fn real_engine_one_read_rolls_back_a_hot_journal_and_the_delete_then_goes_throug
     }
 }
 
-/// F4c item 10, the open limit. A `-journal` that a clean close left behind in PERSIST (zero header) or TRUNCATE (empty)
-/// mode survives the read, so the delete stays denied; the text says to ask the user.
+/// F4c item 10, the open limit. A `-journal` that a clean close left behind in PERSIST mode (its header is zeroed)
+/// survives the read, so the delete stays denied; the text says to ask the user.
 #[test]
-fn real_engine_a_journal_a_clean_close_left_survives_the_read_and_the_delete_stays_denied() {
+fn real_engine_a_persist_journal_a_clean_close_left_survives_the_read_and_the_delete_stays_denied()
+{
     for form in exit_forms() {
-        for kind in ["persist", "truncate"] {
-            exit_scenario(kind, form);
-        }
+        exit_scenario("persist", form);
+    }
+}
+
+/// F4c item 10, the open limit, as above for TRUNCATE mode (the journal file is empty).
+#[test]
+fn real_engine_a_truncate_journal_a_clean_close_left_survives_the_read_and_the_delete_stays_denied()
+{
+    for form in exit_forms() {
+        exit_scenario("truncate", form);
     }
 }
 
