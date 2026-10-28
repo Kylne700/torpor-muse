@@ -90,6 +90,7 @@ fn real_engine_a_claim_meets_its_record_once_per_turn_and_only_when_the_record_s
     );
     // the Stop after the block, and a second look in the same turn, say nothing more
     assert!(blocked(&stop(&r, 3, "All tests pass.", true)).is_none());
+    assert!(blocked(&stop(&r, 3, "All tests pass.", false)).is_none());
 
     // turn 4: a passing run, then the claim: nothing to say
     let v = turn(&r, 4, "npm test", 0, None, "The tests pass.");
