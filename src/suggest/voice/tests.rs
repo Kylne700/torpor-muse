@@ -12,7 +12,14 @@ use std::io::Write;
 use std::path::Path;
 
 /// A WAV with `data` bytes of audio and the given format; `extra` is a chunk put before `data`.
-fn wav_with(tag: u16, channels: u16, rate: u32, bits: u16, data: usize, extra: &[u8]) -> Vec<u8> {
+pub(super) fn wav_with(
+    tag: u16,
+    channels: u16,
+    rate: u32,
+    bits: u16,
+    data: usize,
+    extra: &[u8],
+) -> Vec<u8> {
     let mut fmt = Vec::new();
     fmt.extend_from_slice(&tag.to_le_bytes());
     fmt.extend_from_slice(&channels.to_le_bytes());
