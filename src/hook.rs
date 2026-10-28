@@ -916,11 +916,21 @@ fn busy_guard(payload: &Value, cwd: &str, left: Duration, body: Option<String>) 
             String::new()
         }
     );
+    // A crash leaves `-wal`/`-journal` files that no command could remove, so the deny would never lift. One read makes
+    // SQLite finish the job: it rolls a hot `-journal` back, and the last connection to close folds the `-wal` into the
+    // file and removes `-wal` and `-shm`; while another program holds the database the files stay and so does the deny.
+    // The text never offers a command that deletes or empties a file of the database.
+    // shortcut: a `-journal` left by a clean close in PERSIST or TRUNCATE mode survives the read (SQLite keeps it on
+    // purpose), so the text ends with the user; upgrade when the engine stops calling such a journal busy.
     let why = format!(
         "Torpor: this command was not run. A database is in use: {list}. Torpor cannot save a database while it is in \
          use, so it could not bring it back after this command. Stop the app that uses it first (or ask the user to), \
-         then run the command again. If no app is running (a crash left its files behind), the command stays refused: \
-         tell the user. They can run it in their own terminal, but Torpor cannot bring the database back."
+         then run the command again. If no app is running (a crash left its files behind), let SQLite clean them up by \
+         reading each database once: `sqlite3 <db> 'SELECT count(*) FROM sqlite_master;'` (without the sqlite3 \
+         program: `python3 -c \"import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); \
+         c.execute('SELECT count(*) FROM sqlite_master').fetchall(); c.close()\" <db>`), then run the command \
+         again. If it is refused again, ask the user: they can run it in their own terminal, but Torpor cannot \
+         bring the database back."
     );
     schema::deny("PreToolUse", body.as_deref(), &why).or(body)
 }
