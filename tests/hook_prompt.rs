@@ -336,7 +336,7 @@ fn a_claim_whose_check_was_not_saved_is_told_once_per_session_in_one_plain_sente
         (
             "records",
             "no check saved: step 1 (PUT /api/notes/mvqm4ta2) left out: it needs a record already in your data, which the check did not create",
-            "Torpor's check-writer wrote a check for an earlier claim of yours, but every step in it needed a record already in your data, which the check did not create, so no check was saved. Save points and undo are not affected.",
+            "Torpor's check-writer wrote a check for an earlier claim of yours, but every step needed a record that already existed in your data and was not created by the check, so no check was saved. Save points and undo are not affected.",
         ),
         (
             "lint",

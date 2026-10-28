@@ -10,6 +10,9 @@ use std::time::Duration;
 
 const SAVING: &str = "Save points and undo are not affected.";
 
+/// The longest the look at the engine's `status` may take: a prompt is never held up longer for the notice.
+const STATUS_WAIT: Duration = Duration::from_secs(2);
+
 /// Told once to the user in a folder where the check-writer will send a prompt: what goes to Meta and how to stop it.
 /// The facts are those of the README, "What is sent to Meta".
 const SEND_NOTICE: &str = "Torpor's check-writer sends each prompt you type, cleaned and redacted, to Meta to ask whether \
@@ -156,21 +159,25 @@ fn writer_news(
 /// Will the check-writer send this prompt to Meta? What a run reads before it sends, the cheap local reads first
 /// (`suggest::would_send`: a usable key, a prompt with something in it, an app to start, a day cap above 0), then the
 /// engine's word that Torpor saves here (after `torpor off` the run stops before it sends anything). `left`: what is
-/// left of the hook's time; an engine that does not answer in it counts as no, and the notice waits for a prompt where
-/// it does.
+/// left of the hook's time; an engine that does not answer in it (or in `STATUS_WAIT`) counts as no, and the notice waits
+/// for a prompt where it does.
 /// shortcut: a run already under way, a day cap that is used up and a `status` that fails once are not seen, so the
 /// notice can come with a prompt that is not sent after all, or one prompt late; upgrade if that shows up.
 pub(super) fn will_send(cwd: &str, prompt: &str, bin: &Path, left: Duration) -> bool {
     !cwd.is_empty()
         && left >= Duration::from_millis(250)
         && suggest::would_send(cwd, prompt)
-        && engine::exec(bin, &["status", "--json"], None, Some(Path::new(cwd)), left)
-            .ok()
-            .filter(|o| o.code == 0)
-            .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
-            .is_some_and(|s| {
-                s["off"] != true && s["saving"] == true && s["last_turn"]["n"].is_u64()
-            })
+        && engine::exec(
+            bin,
+            &["status", "--json"],
+            None,
+            Some(Path::new(cwd)),
+            left.min(STATUS_WAIT),
+        )
+        .ok()
+        .filter(|o| o.code == 0)
+        .and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok())
+        .is_some_and(|s| s["off"] != true && s["saving"] == true && s["last_turn"]["n"].is_u64())
 }
 
 /// The sentence for a claim whose check was not saved, from the run's words (`words`, made safe). The generic frame
@@ -186,8 +193,8 @@ fn nosave_line(words: &str) -> String {
     let wrote = "Torpor's check-writer wrote a check for an earlier claim of yours, but";
     if after(NO_CHECK_SAVED).is_some() {
         format!(
-            "{wrote} every step in it needed a record already in your data, which the check did not create, so no check \
-             was saved. {SAVING}"
+            "{wrote} every step needed a record that already existed in your data and was not created by the check, so \
+             no check was saved. {SAVING}"
         )
     } else if let Some(why) = after(TURNED_DOWN).or_else(|| after(NOT_SAVED)) {
         format!(

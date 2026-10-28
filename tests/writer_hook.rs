@@ -124,9 +124,16 @@ fn a_run_that_failed_is_told_to_the_user_at_the_next_prompt_of_the_session_once(
     let first = hook(&sb, &engine, &mock.base(), "s1", PRAISE);
     assert_eq!(first.status.code(), Some(0));
     let said = |o: &std::process::Output| String::from_utf8_lossy(&o.stdout).to_string();
-    // (this first prompt carries the notice of what the check-writer sends; it is no news about an earlier run)
+    // the first prompt of a folder the check-writer sends from carries the notice of what it sends (the real engine
+    // says Torpor saves here); about an earlier run it has nothing to say
+    let notice = "Torpor's check-writer sends each prompt you type";
     assert!(
-        !said(&first).contains("earlier"),
+        said(&first).contains(notice),
+        "the notice is told: {}",
+        said(&first)
+    );
+    assert!(
+        !said(&first).replace(notice, "").contains("check-writer"),
         "nothing has failed yet: {}",
         said(&first)
     );
