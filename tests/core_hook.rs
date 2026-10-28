@@ -26,8 +26,8 @@ fn pinned() -> &'static str {
 /// A stand-in engine (POSIX sh). Per event, files next to it steer it: `sleep.<E>` (seconds to hang), `err.<E>`
 /// (stderr), `out.<E>` (stdout), `code.<E>` (exit code). It keeps every payload as `in.<E>.<n>`, every `version` call
 /// as a line of `version.calls`, and the pids of what it started as `pid.<E>` and `child.<E>`. `status --json`,
-/// `show N --json` and `back --id P ...` print `out.status`, `out.show.N` and `out.back.P` when those exist; every
-/// call that is not `hook` or `version` is a line of `calls.log`.
+/// `show N --json` and `back --id P ...` print `out.status`, `out.show.N` and `out.back.P` when those exist; `gate ...`
+/// exits `code.gate` (0 when there is no such file); every call that is not `hook` or `version` is a line of `calls.log`.
 fn write_fake(dir: &Path, version: &str) -> PathBuf {
     let script = format!(
         r#"#!/bin/sh
@@ -38,6 +38,7 @@ version) echo x >> "$d/version.calls"; echo 'torpor {version}'; exit 0 ;;
 status) [ -f "$d/out.status" ] && cat "$d/out.status" && exit 0 ;;
 show) [ -f "$d/out.show.$2" ] && cat "$d/out.show.$2" && exit 0 ;;
 back) [ -f "$d/out.back.$3" ] && cat "$d/out.back.$3" && exit 0 ;;
+gate) [ -f "$d/code.gate" ] && exit "$(cat "$d/code.gate")"; exit 0 ;;
 hook)
   c=$(cat "$d/count.$2" 2>/dev/null || echo 0); c=$((c + 1)); echo $c > "$d/count.$2"
   cat > "$d/in.$2.$c"
@@ -135,9 +136,15 @@ impl Rig {
     }
 
     fn hook_bytes(&self, event: &str, stdin: &[u8]) -> Run {
+        self.hook_env(event, stdin, &[])
+    }
+
+    /// `hook_bytes` with more variables in the hook's environment.
+    fn hook_env(&self, event: &str, stdin: &[u8], env: &[(&str, &str)]) -> Run {
         let t0 = Instant::now();
         let mut child = self
             .command(EXE, &["hook", event])
+            .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1074,6 +1081,13 @@ fn engine_cli_stdin(r: &Rig, args: &[&str], stdin: &str) -> (i32, String) {
         String::from_utf8_lossy(&o.stderr)
     );
     (o.status.code().unwrap_or(-1), text)
+}
+
+/// The first line of the engine's `torpor gate` in the rig's folder, as a person reads it ("The gate is off. ...").
+fn gate_state(r: &Rig) -> String {
+    let (code, text) = engine_cli(r, &["gate"]);
+    assert_eq!(code, 0, "{text}");
+    text.lines().next().unwrap_or("").to_owned()
 }
 
 #[test]
@@ -2065,6 +2079,150 @@ fn real_engine_every_reply_in_a_session_is_valid_muse_output() {
     assert!(!run.out.contains("Approve only"), "{}", run.out);
 }
 
+// ---------------------------------------------------------------- F4b: the gate is off until the user turns it on
+
+/// The engine's promise gate is on in every folder it saves. The user chose hands-free (a broken check is told to the AI
+/// before it says Done), so the first SessionStart in a saved folder switches it off there, once. After that the gate is the
+/// user's: a `torpor gate on` typed in their own terminal stays on through every later session start, whatever its source.
+/// The marker that keeps it so is a file in the store, which the engine's own guard refuses the model.
+#[test]
+fn real_engine_the_gate_is_off_in_a_new_folder_and_a_gate_on_of_the_users_stays_on() {
+    let r = Rig::real("gate-default");
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    let state = gate_state(&r);
+    assert!(state.starts_with("The gate is off"), "{state}");
+
+    // the user turns it on in their own terminal (no CLAUDECODE there)
+    let (code, text) = engine_cli(&r, &["gate", "on"]);
+    assert_eq!(code, 0, "{text}");
+    assert_eq!(gate_state(&r), "The gate is on.");
+    for source in [
+        "SessionStart",
+        "SessionStart-resume",
+        "SessionStart-clear",
+        "SessionStart-compact",
+        "SessionStart-fork",
+    ] {
+        r.hook_ok("SessionStart", &r.fixture(source));
+        assert_eq!(gate_state(&r), "The gate is on.", "{source}");
+    }
+
+    // the model cannot take the marker away: the engine refuses a command on a file of its store
+    let marker = fs::read_dir(r.store().join("muse/gate"))
+        .unwrap()
+        .next()
+        .expect("one marker for the folder")
+        .unwrap()
+        .path();
+    r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
+    let mut p = r.fixture("PreToolUse-bash");
+    p["tool_input"]["command"] = json!(format!("rm {}", marker.display()));
+    let run = r.hook_ok("PreToolUse", &p);
+    assert!(
+        run.out.contains(r#""permissionDecision":"deny""#),
+        "{}",
+        run.out
+    );
+    assert!(marker.exists());
+}
+
+/// A hook's environment may carry CLAUDECODE (Muse started from inside Claude Code): the engine refuses `gate off` then, as
+/// it does for the model. Our `gate off` call does not carry it, so the default is still set.
+#[test]
+fn real_engine_the_gate_default_is_set_although_the_hooks_environment_has_claudecode() {
+    let r = Rig::real("gate-default-cc");
+    let payload = r.fixture("SessionStart").to_string();
+    let run = r.hook_env("SessionStart", payload.as_bytes(), &[("CLAUDECODE", "1")]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(r.problems().is_empty(), "{}", r.problems());
+    let state = gate_state(&r);
+    assert!(state.starts_with("The gate is off"), "{state}");
+}
+
+/// The gate default with a stand-in engine: `gate off` runs once per folder and only where the engine says it is saving. A
+/// `gate off` that fails is one line in problems.log and not a word to the model; nothing is marked, so the next session
+/// start tries again.
+#[test]
+fn the_gate_default_runs_once_per_folder_only_where_saving_and_a_failure_is_one_log_line() {
+    let r = Rig::new("gate-default-fake");
+    let off_calls = || r.calls().iter().filter(|c| *c == "gate off").count();
+    let start = |source: &str| r.hook_ok("SessionStart", &r.fixture(source));
+
+    // `torpor off` was typed in this folder: nothing is run
+    r.set("out.status", r#"{"saving":false,"off":true}"#);
+    start("SessionStart");
+    assert_eq!(off_calls(), 0);
+
+    // saving, but `gate off` fails: one log line, nothing for the model, no marker
+    r.set("out.status", r#"{"saving":true}"#);
+    r.set("code.gate", "1");
+    let run = start("SessionStart");
+    assert_eq!(off_calls(), 1);
+    let log = r.problems();
+    assert!(
+        log.lines().count() == 1 && log.contains("gate default not set"),
+        "{log}"
+    );
+    assert!(
+        !run.out.contains("gate default") && !run.out.contains("not set"),
+        "{}",
+        run.out
+    );
+
+    // tried again at the next start; it works now, and is not run again in that folder
+    fs::remove_file(r.fake.join("code.gate")).unwrap();
+    start("SessionStart-resume");
+    assert_eq!(off_calls(), 2);
+    for source in ["SessionStart", "SessionStart-clear", "SessionStart-compact"] {
+        start(source);
+    }
+    assert_eq!(off_calls(), 2, "once per folder");
+    assert_eq!(r.problems().lines().count(), 1, "{}", r.problems());
+
+    // another folder is its own
+    let other = r.dir.join("other");
+    fs::create_dir_all(&other).unwrap();
+    let mut p = r.fixture("SessionStart");
+    p["cwd"] = json!(other.to_str().unwrap());
+    r.hook_ok("SessionStart", &p);
+    assert_eq!(off_calls(), 3);
+}
+
+/// `gate off` first, the marker second: when the marker cannot be written the gate is off all the same, there is one line in
+/// problems.log, and the next start runs `gate off` again (the other order would leave a marker with the gate still on, and
+/// the user's choice would never apply). Once the marker can be written it is the last time.
+#[test]
+fn the_gate_default_is_set_before_it_is_marked_and_a_marker_that_cannot_be_written_is_one_log_line()
+{
+    let r = Rig::new("gate-default-mark");
+    let off_calls = || r.calls().iter().filter(|c| *c == "gate off").count();
+    r.set("out.status", r#"{"saving":true}"#);
+    let muse = r.store().join("muse");
+    fs::create_dir_all(&muse).unwrap();
+    fs::write(
+        muse.join("gate"),
+        "a file where the marker folder should be",
+    )
+    .unwrap();
+
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    assert_eq!(off_calls(), 1);
+    let log = r.problems();
+    assert!(
+        log.lines().count() == 1 && log.contains("not remembered"),
+        "{log}"
+    );
+
+    r.hook_ok("SessionStart", &r.fixture("SessionStart-resume"));
+    assert_eq!(off_calls(), 2, "not marked: tried again");
+
+    fs::remove_file(muse.join("gate")).unwrap();
+    r.hook_ok("SessionStart", &r.fixture("SessionStart-clear"));
+    assert_eq!(off_calls(), 3);
+    r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    assert_eq!(off_calls(), 3, "marked now");
+}
+
 // ---------------------------------------------------------------- F4 items 2 and 3: the one Stop block of a turn
 
 /// The engine's own Stop lines (gate.rs `fail_line`; the first is its save line), as it prints them: apart on lines.
@@ -2115,6 +2273,8 @@ fn said(v: &Value) -> &str {
 
 fn started(r: &Rig) {
     r.hook_ok("SessionStart", &r.fixture("SessionStart"));
+    // the SessionStart's own `status --json` look (F4b, the gate default) is not what the tests after it count
+    let _ = fs::remove_file(r.fake.join("calls.log"));
     r.hook_ok("UserPromptSubmit", &r.fixture("UserPromptSubmit"));
 }
 
@@ -2478,7 +2638,8 @@ fn set_page(r: &Rig, text: &str) -> impl FnOnce() {
 /// F4 item 2 with the real engine: a check of the user's that passed, then fails after a turn. The block names the promise
 /// and the turn the engine's own record says broke it (`find-break` agrees) and goes out once per turn. With the gate
 /// switched off the engine does not stop the AI and this block is all the AI hears; with it on the engine blocks by itself
-/// and there is no second block. The gate is the user's switch in both: nothing here touches it.
+/// and there is no second block. The gate is off in a new folder (F4b) and the user's switch after that: the test turns it
+/// on the way a person does.
 #[test]
 fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_block_is_not_doubled() {
     let r = proof_rig("real-broke");
@@ -2531,14 +2692,17 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         said(&fixed).contains("it stops the AI from now on"),
         "{fixed}"
     );
-    // the user switched the gate off: the engine says it did not stop the AI, so the one block of ours is what the AI hears
-    assert_eq!(engine_cli(&r, &["gate", "off"]).0, 0);
+    // the gate is off (F4b): the engine says it did not stop the AI, so the one block of ours is what the AI hears
+    let state = gate_state(&r);
+    assert!(state.starts_with("The gate is off"), "{state}");
     let off = real_turn(&r, 6, "echo nope > proof.html", set_page(&r, "nope"));
     let why = blocked(&off).unwrap_or_else(|| panic!("no block: {off}"));
     assert!(
         why.contains("Promise #1 \"proof page answers\" (turn 5 broke it) failed after this turn."),
         "{why}"
     );
+    // the engine words its own block "... fails now ..." (asserted below with the gate on); with the gate off it sends none
+    assert!(!why.contains("fails now"), "{why}");
     assert!(said(&off).contains("The AI was not stopped."), "{off}");
     assert!(blocked(&stop_of(&r, 6)).is_none());
     // fixed again, gate on, broken again: the engine's own block goes out as it is; ours is not added, and the next Stop
@@ -2550,7 +2714,7 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         set_page(&r, "proof again"),
     );
     assert!(blocked(&fixed).is_none(), "{fixed}");
-    assert_eq!(engine_cli(&r, &["gate", "on"]).0, 0);
+    assert_eq!(engine_cli(&r, &["gate", "on"]).0, 0); // the user's own word
     let gated = real_turn(&r, 8, "echo nope > proof.html", set_page(&r, "nope"));
     let why = blocked(&gated).unwrap_or_else(|| panic!("no block: {gated}"));
     assert!(
