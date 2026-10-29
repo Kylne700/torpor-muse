@@ -6,7 +6,7 @@ use super::gate::gate_default;
 use super::paths::{engine_cmd, project_root};
 use super::stop_note::{Ended, stop_note};
 use super::writer_note::{gap_line, will_send, writer_note};
-use super::{Done, busy, done, normalise, outside, state};
+use super::{Done, busy, compact_note, done, normalise, outside, state};
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
 use std::path::Path;
@@ -61,6 +61,7 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
         payload["transcript_path"] = Value::String(p);
     }
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    let lead = compact_note::lead(dir, event, &sid, main, &payload);
     let started = Instant::now();
     let ran = engine::run(
         &["hook", event],
@@ -107,6 +108,9 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
                 gate_default(dir, &sid, &cwd, &out.bin, left);
             }
         }
+    }
+    if let Some(lead) = lead {
+        done.stdout = lead.join(event, done.stdout.take());
     }
     if event == "PreToolUse" {
         done.stdout = outside::guard(&payload, &cwd, done.stdout.take());
@@ -292,7 +296,7 @@ fn busy_guard(payload: &Value, cwd: &str, left: Duration, body: Option<String>) 
 }
 
 /// Engine stdout -> what Muse accepts (None = print nothing). `torpor`: see `engine_cmd`.
-fn reply(
+pub(super) fn reply(
     dir: &Path,
     event: &str,
     sid: &str,

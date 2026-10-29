@@ -7,6 +7,7 @@
 //! form with a reason (never exit 2).
 
 mod busy;
+mod compact_note;
 mod db_note;
 mod done;
 mod events;

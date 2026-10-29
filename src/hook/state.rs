@@ -55,6 +55,10 @@ pub struct Session {
     /// What this session ran and edited, to catch a false Done (`hook::done`).
     #[serde(default)]
     pub done: super::done::Log,
+    /// How many compactions in this session's transcript the model was told about, by a SessionStart or by
+    /// `hook::compact_note`. None: not known yet (a session from before this field).
+    #[serde(default)]
+    pub compact_told: Option<u64>,
 }
 
 /// A turn whose own commands changed or deleted a database file: its number, its start save point, the files.
