@@ -8,6 +8,40 @@ use writer_common::*;
 
 const PRAISE: &str = "login works now, alice can sign in and then see her account";
 
+/// Linux: what a stopped run leaves behind is found by its working folder (`/proc/<pid>/cwd`).
+#[cfg(target_os = "linux")]
+mod left_behind {
+    use std::path::{Path, PathBuf};
+
+    /// The live processes whose working folder is inside `dir`, as (pid, session id).
+    pub fn inside(dir: &Path) -> Vec<(i32, i32)> {
+        let Ok(dir) = dir.canonicalize() else {
+            return Vec::new();
+        };
+        let procs = std::fs::read_dir("/proc").into_iter().flatten().flatten();
+        procs
+            .filter_map(|e| e.file_name().to_str()?.parse::<i32>().ok())
+            .filter(|pid| {
+                std::fs::read_link(format!("/proc/{pid}/cwd")).is_ok_and(|c| c.starts_with(&dir))
+            })
+            // SAFETY: getsid(2) only reads.
+            .map(|pid| (pid, unsafe { libc::getsid(pid) }))
+            .collect()
+    }
+
+    /// Kills what is still inside the sandbox when the test ends, by exact pid, each folder read again just before.
+    pub struct Guard(pub PathBuf);
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            for (pid, _) in inside(&self.0) {
+                // SAFETY: SIGKILL to a pid whose working folder was just read as inside this test's own sandbox.
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+            }
+        }
+    }
+}
+
 fn with_engine(tag: &str) -> Option<Sandbox> {
     let mut sb = Sandbox::new(tag);
     sb.engine = Some(real_engine()?);
@@ -140,6 +174,8 @@ fn a_run_stopped_midway_leaves_at_most_a_proposed_row_and_a_rerun_does_not_pile_
     let Some(sb) = with_engine("killed") else {
         return;
     };
+    #[cfg(target_os = "linux")]
+    let _clean = left_behind::Guard(sb.dir.clone()); // a failing run leaves nothing behind
     sb.engine_history(PRAISE);
     let mock = Mock::ok(&sb.dir, &good_answer());
     // the proof takes about twenty seconds on this app; with 12 s the engine call gets about 7 and is stopped midway
@@ -156,6 +192,23 @@ fn a_run_stopped_midway_leaves_at_most_a_proposed_row_and_a_rerun_does_not_pile_
     assert_eq!(r.code, 3, "{ctx}");
     assert!(r.out.contains("did not finish in time"), "{ctx}");
     assert_eq!(sb.result()["outcome"], "advisory", "{ctx}");
+    // The engine starts the app under test in a process group of its own, and stops it only when it exits itself. Stopped
+    // from outside it leaves that app running: nothing may still run with its working folder in this sandbox.
+    #[cfg(target_os = "linux")]
+    {
+        let mut left = left_behind::inside(&sb.dir);
+        for _ in 0..60 {
+            if left.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            left = left_behind::inside(&sb.dir);
+        }
+        assert!(
+            left.is_empty(),
+            "still running in the sandbox after the stopped run (pid, session): {left:?}"
+        );
+    }
     // the stopped add may leave a `proposed` row (the engine drops those itself after 15 minutes); never a saved check
     let (_, list, _) = sb.torpor(&["promise", "list"], None);
     let rows: Vec<&str> = list.lines().filter(|l| l.contains("login works")).collect();

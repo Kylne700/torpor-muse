@@ -107,7 +107,7 @@ pub fn verify(bin: &Path) -> Result<(), String> {
 }
 
 /// Runs `torpor <args>` (after `locate` and `verify`) with `stdin` and a hard `timeout`. Err = it could not run:
-/// missing, wrong version, spawn failure, or killed at the timeout (the whole process group dies).
+/// missing, wrong version, spawn failure, or killed at the timeout (with what it started: see `killtree`).
 pub fn run(args: &[&str], stdin: Option<&[u8]>, timeout: Duration) -> Result<Output, String> {
     let bin = locate()?;
     verify(&bin)?;
@@ -184,7 +184,7 @@ pub(crate) fn exec_without(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0); // own group: a timeout can kill the engine and everything it started in it
+        .process_group(0); // own group, so that a timeout can stop it and what it started (`killtree`)
     let mut child = crate::util::spawn_retry(&mut cmd)
         .map_err(|e| format!("cannot run {}: {e}", bin.display()))?;
     let pgid = child.id() as libc::pid_t;
@@ -202,19 +202,20 @@ pub(crate) fn exec_without(
     });
     let status = rx.recv_timeout(timeout);
     let timed_out = status.is_err();
+    let mut left = None;
     if timed_out {
-        // SAFETY: kill(2) on the group we created; the child is not reaped yet, so the id cannot have been reused.
-        unsafe { libc::kill(-pgid, libc::SIGKILL) };
+        left = crate::killtree::kill(pgid); // the child is not reaped yet, so its group id cannot have been reused
         let _ = rx.recv();
     }
     let until = Instant::now() + PIPE_GRACE;
     let (stdout, stderr) = (out.finish(until), err.finish(until));
     if timed_out {
         return Err(format!(
-            "{} {} timed out after {} ms and was killed",
+            "{} {} timed out after {} ms and was killed{}",
             bin.display(),
             args.join(" "),
-            timeout.as_millis()
+            timeout.as_millis(),
+            left.map(|why| format!("; {why}")).unwrap_or_default()
         ));
     }
     let code = match status {
@@ -259,6 +260,56 @@ pub mod testing {
         let s = String::from_utf8_lossy(&o.stdout);
         !s.trim().is_empty() && !s.trim().starts_with('Z')
     }
+
+    /// A fake engine that starts `sleep 30` as its child, the way `how` says (perl code that runs before the exec), writes
+    /// the sleeper's pid to the file named by its first argument once that is done, and waits. `how` moves the sleeper out
+    /// of the engine's group (`setpgrp(0,0);`) or session (`use POSIX; POSIX::setsid();`).
+    pub fn sleeper_engine(dir: &Path, how: &str) -> PathBuf {
+        let body = format!(
+            "perl -e '{how} open F, \">$ARGV[0]\" or die; print F $$; close F; exec \"sleep\", \"30\"' \"$1\" &\nwait"
+        );
+        script(dir, "slow", &body)
+    }
+
+    /// The sleeper of a `sleeper_engine`, by pid. Dropping it kills that exact pid, and only while it still runs
+    /// `sleep 30`, so a failing test leaves nothing behind.
+    pub struct Sleeper(pub String);
+
+    impl Drop for Sleeper {
+        fn drop(&mut self) {
+            let ps = Command::new("ps")
+                .args(["-o", "args=", "-p", &self.0])
+                .output();
+            let ours = ps.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "sleep 30");
+            if let (true, Ok(pid)) = (ours, self.0.parse::<i32>()) {
+                // SAFETY: SIGKILL to the one pid a test started, read again as its `sleep 30` just now.
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+            }
+        }
+    }
+
+    /// The sleeper whose pid the fake engine wrote to `pidfile`, waiting at most `secs` seconds for it.
+    pub fn sleeper(pidfile: &Path, secs: u64) -> Option<Sleeper> {
+        for _ in 0..=secs * 50 {
+            let text = fs::read_to_string(pidfile).unwrap_or_default();
+            if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
+                return Some(Sleeper(text));
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+
+    /// Waits up to two seconds for `pid` to be gone.
+    pub fn gone(pid: &str) -> bool {
+        for _ in 0..100 {
+            if !alive(pid) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        !alive(pid)
+    }
 }
 
 #[cfg(test)]
@@ -295,6 +346,51 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
         }
         assert!(!alive(&pid), "the grandchild survived the timeout");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    // The engine starts the app under test in a process group of its own, so killing the engine's group is not enough.
+    #[test]
+    fn a_child_in_a_group_of_its_own_dies_at_the_timeout_too() {
+        let d = scratch("own-group");
+        let pidfile = d.join("pid");
+        let s = sleeper_engine(&d, "setpgrp(0,0);");
+        let r = exec(
+            &s,
+            &[pidfile.to_str().unwrap()],
+            None,
+            None,
+            Duration::from_secs(3),
+        );
+        let kid = sleeper(&pidfile, 2).expect("the fake engine never started its child");
+        assert!(r.is_err_and(|e| e.contains("timed out")));
+        assert!(
+            gone(&kid.0),
+            "a child in its own group survived the timeout"
+        );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    // The engine starts `torpor gc --if-quiet` with setsid on purpose, so that it outlives the hook: it must not be killed.
+    #[test]
+    fn a_child_that_started_its_own_session_survives_the_timeout() {
+        let d = scratch("own-session");
+        let pidfile = d.join("pid");
+        let s = sleeper_engine(&d, "use POSIX; POSIX::setsid();");
+        let r = exec(
+            &s,
+            &[pidfile.to_str().unwrap()],
+            None,
+            None,
+            Duration::from_secs(3),
+        );
+        let kid = sleeper(&pidfile, 2).expect("the fake engine never started its child");
+        assert!(r.is_err_and(|e| e.contains("timed out")));
+        thread::sleep(Duration::from_millis(300)); // a kill would be done by now
+        assert!(
+            alive(&kid.0),
+            "a child with a session of its own was killed"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
