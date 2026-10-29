@@ -179,7 +179,7 @@ fn errors_the_hooks_logged_are_shown() {
 }
 
 #[test]
-fn only_the_tested_muse_version_is_ok() {
+fn only_the_tested_muse_versions_are_ok() {
     let w = World::new("version");
     must(&w.examine(), Level::Info, "no Muse session log under");
     let log = |sid: &str, semver: &str| {
@@ -193,15 +193,28 @@ fn only_the_tested_muse_version_is_ok() {
         Level::Ok,
         "Muse Code 1.4.13 (the version these hooks were tested with)",
     );
-    // the newest log decides
+    // 1.4.14 is tested too (the keyed takes of SN1 and SN2); the newest log decides
     w.put(&log("01a00000-0000-7000-8000-000000000002", "1.4.14"));
     let r = w.examine();
     must(
         &r,
-        Level::Warn,
-        "Muse Code 1.4.14: the hooks and the log translation were tested only with 1.4.13",
+        Level::Ok,
+        "Muse Code 1.4.14 (the version these hooks were tested with)",
     );
     mustnt(&r, Level::Ok, "Muse Code 1.4.13");
+    w.put(&log("01a00000-0000-7000-8000-000000000003", "1.4.15"));
+    let r = w.examine();
+    must(
+        &r,
+        Level::Warn,
+        "Muse Code 1.4.15: the hooks and the log translation were tested only with 1.4.13 and 1.4.14",
+    );
+    must(
+        &r,
+        Level::Warn,
+        "if something below fails, install Muse Code 1.4.13 or 1.4.14",
+    );
+    mustnt(&r, Level::Ok, "Muse Code 1.4.1");
     every_problem_says_how(&r);
 }
 

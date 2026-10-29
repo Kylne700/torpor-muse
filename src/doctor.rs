@@ -46,8 +46,13 @@ use vault::check_vault;
 pub(crate) use ctx::Ctx;
 pub(crate) use report::{Level, Report};
 
-/// The only Muse Code version these hooks were tested with (research/60 AD13).
-const MUSE_TESTED: &str = "1.4.13";
+/// The Muse Code versions these hooks were tested with (research/60 AD13; 1.4.14 by the keyed takes of SN1 and SN2).
+const MUSE_TESTED: [&str; 2] = ["1.4.13", "1.4.14"];
+
+/// The tested versions in a sentence: `tested(" and ")` is "1.4.13 and 1.4.14".
+fn tested(joiner: &str) -> String {
+    MUSE_TESTED.join(joiner)
+}
 
 /// What a person must know while the engine's gate is off, as it is since F4b: `doctor` shows it, and so does the line the
 /// check-writer prints after it saves a check (src/suggest/attach.rs).

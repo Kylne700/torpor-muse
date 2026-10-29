@@ -237,7 +237,8 @@ export function e9(run) {
   const call = toolsIn(run, fi).find((x) => matches(turns[fi - 1].trigger, x)) ?? null;
   const stops = run.hooks.filter((h) => h.ev === 'Stop' && h.turn === fi), blocks = stops.filter((h) => h.vis.decision === 'block');
   const reason = String(blocks[0]?.vis.texts?.reason ?? ''), t0 = blocks[0]?.t0 ?? null;
-  const a = blocks.length === 1 && /no test run was seen/i.test(reason);
+  // 1 or 2 blocks (SN2: a check saved during this turn, see the confound below, can still fail and earns a second block), never 0 or 3
+  const a = blocks.length >= 1 && blocks.length <= 2 && /no test run was seen/i.test(reason);
   const cmds = t0 === null ? [] : bashRuns(run.recs).filter((b) => b.t > t0 && run.turnOfTl({ t: b.t }) === fi).map((b) => ({ command: cut(b.command, 200), exit: b.exit, is_test_run: TEST_CMD.test(b.command) }));
   const replies = t0 === null ? [] : finalsIn(run, fi).filter((x) => x.t > t0).map((x) => cut(x.text, 900));
   const ranTests = cmds.some((c) => c.is_test_run), toldNotRun = replies.some((x) => SAYS_NOT_RUN.test(x));
