@@ -1062,7 +1062,7 @@ t('cal-scripts-l4d: two sessions, held-out wording, a wait command that ends whe
 
 const DEMO = fs.readFileSync(path.join(HERE, '../../demo/app/server.js'), 'utf8');
 const LATE_SPEC = JSON.stringify({ name: '/api/me returns name and email', start: { cmd: 'npm start --silent', ready: '/', timeout_s: 30 }, unverifiable: false, v: 1, why: 'w', steps: [
-  { expect: { json_has: ['ok'], status: 200 }, http: { json: { email: 'a@b.c', password: 'x' }, method: 'POST', path: '/api/login' }, why: 'w' },
+  { expect: { json_has: ['ok'], status: 200 }, http: { json: { email: 'a\x40b.c', password: 'x' }, method: 'POST', path: '/api/login' }, why: 'w' },
   { expect: { body_contains: 'Sam', json_has: ['name', 'email'], status: 200 }, http: { method: 'GET', path: '/api/me' }, why: 'w' }] });
 const calRun = (id, { hooks = [], eng = null, rec = {}, promises = '', specs = null } = {}) => annotate({ label: `${id}-fake`, spec: CAL_L4D_SESSIONS[id], recs: [], status: null, tl: [], calls: [], wl: { runs: hooks, killed: [], bad: [] }, eng, promises, specs,
   rec: { id, outcome: 'DONE', minutes: 1, turns: CAL_L4D_SESSIONS[id].turns.map((x, i) => ({ n: i + 1, role: 'prompt', claim: !!x.claim, sent: 1000 * (i + 1), done: 20000 * (i + 1) })), ...rec } });
