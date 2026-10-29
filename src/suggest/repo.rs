@@ -5,6 +5,7 @@ mod redact;
 mod root;
 #[cfg(test)]
 mod tests;
+mod window;
 
 pub(super) use excerpt::read_capped;
 pub use excerpt::{allowed_files, cut, excerpt};

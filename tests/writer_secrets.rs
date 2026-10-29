@@ -111,6 +111,50 @@ fn planted_secrets_never_reach_the_mock() {
     }
 }
 
+/// The excerpt also shows parts far into a long file (chosen by the developer's words): they are redacted as well.
+#[test]
+fn a_secret_inside_a_late_window_never_reaches_the_mock() {
+    let (secret, aws) = (
+        "canary-latesecret-5d2e91c7",
+        format!("{}{}", "AK", "IAZ9Q8W7E6R5T4Y3"),
+    );
+    let mut js = String::new();
+    for i in 0..160 {
+        js += &format!(
+            "app.get('/api/thing{i}', (req, res) => {{\n  res.json(db.find({i}));\n}});\n\n"
+        );
+    }
+    js += &format!(
+        "// zebra-census-marker\napp.get('/api/zebras', (req, res) => {{\n  const stripeSecret = \"{secret}\";\n  const awsId = \"{aws}\";\n  res.json({{ zebras: 3 }});\n}});\n"
+    );
+    assert!(
+        js.find("zebra-census-marker").unwrap() > 6_000,
+        "past the start of the file"
+    );
+    let sb = Sandbox::new("canary-late");
+    sb.write("src/late.js", &js);
+    sb.git(&["add", "-A"]);
+    sb.git(&["commit", "-qm", "a long file"]);
+    let mock = Mock::ok(&sb.dir, &good_answer());
+    say_proven(&sb);
+    let r = sb.suggest(Some(&mock.base()), "the zebra census route works", &[]);
+    let ctx = format!("out={:?} err={:?}", r.out, r.err);
+    assert_eq!(r.code, 0, "{ctx}");
+    let seen = mock.prompt(0);
+    assert!(
+        seen.contains("zebra-census-marker"),
+        "the window was sent: {ctx}"
+    );
+    assert!(seen.contains("const stripeSecret"), "the name stays: {ctx}");
+    let raw = fs::read_to_string(&mock.log).unwrap();
+    for s in [secret, aws.as_str()] {
+        assert!(
+            !seen.contains(s) && !raw.contains(s),
+            "{s} reached the model ({ctx})"
+        );
+    }
+}
+
 #[test]
 fn the_api_key_never_shows_up_in_output_or_files() {
     let sb = Sandbox::new("key");

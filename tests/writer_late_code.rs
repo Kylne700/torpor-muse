@@ -257,7 +257,6 @@ fn no_excerpt_is_over_the_total_cap() {
 }
 
 #[test]
-#[ignore = "BASE finds 0 of 12 late claims; the fix lifts this"]
 fn a_claim_about_code_far_into_a_file_gets_its_code() {
     let (found, of, missed) = report(true);
     assert_eq!(of, 12);

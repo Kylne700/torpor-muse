@@ -1,6 +1,7 @@
 //! The excerpt of a project that goes to the model: which files may be read and how much of each is sent.
 
 use super::redact::redact;
+use super::window;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -143,7 +144,9 @@ pub fn cut(s: &str, max: usize) -> &str {
     &s[..n]
 }
 
-pub(in crate::suggest) fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<String> {
+/// The lines of a file the writer may read, redacted and each cut to `LINE_CAP`. The whole text is redacted first and
+/// cut afterwards, so that a cut never leaves half a key behind.
+fn read_lines(root: &Path, rel: &str, synthetic: bool) -> Option<Vec<String>> {
     let path = root.join(rel);
     let meta = fs::symlink_metadata(&path).ok()?;
     if !meta.is_file() || meta.len() > BIG_FILE || !fs::canonicalize(&path).ok()?.starts_with(root)
@@ -151,18 +154,30 @@ pub(in crate::suggest) fn read_capped(root: &Path, rel: &str, synthetic: bool) -
         return None;
     }
     let text = String::from_utf8(fs::read(&path).ok()?).ok()?;
-    // Redact the whole text first and cut afterwards, so that a cut never leaves half a key behind.
     let red = redact(&text, synthetic);
-    let lines: Vec<String> = red
-        .lines()
-        .map(|l| l.chars().take(LINE_CAP).collect())
-        .collect();
+    Some(
+        red.lines()
+            .map(|l| l.chars().take(LINE_CAP).collect())
+            .collect(),
+    )
+}
+
+/// The start of a file that always goes: its first `FILE_CAP` bytes, `[cut]` after them where more follows. With
+/// more, also the first line a window may begin at (the line the cut falls in is shown whole there).
+fn start_of(lines: &[String]) -> (String, Option<usize>) {
     let body = lines.join("\n");
-    let mut shown = cut(&body, FILE_CAP).to_string();
-    if shown.len() < body.len() {
-        shown.push_str("\n[cut]");
+    let shown = cut(&body, FILE_CAP);
+    if shown.len() == body.len() {
+        return (body, None);
     }
-    Some(shown)
+    let whole = body.as_bytes()[shown.len()] == b'\n';
+    let first = shown.matches('\n').count() + usize::from(whole);
+    (format!("{shown}\n[cut]"), Some(first))
+}
+
+/// The start of a file for the voice keywords: `FILE_CAP` bytes, redacted.
+pub(in crate::suggest) fn read_capped(root: &Path, rel: &str, synthetic: bool) -> Option<String> {
+    Some(start_of(&read_lines(root, rel, synthetic)?).0)
 }
 
 /// The files the writer may read: tracked and not ignored, code or a manifest (`allowed`), no secrets. Sorted.
@@ -170,8 +185,17 @@ pub fn allowed_files(root: &Path) -> Vec<String> {
     listing(root).into_iter().filter(|p| allowed(p)).collect()
 }
 
-/// The excerpt: a file list, then the start of the most useful files, all redacted. Stable for an unchanged project.
-pub fn excerpt(root: &Path, synthetic: bool) -> String {
+/// A file in the excerpt: its heading and start as they go, its lines, and where a window may begin.
+struct Read {
+    head: String,
+    lines: Vec<String>,
+    first: Option<usize>,
+}
+
+/// The excerpt: a file list, then the start of the most useful files, then, in the room that is left under
+/// `TOTAL_CAP`, the parts of the longer files that `words` (the developer's) are about; all redacted. Stable for an
+/// unchanged project and the same words. The starts are what they would be without words, so words only add.
+pub fn excerpt(root: &Path, synthetic: bool, words: &str) -> String {
     let mut files = allowed_files(root);
     files.sort_by(|a, b| (rank(a), a).cmp(&(rank(b), b)));
     let mut out = String::from("FILE LIST\n");
@@ -182,17 +206,35 @@ pub fn excerpt(root: &Path, synthetic: bool) -> String {
         out.push('\n');
     }
     let mut used = out.len();
+    let mut read: Vec<Read> = Vec::new();
     for rel in &files {
-        let Some(body) = read_capped(root, rel, synthetic) else {
+        let Some(lines) = read_lines(root, rel, synthetic) else {
             continue;
         };
+        let (start, first) = start_of(&lines);
         let room = TOTAL_CAP.saturating_sub(used + rel.len() + 16);
         if room < 400 {
             break;
         }
-        let part = format!("\nFILE {rel}\n{}\n", cut(&body, room));
-        used += part.len();
-        out.push_str(&part);
+        let shown = cut(&start, room);
+        let head = format!("\nFILE {rel}\n{shown}");
+        used += head.len() + 1;
+        // a start cut by the room is the end of what this file gets
+        let first = first.filter(|_| shown.len() == start.len());
+        read.push(Read { head, lines, first });
+    }
+    let all: Vec<window::File> = read
+        .iter()
+        .map(|r| window::File {
+            lines: &r.lines,
+            first: r.first,
+        })
+        .collect();
+    let windows = window::windows(&all, words, TOTAL_CAP.saturating_sub(used));
+    for (r, w) in read.iter().zip(&windows) {
+        out.push_str(&r.head);
+        out.push_str(&window::text(&r.lines, w));
+        out.push('\n');
     }
     out
 }
