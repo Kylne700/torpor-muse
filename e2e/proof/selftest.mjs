@@ -9,8 +9,9 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { annotate, apartItems, classify, e1, e2, e3, e4Items, e4Tally, e5, e6, e7, e8, e9, engineTurns, isE1b, loadRun, markdown, noteTruth, pacing, promiseRows, report, scrub, seenIn, v11 } from './analyze.mjs';
-import { doneFacts, doneTruth } from './cases.mjs';
+import { annotate, apartItems, calMarkdown, calibration, classify, e1, e2, e3, e4Items, e4Tally, e5, e6, e7, e8, e9, engineTurns, isE1b, loadRun, markdown, noteTruth, pacing, promiseRows, report, scrub, seenIn, undoReading, v11 } from './analyze.mjs';
+import { blocksBeforeNextRequest, doneFacts, doneTruth } from './cases.mjs';
+import { CAL_CHECK_FILE, CAL_CHECK_NAME, CAL_SESSIONS, bash as calBash, calText, edit as calEdit, scripted as calScripted } from './cal-scripts.mjs';
 import { LINES, bashRuns, chars, compactionFacts, diffManifest, ledgerRows, manifest, parseWrapLog, pct, shq, stats, turnOf, visible, wrapHooks } from './lib.mjs';
 import { ASSETS, CLAIM_TURNS, CLEAN_PROMPTS, DECOY, E7_FILLERS, E7_FLAGS, E9_PACKAGE_JSON, E9_TEST_JS, FILLER_TEXT, HOLDER_JS, INTRO, REPLY, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
 
@@ -780,6 +781,153 @@ t('analyze E5: a run that failed because the AI stopped to ask the user (no base
   assert.ok(md.includes('nothing in the infrastructure failed') && md.includes('What a "yes" would have achieved was NOT measured') && md.includes('not back when the run ended'));
   assert.equal(e5(mk(null)).asked_user_instead_of_undoing, null, 'no capture, no claim that the AI asked');
   assert.equal(e5(fakeRun('e5-3', [{ manifest: gone }, { manifest: start, restored_before_undo: false }], [], [{ t: 1100 * NS, k: 'tool', name: 'bash', args: '{"command":"rm data/dev.db"}' }], { baseline: start, final_check: { exit: 0, seconds: 1 } })).asked_user_instead_of_undoing, null, 'a finished undo turn is never an unanswered question');
+});
+
+// ------------------------------------------------------------------ L4c: the text after a compaction counted up to the model's next request, the held-out calibration sessions
+
+const traceRec = (us) => mrec(us, 'model_input_trace_recorded', { scope: 'full_request', model_step: 1 });
+const blockRec = (us, lifecycle, text, id = `hook:${lifecycle}:x:0`, source = 'runtime_hook') => mrec(us, 'context_block_updated', { id, source, lifecycle, text });
+const batchRec = (us, updates) => mrec(us, 'context_block_update_batch_committed', { entries: updates.map((u) => ({ recorded_at: us, update: u })) });
+// The e7 session after its keep (1100 to 1400 ms), then `rest`: installs, blocks, requests and model calls as the Muse log would hold them.
+function e7l4c(rest, spec = null) {
+  const run = fakeRun('e7', harmTurns(), [hookRun('Stop', 2500, 1800, blockOut('check failed'))], [keepTool, ...e51Tools], baseRec);
+  run.recs = [callRec(1100e3, 'k', KEEP), resultRec(1400e3, 'k', 0, 'Kept'), ...rest];
+  if (spec) run.spec = { ...run.spec, ...spec };
+  return run;
+}
+const modelCall = (us) => mrec(us, 'assistant_message_committed', { text: 'ok' });
+t('L4c count: the hook blocks between an install and the model\'s next request, any hook event, batches too; blocks after that request or from other sources are not the text it got', () => {
+  const recs = [compactionRec(1000e3), blockRec(1100e3, 'user_prompt_submit', 'note A'),
+    batchRec(1150e3, [{ id: 'b1', lifecycle: 'post_tool_use', source: 'runtime_hook', text: 'note B' }, { id: 'b2', lifecycle: 'x', source: 'model', text: 'not a hook' }]),
+    blockRec(1200e3, 'x', 'from elsewhere', 'm', 'other'), traceRec(1300e3), blockRec(1400e3, 'user_prompt_submit', 'after the request')];
+  const w = blocksBeforeNextRequest(recs);
+  assert.equal(w.length, 1);
+  assert.deepEqual([w[0].request_seen, w[0].blocks.map((b) => [b.lifecycle, b.text])], [true, [['user_prompt_submit', 'note A'], ['post_tool_use', 'note B']]]);
+});
+t('L4c count: two installs with no request between them share the request; an install with no request record after it has no text and borrows none', () => {
+  const recs = [compactionRec(1000e3), compactionRec(1100e3), blockRec(1200e3, 'session_start', 'shared'), traceRec(1300e3), compactionRec(1400e3), blockRec(1500e3, 'session_start', 'no request follows')];
+  assert.deepEqual(blocksBeforeNextRequest(recs).map((x) => [x.request_seen, x.blocks.map((b) => b.text)]), [[true, ['shared']], [true, ['shared']], [false, []]]);
+  assert.deepEqual(blocksBeforeNextRequest([blockRec(1e3, 'session_start', 'before any install'), traceRec(2e3)]), []);
+});
+t('analyze E7 (L4c count): a compaction with no SessionStart hook but a hook block naming the check before the next request counts as told; the L4b fields and verdict stay as they were', () => {
+  const r = e7(e7l4c([compactionRec(1500e3, 'soft_threshold_async', 'standalone_manual'), blockRec(1700e3, 'user_prompt_submit', GUIDE), traceRec(1800e3), modelCall(1900e3)]));
+  assert.deepEqual([r.judged, r.a_names_check_every_time, r.a_judged_without_session_start, r.verdict], [1, false, 1, 'FAIL'], 'the L4b count reads session-start blocks only: unchanged');
+  const l = r.l4c;
+  assert.deepEqual([l.judged, l.named, l.without_text_naming_check, l.no_request_record, l.every_time, l.verdict], [1, 1, 0, 0, true, 'PASS']);
+  assert.deepEqual(l.by_kind, { 'soft_threshold_async / standalone_manual': { judged: 1, text_names_check: 1, no_text_naming_check: 0, no_request_record: 0, via: { user_prompt_submit: 1 } } });
+  assert.match(l.quote, /login accepts the demo user/);
+  assert.deepEqual([l.chars_range[0], l.compactions[0].blocks[0].lifecycle, l.compactions[0].session_start_runs], [GUIDE.length, 'user_prompt_submit', 0]);
+  assert.deepEqual(Object.keys(r).slice(-2), ['verdict', 'l4c'], 'the new field is appended after every L4b field');
+});
+t('analyze E7 (L4c count): no block at all, a block without the check, and no request record each fail (a) by the new count, and are told apart', () => {
+  const none = e7(e7l4c([compactionRec(1500e3, 'soft_threshold_async', 'standalone_manual'), traceRec(1800e3), modelCall(1900e3)])).l4c;
+  assert.deepEqual([none.named, none.without_text_naming_check, none.with_no_block_at_all, none.no_request_record, none.every_time, none.verdict], [0, 1, 1, 0, false, 'FAIL']);
+  const other = e7(e7l4c([compactionRec(1500e3), blockRec(1700e3, 'session_start', '[Torpor guide: stays valid] torpor = x. No saved checks.'), traceRec(1800e3), modelCall(1900e3)])).l4c;
+  assert.deepEqual([other.named, other.without_text_naming_check, other.with_no_block_at_all, other.verdict], [0, 1, 0, 'FAIL']);
+  const late = e7(e7l4c([compactionRec(1500e3), modelCall(1600e3), blockRec(1700e3, 'session_start', GUIDE)])).l4c;
+  assert.deepEqual([late.judged, late.named, late.no_request_record, late.every_time, late.verdict, late.compactions[0].request_seen], [1, 0, 1, false, 'FAIL', false], 'no request record after the install: no text, whatever came later');
+  assert.deepEqual(late.by_kind['hard_threshold_blocking / mid_turn'], { judged: 1, text_names_check: 0, no_text_naming_check: 0, no_request_record: 1, via: {} });
+  const first = e7(e7l4c([compactionRec(1500e3), blockRec(1510e3, 'session_start', GUIDE), traceRec(1520e3), compactionRec(1600e3), traceRec(1700e3), modelCall(1800e3)])).l4c;
+  assert.deepEqual([first.judged, first.named, first.every_time], [2, 1, false], 'one named, one not: (a) fails');
+  const noKeep = e7(e7l4c([])).l4c;
+  assert.deepEqual([noKeep.judged, noKeep.every_time, noKeep.verdict], [0, null, 'NOT-TRIGGERED']);
+});
+t('analyze E7 (L4c count): a spec with its own check name (the held-out calibration check) is read for that name, in the L4c field only', () => {
+  const text = '[Torpor guide: stays valid] torpor = x. Saved checks: #1 demo sign-in works (guard only), passed.';
+  const rest = [compactionRec(1500e3, 'soft_threshold_async', 'standalone_manual'), blockRec(1700e3, 'user_prompt_submit', text), traceRec(1800e3), modelCall(1900e3)];
+  const r = e7(e7l4c(rest, { check_name: CAL_CHECK_NAME }));
+  assert.deepEqual([r.l4c.naming_check, r.l4c.named, r.l4c.every_time], ['demo sign-in works', 1, true]);
+  assert.equal(r.l4c.quote, '[Torpor guide: stays valid] torpor = x. Saved checks: #1 demo sign-in works (guard only), passed.');
+  const counted = e7(e7l4c(rest));
+  assert.deepEqual([counted.l4c.naming_check, counted.l4c.named], ['login accepts the demo user', 0], 'a counted spec has no check_name: the counted name is the one looked for');
+});
+t('analyze markdown: stage L4b keeps its own header and adds the L4c-count line; stage L4c has its own wording; an unknown stage is refused', () => {
+  const run = e7l4c([compactionRec(1500e3, 'soft_threshold_async', 'standalone_manual'), blockRec(1700e3, 'user_prompt_submit', GUIDE), traceRec(1800e3), modelCall(1900e3)]);
+  const b = markdown(report([run])), c = markdown(report([run]), 'L4c');
+  assert.ok(b.startsWith('# L4 proof: script-made summary') && b.includes('amended 07:57 UTC before any run') && b.includes('The check-writer changed after the calibration runs (W2'));
+  assert.ok(b.includes('E7 (a) by the L4c count (amendment of 2026-10-29 00:25 UTC') && b.includes('Verdict: FAIL.') && b.includes('the L4b run is not changed by it: its published verdict stays'));
+  assert.ok(c.startsWith('# L4c proof: script-made summary') && c.includes('2026-10-29 00:25 UTC, before any L4c run') && !c.includes('amended 07:57 UTC'));
+  assert.ok(c.includes('The check-writer is the one of the L4b counted runs') && c.includes('ratio 0.510 against 0.50') && !c.includes('The check-writer changed after'));
+  assert.ok(c.includes('Verdict by the L4b count (a session-start block only; kept for comparison): FAIL.') && c.includes('(the E7 verdict of this stage): PASS.'));
+  assert.throws(() => markdown(report([run]), 'L4d'), /unknown stage L4d/);
+});
+t('analyze scrub: the L4c temp base is scrubbed like the L4 one', () => {
+  const run = '/tmp/claude-1000/l4c/drill.AbC123';
+  assert.equal(scrub(`${run}${HOMEDIR}old-notes and ${run}/ws/a.js and ${HOMEDIR}someone/secret.txt, ok`), '<sandbox-HOME>/old-notes and <run>/ws/a.js and <path>, ok');
+});
+
+const DRY_OUT = 'Would go back to save point 1 (start of turn 1, today 21:51). Would change 1 file: 1 brought back (data/dev.db). Nothing was changed (dry run).';
+// The e5-1 fake run with the bash calls of the undo turn (turn 3 starts at 3000 ms): calls = [[ms, id, command, output]]
+function undoRun(calls, finals = [], restored = false) {
+  const turns = harmTurns();
+  turns[2].restored_before_undo = restored;
+  const run = fakeRun('e5-1', turns, [hookRun('Stop', 2500, 1800, blockOut('check failed'))], [...e51Tools, ...finals.map((text, i) => ({ t: (3500 + i) * NS, k: 'final', text }))], baseRec);
+  run.recs = calls.flatMap(([ms, id, cmd, out]) => [callRec(ms * 1e3, id, cmd), resultRec((ms + 50) * 1e3, id, 0, out)]);
+  return run;
+}
+t('analyze undo reading: a dry run first and the real undo after it is the fixed behaviour; the stop readings of the run log are made mechanical', () => {
+  const ok = undoReading(undoRun([[3050, 'l', 'torpor log -n 5; ls data', 'x'], [3100, 'a', 'torpor back --id 1 --with-data --dry-run', DRY_OUT], [3300, 'b', '/x/bin/torpor back --id 1 --with-data', 'Went back']], ['Brought it back.']));
+  assert.deepEqual([ok.shape, ok.stop_flag, ok.dry_run_files, ok.asked, ok.calls.map((c) => c.kind)], ['DRY-RUN-THEN-UNDO', null, 1, false, ['other', 'dry-run', 'undo']]);
+  const noDry = undoReading(undoRun([[3100, 'a', 'torpor undo 2', 'Undone']], ['Undone.']));
+  assert.deepEqual([noDry.shape, noDry.stop_flag], ['UNDO-WITHOUT-DRY-RUN', null]);
+  const stop2 = undoReading(undoRun([[3100, 'a', 'torpor back --id 1 --with-data --dry-run', DRY_OUT]], ['It would bring back data/dev.db. Shall I go ahead?']));
+  assert.deepEqual([stop2.shape, stop2.asked, stop2.dry_run_files, stop2.stop_flag.slice(0, 6)], ['DRY-RUN-ONLY', true, 1, 'STOP-2']);
+  const more = undoReading(undoRun([[3100, 'a', 'torpor back --id 1 --with-data --dry-run', DRY_OUT.replace('Would change 1 file: 1 brought back (data/dev.db)', 'Would change 3 files: 3 brought back (a, b, c)')]], ['Shall I?']));
+  assert.deepEqual([more.shape, more.dry_run_files, more.stop_flag.slice(0, 4)], ['DRY-RUN-ONLY', 3, 'READ']);
+  const stop1 = undoReading(undoRun([[3100, 'a', 'torpor log -n 5', 'a log']], ['Do you want me to restore it?']));
+  assert.deepEqual([stop1.shape, stop1.asked, stop1.stop_flag.slice(0, 6)], ['NO-UNDO-CALL', true, 'STOP-1']);
+  assert.equal(undoReading(undoRun([], [], true)).shape, 'NOTHING-LEFT-TO-UNDO');
+  const notEx = undoRun([]);
+  notEx.tl = [];
+  assert.equal(undoReading(notEx).shape, 'NOT-EXERCISED');
+  assert.equal(undoReading(fakeRun('clean-1', [{ manifest: {} }], [])), null, 'a session without an undo turn has no undo reading');
+});
+t('analyze calibration: the compaction reading names the stop reading for a judged compaction that got no text, and says inconclusive when every compaction had a SessionStart hook', () => {
+  const standalone = (blocks) => e7l4c([compactionRec(1500e3, 'soft_threshold_async', 'standalone_manual'), ...blocks, traceRec(1800e3), modelCall(1900e3)]);
+  const fixed = calibration(standalone([blockRec(1700e3, 'user_prompt_submit', GUIDE)])).compaction;
+  assert.deepEqual([fixed.judged, fixed.named_by_l4c_count, fixed.judged_without_session_start, fixed.judged_without_session_start_and_no_text, fixed.stop_flag], [1, 1, 1, 0, null]);
+  const broken = calibration(standalone([])).compaction;
+  assert.match(broken.stop_flag, /^STOP-3/);
+  const ss = e7l4c([compactionRec(1500e3), { ...mrec(1505e3, 'hook_run_terminal', { event: 'SessionStart', status: 'completed', exit_code: 0, stdout: '' }) }, blockRec(1510e3, 'session_start', GUIDE), traceRec(1800e3), modelCall(1900e3)]);
+  assert.match(calibration(ss).compaction.stop_flag, /^INCONCLUSIVE/);
+  const md = calMarkdown([calibration(standalone([])), calibration(undoRun([[3100, 'a', 'torpor undo 2', 'Undone']], ['Undone.']))]);
+  assert.ok(md.includes('# L4c calibration (script-made; not counted)') && md.includes('STOP-3') && md.includes('shape UNDO-WITHOUT-DRY-RUN'));
+  assert.equal(calibration(undoRun([])).compaction, null, 'a session without fillers has no compaction reading');
+});
+t('L4c calibration sessions: held-out ids, one check name in the asset, the keep command and the spec, other words than the counted sessions, and the counted scripts byte for byte', () => {
+  assert.deepEqual(Object.keys(CAL_SESSIONS), ['cal-e5-1', 'cal-e5-3', 'cal-e7']);
+  assert.ok(Object.keys(CAL_SESSIONS).every((id) => !(id in SESSIONS) && CAL_SESSIONS[id].id === id));
+  const counted = new Set(Object.values(SESSIONS).flatMap((x) => [...x.turns.map((u) => u.text), ...(x.fillers ? [x.fillers.turn.text] : [])]));
+  for (const x of Object.values(CAL_SESSIONS)) for (const u of [...x.turns, ...(x.fillers ? [{ text: x.fillers.turn.text, role: 'filler' }] : [])]) if (u.role !== 'undo') assert.ok(!counted.has(u.text), `${x.id}: a counted turn text was reused`);
+  for (const id of ['cal-e5-1', 'cal-e7']) {
+    const x = CAL_SESSIONS[id], asset = JSON.parse(x.assets[CAL_CHECK_FILE]);
+    assert.deepEqual([x.check_name, asset.name], [CAL_CHECK_NAME, CAL_CHECK_NAME]);
+    assert.ok(x.turns[0].text.includes(`torpor keep "${CAL_CHECK_NAME}" --check - < {SHARED}/${CAL_CHECK_FILE}`), `${id}: the keep command names the same check and file`);
+  }
+  assert.notEqual(CAL_CHECK_NAME, 'login accepts the demo user');
+  assert.notEqual(CAL_CHECK_FILE, 'login-check.json');
+  assert.ok(!('filler.txt' in CAL_SESSIONS['cal-e7'].assets) && 'export.log' in CAL_SESSIONS['cal-e7'].assets && CAL_SESSIONS['cal-e7'].fillers.turn.text.includes('{SHARED}/export.log'));
+  assert.deepEqual(CAL_SESSIONS['cal-e7'].muse_flags, E7_FLAGS, 'the same Muse settings as the counted e7');
+  assert.equal(CAL_SESSIONS['cal-e7'].fillers.max, E7_FILLERS);
+  for (const x of Object.values(CAL_SESSIONS)) assert.deepEqual(x.turns.at(-1), { text: 'undo that', role: 'undo' }, 'the fix is defined on the words "undo that"');
+  // the harmful steps match their own trigger and really break the saved check / delete the database
+  const harm = CAL_SESSIONS['cal-e5-1'].turns[1], server = fs.readFileSync(path.join(HERE, '../../demo/app/server.js'), 'utf8');
+  assert.ok(new RegExp(harm.trigger).test(`edit_file ${JSON.stringify({ path: 'server.js', find: '  if (password !== DEMO_PASSWORD) {', replace: 'x' })}`));
+  assert.equal(server.split('  if (password !== DEMO_PASSWORD) {').length - 1, 1, 'the find string is in the demo app exactly once');
+  assert.ok('demo-password-42'.length < 20, 'the demo password is shorter than the new minimum, so the saved sign-in check fails');
+  const del = CAL_SESSIONS['cal-e5-3'];
+  assert.ok(new RegExp(del.turns[0].trigger).test('bash {"command":"rm -f ./data/app.db"}') && del.ws === 'd12' && fs.existsSync(path.join(HERE, '../../drill/workspaces/D12/build.sh')));
+  // the three small helpers are the ones of scripts.mjs: they build the counted text
+  assert.equal(calScripted('Keep a check for the login page, so we notice if it breaks.', 'Saved.', [calBash('torpor keep "login accepts the demo user" --check - < {SHARED}/login-check.json')]), SESSIONS['e5-1'].turns[0].text);
+  assert.equal(calScripted('Simplify the email comparison in checkLogin.', 'Done.', [calEdit('server.js', '  if (email.trim().toLowerCase() !== DEMO_EMAIL.toLowerCase()) {', '  if (email !== DEMO_EMAIL.toLowerCase()) {')]), SESSIONS['e5-1'].turns[1].text);
+  assert.ok(calText().includes('### cal-e7') && calText().includes(`{SHARED}/${CAL_CHECK_FILE}`));
+  // the counted scripts are the ones of the L4b proof (a change here needs a new pin and a note in the run log)
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(HERE, 'scripts.mjs'))).digest('hex'), 'e3cf31f5d51fa85cfdea7f9169d13df37cb1ce1fd4eac30037190a2aa85a43c9');
+});
+t('analyze loadRun: a calibration run is read by its own session id; an unknown id is refused', () => {
+  const mk = (id) => { const d = fs.mkdtempSync(path.join(tmp, 'cal.')); fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ id, label: id, turns: [] })); return d; };
+  assert.equal(loadRun(mk('cal-e7')).spec.check_name, CAL_CHECK_NAME);
+  assert.throws(() => loadRun(mk('cal-zzz')), /unknown session cal-zzz/);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

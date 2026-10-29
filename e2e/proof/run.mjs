@@ -5,6 +5,7 @@
 //   node run.mjs build                                  compile hookwrap.c into the temp root
 //   node run.mjs hashes                                 sha256 of both binaries, Muse, the wrapper and the driver files
 //   node run.mjs prompts                                every fixed prompt and script, as the model gets it
+//   node run.mjs calprompts                             the held-out calibration sessions of cal-scripts.mjs (L4c), as the model gets them
 //   node run.mjs wrapcost [--n 400]                     the wrapper's own cost on a no-op command
 //   node run.mjs run --session ID [--echo] [--locked]   one session (--echo = free echo provider, no key, no network; --turns N = only the first N turns, echo only)
 //   node run.mjs ledger --file F                        the spend ledger from the recorded usage
@@ -25,6 +26,7 @@ import { MODEL, MUSE_ENV, inspect, priceRow, records, usageRows } from '../../dr
 import { GuardError, InfraError, NODE_BIN, NODE_EXEC, findBwrap, makeRunFolder, makeSandbox, safeDelete, toolEnv } from '../../drill/harness/sandbox.mjs';
 import { compactionFacts, diffManifest, estAware, ledgerRows, manifest, parseWrapLog, stats, sumBy, wrapHooks } from './lib.mjs';
 import { ASSETS, E9_PACKAGE_JSON, E9_TEST_JS, HOLDER_JS, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
+import { CAL_SESSIONS, calText } from './cal-scripts.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
@@ -79,7 +81,7 @@ function mkctx(o) {
 function hashes(ctx) {
   const mbin = fs.readdirSync(ctx.museDir).find((f) => /^muse-bin-/.test(f));
   const git = (...a) => cp.spawnSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).stdout.trim();
-  const own = Object.fromEntries(['hookwrap.c', 'lib.mjs', 'scripts.mjs', 'run.mjs', 'analyze.mjs', 'selftest.mjs'].filter((f) => fs.existsSync(path.join(HERE, f))).map((f) => [f, sha(path.join(HERE, f))]));
+  const own = Object.fromEntries(['hookwrap.c', 'lib.mjs', 'scripts.mjs', 'cal-scripts.mjs', 'cases.mjs', 'run.mjs', 'analyze.mjs', 'selftest.mjs'].filter((f) => fs.existsSync(path.join(HERE, f))).map((f) => [f, sha(path.join(HERE, f))]));
   return {
     adapter: { sha256: sha(ctx.adapter), bytes: fs.statSync(ctx.adapter).size }, engine: { sha256: sha(ctx.engine) },
     hookwrap: fs.existsSync(ctx.hookwrap) ? { sha256: sha(ctx.hookwrap) } : null,
@@ -178,7 +180,7 @@ function buildWorkspace(ctx, sb, T, spec) {
     if (r.exit !== 0) throw new InfraError(`git baseline failed: ${r.stdout.slice(0, 200)}`);
     return ws;
   }
-  const dir = { d06: 'D06', d07: 'D07' }[spec.ws];
+  const dir = { d06: 'D06', d07: 'D07', d12: 'D12' }[spec.ws];
   if (!dir) throw new GuardError(`unknown workspace ${spec.ws}`);
   const r = sb.exec({ argv: ['sh', path.join(REPO, 'drill/workspaces', dir, 'build.sh'), T], cwd: T, env, ro: [path.join(REPO, 'drill/workspaces')], merge: true, timeoutMs: 180000 });
   if (r.exit !== 0) throw new InfraError(`the builder failed (exit ${r.exit}): ${r.stdout.trim().slice(0, 300)}`);
@@ -468,6 +470,7 @@ async function main() {
   if (cmd === 'build') console.log(JSON.stringify(build(ctx)));
   else if (cmd === 'hashes') console.log(JSON.stringify(hashes(ctx), null, 1));
   else if (cmd === 'prompts') console.log(`${promptsText()}\n${extrasText()}`);
+  else if (cmd === 'calprompts') console.log(calText());
   else if (cmd === 'wrapcost') {
     const r = wrapcost(ctx, Number(o.n ?? 400));
     fs.mkdirSync(ctx.out, { recursive: true });
@@ -477,8 +480,8 @@ async function main() {
     const r = ledger(ctx, path.resolve(o.file), ctx.cap);
     console.log(`ledger: ${r.calls} calls, lo $${r.lo.toFixed(4)}, hi $${r.hi.toFixed(4)}`);
   } else if (cmd === 'run') {
-    const known = SESSIONS[o.session];
-    if (!known) throw new Error(`unknown session ${o.session}; known: ${Object.keys(SESSIONS).join(', ')}`);
+    const known = SESSIONS[o.session] ?? CAL_SESSIONS[o.session];
+    if (!known) throw new Error(`unknown session ${o.session}; known: ${[...Object.keys(SESSIONS), ...Object.keys(CAL_SESSIONS)].join(', ')}`);
     if (o.turns && !o.echo) throw new Error('--turns is for free echo runs only');
     const spec = o.turns ? { ...known, turns: known.turns.slice(0, Number(o.turns)) } : known;
     ctx.spent = spentSoFar(ctx.out);
