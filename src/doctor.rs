@@ -1,7 +1,7 @@
 //! `torpor-muse doctor`: is the gate really live, and what broke without a sound. Owner: S3a-shim.
 //!
-//! It only reads, runs one harmless probe and the engine's read-only `torpor gate`: it never deletes or kills anything
-//! that is not its own probe process.
+//! It reads, runs one harmless probe and the engine's read-only `torpor gate`. In the code its only kill is the
+//! process group of its own probe, and it removes no file.
 //! Every line starts with `ok`, `info`, `warn` or `FIX`; a problem line is followed by a `do:` line that says how.
 //! Exit 0 = nothing to fix (warnings may remain), 1 = at least one FIX.
 

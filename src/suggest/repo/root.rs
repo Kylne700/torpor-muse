@@ -29,7 +29,7 @@ pub fn is_synthetic(root: &Path) -> bool {
     root.join(".synthetic").is_file()
 }
 
-/// The start commands the model may pick, built from `package.json` scripts with fixed names. Never free text.
+/// The start commands the model may pick, built from `package.json` scripts with fixed names. No free text.
 /// shortcut: one fixed fallback (`node server.js`) when there is no usable script; no other guesses. Add more when real projects need them.
 pub fn start_choices(root: &Path) -> Vec<Start> {
     let mut out = Vec::new();

@@ -111,7 +111,7 @@ pub const EVENTS: &[Ev] = &[
     },
 ];
 
-/// The longest a Stop waits for a check that is being saved before it asks the engine: 12 s, and never more than the
+/// The longest a Stop waits for a check that is being saved before it asks the engine: 12 s or, if less, the
 /// hook's `timeout_s` less 5 s. Muse fails an overdue hook open (research/59 D7, T6): the engine's answer would be lost.
 pub fn save_wait_cap(timeout_s: u32) -> Duration {
     let room = Duration::from_secs(u64::from(timeout_s)).saturating_sub(Duration::from_secs(5));

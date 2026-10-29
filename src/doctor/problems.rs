@@ -30,7 +30,7 @@ pub(crate) fn check_errors(vault: &Path, now: u64, r: &mut Report) {
 
 /// How far back a line of problems.log still counts.
 const PROBLEMS_RECENT_S: u64 = 24 * 3600;
-/// Core keeps the file near 32 KiB, newest last; doctor never reads more than this from its end.
+/// Core keeps the file near 32 KiB, newest last; doctor reads at most this many bytes, from its end.
 pub const PROBLEMS_READ: u64 = 128 * 1024;
 
 /// The last `max` bytes of a file, from the start of a whole line.

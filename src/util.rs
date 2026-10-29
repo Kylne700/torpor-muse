@@ -62,8 +62,8 @@ pub fn private_dir(dir: &Path) -> io::Result<()> {
         .create(dir)
 }
 
-/// Writes `bytes` to `path` through a temp file in the same directory, then renames it over `path`, so a reader never
-/// sees half a file. `mode` is for the new file; `sync`: fsync it before the rename; `before_rename` runs after that.
+/// Writes `bytes` to `path` through a temp file in the same directory, then renames it over `path` (one `rename` call).
+/// `mode` is for the new file; `sync`: fsync it before the rename; `before_rename` runs after that.
 /// A failure (or a crash) before the rename leaves `path` as it was. The folder must exist.
 pub fn write_atomic(
     path: &Path,

@@ -139,7 +139,7 @@ pub struct Step {
     pub why: String,
 }
 
-/// The model's whole answer. A key that is missing, extra or of the wrong type is an error: never a half check.
+/// The model's whole answer. A key that is missing, extra or of the wrong type is an error: no half check is made.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Answer {

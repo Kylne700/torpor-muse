@@ -147,7 +147,7 @@ fn the_excerpt_skips_dotfiles_ignored_files_links_and_secrets() {
     let _ = fs::remove_dir_all(&d);
 }
 
-/// dogfood1 M2: the app's own data never goes to the model, only code and the manifests.
+/// dogfood1 M2: the excerpt holds code and the manifests and none of the app's data files (the test below).
 #[test]
 fn the_excerpt_holds_code_and_manifests_and_none_of_the_data_files() {
     let d = ws("data");

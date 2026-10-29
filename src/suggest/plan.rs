@@ -34,7 +34,7 @@ pub(super) fn model_name() -> Result<String, String> {
 }
 
 /// The checks that cost nothing and need no key: a script to start the app with, and the engine. `say` runs them
-/// before it uploads a clip, so a folder the writer would refuse never costs a transcription.
+/// before it uploads a clip, so a folder the writer would refuse costs no transcription.
 pub(super) fn local_checks(root: &Path) -> Result<Vec<Start>, Outcome> {
     let starts = repo::start_choices(root);
     if starts.is_empty() {

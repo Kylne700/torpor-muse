@@ -99,7 +99,7 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
 }
 
 /// `~/.config/torpor-muse/config` (mode 0600, refused otherwise): `key_file = <path>`, `day_cap_usd = <number>`.
-/// It holds the path of the key file, never the key.
+/// It holds the path of the key file, not the key.
 pub fn load_config() -> Result<Config, String> {
     let Some(p) = config_path().filter(|p| p.exists()) else {
         return Ok(Config::default());
@@ -123,7 +123,7 @@ pub fn env_key_ok() -> bool {
     env("META_API_KEY").is_some_and(|k| Key::new(&k).is_ok())
 }
 
-/// `META_API_KEY` when it is set (run by hand); otherwise the file the config names. Never from argv. A run started
+/// `META_API_KEY` when it is set (run by hand); otherwise the file the config names. Not from argv. A run started
 /// by the trigger gets no `META_API_KEY` when the config names a key file, so it takes the file.
 pub fn load_key(cfg: &Config) -> Result<Key, String> {
     key_from(cfg, env("META_API_KEY"))

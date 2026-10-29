@@ -123,7 +123,7 @@ pub fn save_lock(dir: &Path) -> Option<Lock> {
 
 /// What the Stop hook calls before it asks the engine to check the saved promises: waits, at most `cap`, while a check
 /// is being saved, and says how long it waited. No save in flight, no lock file yet, or a lock that cannot be asked
-/// (all of these are one `flock` call, no sleep): it returns at once. Opens the file read-only and never creates one.
+/// (all of these are one `flock` call, no sleep): it returns at once. Opens the file read-only.
 pub fn wait_for_save(dir: &Path, cap: Duration) -> Duration {
     let started = Instant::now();
     let Ok(file) = File::open(dir.join(SAVE_LOCK)) else {
@@ -139,7 +139,7 @@ pub fn wait_for_save(dir: &Path, cap: Duration) -> Duration {
     started.elapsed()
 }
 
-/// Writes next to the target and renames, so a reader never sees half a file.
+/// Writes next to the target and renames it into place (one `rename` call).
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     crate::util::write_atomic(path, data, 0o600, true, || Ok(()))
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
@@ -181,7 +181,7 @@ mod tests {
     fn a_stop_waits_for_a_save_in_flight_and_for_nothing_else() {
         let d = tmp("save");
         let cap = Duration::from_secs(5);
-        // never saved here: no wait, and the Stop does not make the file
+        // no save started here: the wait is zero, and no lock file appears (the third assert)
         assert_eq!(wait_for_save(&d, cap), Duration::ZERO);
         assert_eq!(wait_for_save(&d.join("nope"), cap), Duration::ZERO);
         assert!(!d.join(SAVE_LOCK).exists());

@@ -1,12 +1,12 @@
 //! Claude-style transcript for the engine. Muse sends `transcript_path: null` (research/59 D3), but the engine reads a
 //! transcript for the human origin of promise words, compaction boundaries and the delivery check (research/60 AD4).
-//! This module keeps one per main session, translated from Muse's own session log (never invented). Owner: S3a-shim.
+//! This module keeps one per main session, translated from Muse's own session log. Owner: S3a-shim.
 //!
 //! Muse's log (`<data>/muse/sessions/Y/M/D/<session-id>/session.jsonl`, one JSON record per line, observed on 1.4.13):
 //! - `runtime.user_intent.accepted` is a prompt. It is written before the UserPromptSubmit hook runs. Muse does not say
 //!   whether a person typed it: only `semantic_kind` chat / skill_invocation / plugin_command on surface `main` (the
 //!   person-initiated kinds) become `human`/`typed`; any other kind is labeled `unknown`, which the engine reads as
-//!   "not human". The prompt text is never copied.
+//!   "not human". A prompt line holds ids and these labels, no text field.
 //! - `context_compaction_installed` is a finished compaction (soft, hard or manual): one `compact_boundary` line. The
 //!   candidate, checkpoint and `session.fork.compaction` records are not boundaries.
 //! - `context_block_updated` / `context_block_update_batch_committed` with `source: runtime_hook` hold the exact

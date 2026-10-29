@@ -117,7 +117,7 @@ fn quoted(c: &[char], i: usize) -> Option<(String, usize)> {
     (j < c.len()).then_some((got, j + 1))
 }
 
-/// Never fails: a line it cannot read (an unclosed quote) is one murky segment of its words.
+/// Returns a Chain, not a Result: a line it cannot read (an unclosed quote) is one murky segment of its words.
 pub(super) fn split(line: &str) -> Chain {
     let c: Vec<char> = line.chars().take(MAX + 1).collect();
     let mut b = Build {

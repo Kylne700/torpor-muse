@@ -110,7 +110,7 @@ pub(super) fn offer() -> Result<(), String> {
     Ok(())
 }
 
-/// For `uninstall`, which never deletes it: the key file the config names, or else the one init writes, if it exists.
+/// For `uninstall`, which prints its path: the key file the config names, or else the one init writes, if it exists.
 pub(super) fn kept() -> Option<PathBuf> {
     load_config()
         .ok()

@@ -17,7 +17,7 @@ const BIG_FILE: u64 = 64_000;
 
 const LIST_CAP: usize = 120;
 
-/// Code only: the app's data (.json, .txt, .csv, .sql, notes in .md) never goes to the model (dogfood1 M2).
+/// Code only: the app's data (.json, .txt, .csv, .sql, notes in .md) is not in this list (dogfood1 M2).
 const EXTS: [&str; 18] = [
     "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "ejs", "hbs", "pug", "py", "rb", "php", "go",
     "java", "rs", "cs", "vue",
@@ -145,7 +145,7 @@ pub fn cut(s: &str, max: usize) -> &str {
 }
 
 /// The lines of a file the writer may read, redacted and each cut to `LINE_CAP`. The whole text is redacted first and
-/// cut afterwards, so that a cut never leaves half a key behind.
+/// cut afterwards, so a cut falls on text that is already redacted.
 fn read_lines(root: &Path, rel: &str, synthetic: bool) -> Option<Vec<String>> {
     let path = root.join(rel);
     let meta = fs::symlink_metadata(&path).ok()?;
@@ -162,7 +162,7 @@ fn read_lines(root: &Path, rel: &str, synthetic: bool) -> Option<Vec<String>> {
     )
 }
 
-/// The start of a file that always goes: its first `FILE_CAP` bytes, `[cut]` after them where more follows. With
+/// The start of a file: its first `FILE_CAP` bytes, `[cut]` after them where more follows. With
 /// more, also the first line a window may begin at (the line the cut falls in is shown whole there).
 fn start_of(lines: &[String]) -> (String, Option<usize>) {
     let body = lines.join("\n");
