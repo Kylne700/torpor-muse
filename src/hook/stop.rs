@@ -312,8 +312,8 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
 
 /// The reason of the second Stop block of a turn (SN2): the first one did not make the reply tell the user (a reply format
 /// the user asked for won over the note in 1 of 2 takes), the check still fails at this Stop (`fails` = the fail lines of
-/// this Stop's engine text), and Muse shows nothing of Torpor's own line, so only the AI's reply reaches the user. The
-/// sentence to open that reply with is given whole. None = no check fails.
+/// this Stop's engine text), and Muse keeps none of the note on the screen (the bar shows only the 5 s line of `flash`), so
+/// the AI's reply is what stays for the user. The sentence to open that reply with is given whole. None = no check fails.
 pub fn again(cmd: &str, fails: &[Fail]) -> Option<String> {
     let id = match fails {
         [] => return None,
