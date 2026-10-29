@@ -23,7 +23,9 @@ mod voice;
 mod work;
 
 pub use client::{config_path, key_file_gap, load_config, parse_config};
-pub use read::{NO_CHECK_MADE, NO_CHECK_SAVED, NOT_SAVED, TURNED_DOWN, gaps, last_result, scrub};
+pub use read::{
+    NO_CHECK_MADE, NO_CHECK_SAVED, NOT_SAVED, TURNED_DOWN, gaps, last_result, scrub, wait_for_save,
+};
 pub use state::Gap;
 pub use trigger::{trigger, would_send, writer_off};
 pub use voice::say;

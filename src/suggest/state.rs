@@ -3,6 +3,7 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// Tests that change the process environment hold this, one at a time.
 #[cfg(test)]
@@ -33,7 +34,8 @@ pub fn ws_dir(root: &Path) -> Result<PathBuf, String> {
     Ok(d)
 }
 
-fn ws_path(root: &Path) -> Result<PathBuf, String> {
+/// Where the folder of a project is (or will be), without making it: for a reader.
+pub fn ws_path(root: &Path) -> Result<PathBuf, String> {
     let name = format!("{:016x}", crate::util::fnv1a(root.as_os_str().as_bytes()));
     Ok(state_dir()?.join("ws").join(name))
 }
@@ -89,17 +91,52 @@ pub struct Lock {
 
 /// `None` when another run holds the lock.
 pub fn try_lock(dir: &Path) -> Result<Option<Lock>, String> {
+    lock_file(dir, "lock")
+}
+
+fn lock_file(dir: &Path, name: &str) -> Result<Option<Lock>, String> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
         .mode(0o600)
-        .open(dir.join("lock"))
+        .open(dir.join(name))
         .map_err(|e| format!("cannot open the lock file: {e}"))?;
     match file.try_lock() {
         Ok(()) => Ok(Some(Lock { _file: file })),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(e)) => Err(format!("cannot take the lock: {e}")),
     }
+}
+
+/// The file the writer locks while the engine saves a new check, and the Stop hook looks at (not `lock`, which a run
+/// holds from start to end). The system drops a flock when its process ends, so a crashed run leaves nothing held.
+const SAVE_LOCK: &str = "save.lock";
+const SAVE_POLL: Duration = Duration::from_millis(50);
+
+/// Taken by the writer around the engine's `promise add`, which holds the engine's own run lock for seconds (each proof
+/// run). `None` when it cannot be taken: the save goes on, only without a Stop that waits for it.
+/// shortcut: a Stop that probes in the very microsecond the writer locks makes this one try fail, and that save then goes
+/// unwaited-for (as before this change); retry a few times if a measured run ever shows it.
+pub fn save_lock(dir: &Path) -> Option<Lock> {
+    lock_file(dir, SAVE_LOCK).ok().flatten()
+}
+
+/// What the Stop hook calls before it asks the engine to check the saved promises: waits, at most `cap`, while a check
+/// is being saved, and says how long it waited. No save in flight, no lock file yet, or a lock that cannot be asked
+/// (all of these are one `flock` call, no sleep): it returns at once. Opens the file read-only and never creates one.
+pub fn wait_for_save(dir: &Path, cap: Duration) -> Duration {
+    let started = Instant::now();
+    let Ok(file) = File::open(dir.join(SAVE_LOCK)) else {
+        return Duration::ZERO;
+    };
+    while matches!(file.try_lock_shared(), Err(TryLockError::WouldBlock)) {
+        let left = cap.saturating_sub(started.elapsed());
+        if left.is_zero() {
+            break;
+        }
+        std::thread::sleep(SAVE_POLL.min(left));
+    }
+    started.elapsed()
 }
 
 /// Writes next to the target and renames, so a reader never sees half a file.
@@ -134,6 +171,80 @@ mod tests {
             b = try_lock(&d).unwrap();
         }
         assert!(b.is_some());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    // A parallel test's fork can hold a copy of an open lock fd until it execs: the bounds below allow for that.
+    const SLACK: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn a_stop_waits_for_a_save_in_flight_and_for_nothing_else() {
+        let d = tmp("save");
+        let cap = Duration::from_secs(5);
+        // never saved here: no wait, and the Stop does not make the file
+        assert_eq!(wait_for_save(&d, cap), Duration::ZERO);
+        assert_eq!(wait_for_save(&d.join("nope"), cap), Duration::ZERO);
+        assert!(!d.join(SAVE_LOCK).exists());
+        assert!(
+            save_lock(&d.join("nope")).is_none(),
+            "no folder, no lock, no panic"
+        );
+        // a save in flight: the Stop is let go when the writer lets go, long before the cap
+        let saving = save_lock(&d).expect("the writer takes the lock");
+        assert!(save_lock(&d).is_none(), "one save at a time");
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(400));
+            drop(saving);
+        });
+        let waited = wait_for_save(&d, cap);
+        release.join().unwrap();
+        assert!(
+            waited >= Duration::from_millis(350) && waited < SLACK,
+            "{waited:?}"
+        );
+        // nothing in flight any more: back at once
+        assert!(wait_for_save(&d, cap) < SLACK);
+        // a save that outlasts the cap: the Stop gives up at the cap and goes on
+        let _held = save_lock(&d).expect("taken again");
+        let waited = wait_for_save(&d, Duration::from_millis(300));
+        assert!(
+            waited >= Duration::from_millis(300) && waited < SLACK,
+            "{waited:?}"
+        );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// A writer that is killed (no `drop`, no cleanup) leaves the lock free: the system lets go of a flock when the
+    /// process ends. Python's flock is the same call as std's on Unix.
+    #[test]
+    fn a_writer_that_is_killed_leaves_no_save_in_flight() {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        let d = tmp("killed");
+        let code = "import fcntl,sys,time; f=open(sys.argv[1],'a'); fcntl.flock(f, fcntl.LOCK_EX); print('held', flush=True); time.sleep(120)";
+        let mut child = Command::new("python3")
+            .args(["-I", "-c", code])
+            .arg(d.join(SAVE_LOCK))
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("python3 starts");
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert_eq!(line.trim(), "held");
+        let waited = wait_for_save(&d, Duration::from_millis(300));
+        assert!(
+            waited >= Duration::from_millis(300),
+            "the lock was not seen as held: {waited:?}"
+        );
+        child.kill().unwrap(); // SIGKILL
+        child.wait().unwrap();
+        assert!(
+            wait_for_save(&d, Duration::from_secs(5)) < SLACK,
+            "the dead writer still holds it"
+        );
+        assert!(save_lock(&d).is_some(), "and the next writer can take it");
         let _ = fs::remove_dir_all(&d);
     }
 

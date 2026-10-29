@@ -1,7 +1,7 @@
 //! What the hook does for one event: check the payload, ask the engine, add our notes, guard a command, reply.
 
 use super::db_note::db_note;
-use super::events::{Act, EVENTS, RETIRED};
+use super::events::{Act, EVENTS, RETIRED, save_wait_cap};
 use super::gate::gate_default;
 use super::paths::{engine_cmd, project_root};
 use super::stop_note::{Ended, stop_note};
@@ -63,10 +63,17 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     let lead = compact_note::lead(dir, event, &sid, main, &payload);
     let started = Instant::now();
+    // The engine's Stop gate gives up on a busy run lock after 3 s and checks nothing (S3t): while the writer is saving
+    // a check (it holds that lock for seconds) wait, capped, until the save is done. The engine then gets what is left.
+    let waited = if event == "Stop" {
+        suggest::wait_for_save(&cwd, save_wait_cap(ev.timeout_s))
+    } else {
+        Duration::ZERO
+    };
     let ran = engine::run(
         &["hook", event],
         Some(&bytes),
-        Duration::from_millis(ev.engine_ms),
+        Duration::from_millis(ev.engine_ms).saturating_sub(waited),
     );
     let mut done = Done::default();
     match ran {
