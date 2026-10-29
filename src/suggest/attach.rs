@@ -1,7 +1,8 @@
 //! The engine side: ask it for its status, hand it a check on `torpor promise add -`, and read what it answers.
-//! Private on purpose: `engine.rs` has no working folder and cannot stop a whole process group. Owner: S3b-writer.
-//! shortcut: swap `exec` for `engine::run` once that has a working folder and a group kill.
+//! Its own call on purpose: `exec_with` records the group of the call that runs now, for the watchdog (`kill_running`).
+//! Owner: S3b-writer. shortcut: swap `exec_with` for `engine::exec_without` once that tells the watchdog its group.
 use super::state::{self, env};
+use crate::killtree;
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
@@ -22,6 +23,8 @@ pub struct Run {
     pub out: String,
     pub err: String,
     pub timed_out: bool,
+    /// Why what the engine started may still run, when the call was stopped at its limit and `killtree` could not find it.
+    pub kill_note: Option<String>,
 }
 
 struct Pipe {
@@ -68,18 +71,10 @@ impl Pipe {
     }
 }
 
-fn signal_group(pgid: i32, sig: i32) {
-    if pgid > 1 {
-        // SAFETY: a plain signal to a process group this process created and has not yet reaped.
-        unsafe {
-            libc::kill(-pgid, sig);
-        }
-    }
-}
-
-/// For the watchdog: stop the engine call that is running now, with everything it started.
-pub fn kill_running() {
-    signal_group(GROUP.load(Ordering::SeqCst), libc::SIGKILL);
+/// For the watchdog: stop the engine call that is running now, with everything it started. Some = why part of it may
+/// still run.
+pub fn kill_running() -> Option<String> {
+    killtree::kill(GROUP.load(Ordering::SeqCst))
 }
 
 fn binary() -> String {
@@ -96,7 +91,8 @@ pub fn exec(
 }
 
 /// Runs `bin` in `root`, in its own process group, without the API key or the marker that says "inside Claude".
-/// A call that passes `limit` is stopped with its whole group.
+/// A call that passes `limit` is stopped with everything it started (`killtree`). No SIGTERM first: the engine has no
+/// handler for it, and a stopped group cannot act on it.
 fn exec_with(
     bin: &str,
     root: &Path,
@@ -129,21 +125,13 @@ fn exec_with(
     }
     let (out, err) = (drain(child.stdout.take()), drain(child.stderr.take()));
     let begun = Instant::now();
+    let mut kill_note = None;
     let (code, timed_out) = loop {
         match child.try_wait() {
             Ok(Some(s)) => break (s.code(), false),
             Ok(None) if begun.elapsed() >= limit => {
-                signal_group(pgid, libc::SIGTERM);
-                let grace = Instant::now();
-                while matches!(child.try_wait(), Ok(None))
-                    && grace.elapsed() < Duration::from_secs(3)
-                {
-                    std::thread::sleep(NAP);
-                }
-                if matches!(child.try_wait(), Ok(None)) {
-                    signal_group(pgid, libc::SIGKILL);
-                    let _ = child.wait();
-                }
+                kill_note = killtree::kill(pgid);
+                let _ = child.wait();
                 break (None, true);
             }
             Ok(None) => std::thread::sleep(NAP),
@@ -159,6 +147,7 @@ fn exec_with(
         out: out.text(),
         err: err.text(),
         timed_out,
+        kill_note,
     })
 }
 
@@ -241,7 +230,11 @@ fn promise_id(line: &str) -> Option<u32> {
 
 pub fn classify(r: &Run) -> Added {
     if r.timed_out {
-        return Added::Failed("the Torpor engine did not finish in time and was stopped".into());
+        let why = r.kill_note.as_deref().map(|n| format!("; {n}"));
+        return Added::Failed(format!(
+            "the Torpor engine did not finish in time and was stopped{}",
+            why.unwrap_or_default()
+        ));
     }
     match r.code {
         Some(0) => {
@@ -318,7 +311,16 @@ pub fn add(root: &Path, check: &Value, limit: Duration) -> Result<Added, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::testing::{gone, sleeper, sleeper_engine};
     use std::os::unix::fs::PermissionsExt;
+
+    // `GROUP` is one for the whole process: a test that runs a live engine call holds this, so that no other test resets
+    // the group it is about to kill (or kills it).
+    static LIVE: Mutex<()> = Mutex::new(());
+
+    fn live() -> std::sync::MutexGuard<'static, ()> {
+        LIVE.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn run(code: Option<i32>, out: &str, err: &str) -> Run {
         Run {
@@ -326,6 +328,7 @@ mod tests {
             out: out.into(),
             err: err.into(),
             timed_out: false,
+            kill_note: None,
         }
     }
 
@@ -437,6 +440,7 @@ mod tests {
 
     #[test]
     fn the_engine_gets_its_input_and_not_the_key() {
+        let _live = live();
         let d = tmp("env");
         let bin = script(
             &d,
@@ -467,6 +471,7 @@ mod tests {
 
     #[test]
     fn a_stuck_engine_is_stopped_with_its_children() {
+        let _live = live();
         let d = tmp("hang");
         let bin = script(&d, "sleep 30 & echo $! > pidfile; wait");
         let t = Instant::now();
@@ -484,6 +489,55 @@ mod tests {
         assert!(
             !pid.is_empty() && !alive(&pid),
             "the child of the engine must be gone (pid {pid})"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // The engine starts the app under test in a process group of its own, so the engine's group is not enough.
+    #[test]
+    fn a_child_in_a_group_of_its_own_dies_at_the_call_limit_too() {
+        let _live = live();
+        let d = tmp("own-group");
+        let pidfile = d.join("pid");
+        let bin = sleeper_engine(&d, "setpgrp(0,0);");
+        let r = exec_with(
+            bin.to_str().unwrap(),
+            &d,
+            &[pidfile.to_str().unwrap()],
+            None,
+            Duration::from_secs(3),
+        )
+        .unwrap();
+        let kid = sleeper(&pidfile, 2).expect("the fake engine never started its child");
+        assert!(r.timed_out);
+        assert!(
+            gone(&kid.0),
+            "a child in its own group survived the call limit"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_watchdog_kill_reaches_a_child_in_a_group_of_its_own() {
+        let _live = live();
+        let d = tmp("watchdog");
+        let pidfile = d.join("pid");
+        let bin = sleeper_engine(&d, "setpgrp(0,0);");
+        let (bin, root, arg) = (
+            bin.to_string_lossy().into_owned(),
+            d.clone(),
+            pidfile.to_string_lossy().into_owned(),
+        );
+        let call = std::thread::spawn(move || {
+            exec_with(&bin, &root, &[&arg], None, Duration::from_secs(20))
+        });
+        let kid = sleeper(&pidfile, 10).expect("the fake engine never started its child");
+        let _ = kill_running();
+        let r = call.join().unwrap().unwrap();
+        assert!(!r.timed_out, "the call limit ended it, not the watchdog");
+        assert!(
+            gone(&kid.0),
+            "a child in its own group survived the watchdog kill"
         );
         let _ = std::fs::remove_dir_all(&d);
     }

@@ -21,8 +21,11 @@ pub(super) fn watchdog(c: &Ctx) {
         if DONE.swap(true, Ordering::SeqCst) {
             return;
         }
-        attach::kill_running();
-        let message = "the run took too long and was stopped";
+        let left = attach::kill_running();
+        let message = format!(
+            "the run took too long and was stopped{}",
+            left.map(|why| format!("; {why}")).unwrap_or_default()
+        );
         if let Some(p) = result {
             let row = json!({"v": 1, "at": crate::util::iso(crate::util::now_secs()), "outcome": Kind::Advisory.word(),
                 "saved": false, "promise": null, "message": message, "code": "slow", "session": session});

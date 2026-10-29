@@ -6,6 +6,7 @@ mod doctor;
 mod engine;
 mod hook;
 mod install;
+mod killtree;
 mod ledger;
 mod liveness;
 mod schema;
