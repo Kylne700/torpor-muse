@@ -1,0 +1,20 @@
+[
+  {"id":"E1","kind":"early","app":"shop","file":"server.js","lines":[42,50],"words":"The product search works, thanks. Now sort the results by price."},
+  {"id":"E2","kind":"early","app":"shop","file":"server.js","lines":[115,129],"words":"Adding to the cart works and the total is right. Next, show the number of items in the header."},
+  {"id":"E3","kind":"early","app":"blog","file":"server.js","lines":[37,47],"words":"Creating a post works. Please add a word count to the post page."},
+  {"id":"E4","kind":"early","app":"tasks","file":"lib/schedule.js","lines":[136,145],"words":"Overdue tasks get flagged now, nice. Add a count of them on the home page."},
+  {"id":"E5","kind":"early","app":"clinic","file":"server.js","lines":[38,48],"words":"Finding a patient by phone number works. Also make the name search ignore case."},
+  {"id":"E6","kind":"early","app":"notes","file":"server.js","lines":[154,160],"words":"The notes list shows the newest first, great. Make the page size 20."},
+  {"id":"L01","kind":"late","app":"shop","file":"server.js","lines":[183,195],"words":"The discount code box works. Next, show how much was saved under the total."},
+  {"id":"L02","kind":"late","app":"shop","file":"server.js","lines":[260,274],"words":"I can cancel an order now and the stock comes back. It works. Please also email the customer."},
+  {"id":"L03","kind":"late","app":"shop","file":"server.js","lines":[384,396],"words":"The low stock page for the admin works. Please also add a badge with the count."},
+  {"id":"L04","kind":"late","app":"blog","file":"server.js","lines":[215,232],"words":"The RSS feed works in my reader. Now add the post summary to each item."},
+  {"id":"L05","kind":"late","app":"blog","file":"server.js","lines":[203,213],"words":"Deleting a comment works. Now ask for a confirmation before it goes."},
+  {"id":"L06","kind":"late","app":"tasks","file":"lib/schedule.js","lines":[239,267],"words":"Weekly tasks come back every week after I finish them, it works. Now add a monthly option to the form."},
+  {"id":"L07","kind":"late","app":"tasks","file":"lib/schedule.js","lines":[300,311],"words":"The list is sorted by priority and then by due date, it works. Make urgent tasks bold."},
+  {"id":"L08","kind":"late","app":"tasks","file":"lib/schedule.js","lines":[313,318],"words":"Snoozing a task moves it to later today, that works. Add a button for tomorrow too.","note":"synonym: the claim says snoozing, the code says postpone; they share only generic words (moves, task, later) through the comment"},
+  {"id":"L09","kind":"late","app":"clinic","file":"server.js","lines":[701,719],"words":"Appointment reminders go out the day before, it works. Add the doctor's name to the message."},
+  {"id":"L10","kind":"late","app":"clinic","file":"server.js","lines":[1226,1238],"words":"Cancelling an appointment frees the slot, it works. Show the freed time to the front desk."},
+  {"id":"L11","kind":"late","app":"notes","file":"server.js","lines":[172,190],"words":"Pinned notes stay on top now, it works. Add an unpin button."},
+  {"id":"L12","kind":"late","app":"library","file":"routes/loans.js","lines":[155,171],"words":"Late fees are worked out for each day, it works. Cap them at 20 shekels."}
+]
