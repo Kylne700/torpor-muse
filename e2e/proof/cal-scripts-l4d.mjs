@@ -10,7 +10,7 @@ const LATE = 'The /api/me route works, it gives back my name and email once I am
 // (run.mjs: the `go` file), so the turn ends while the save is still running. The wait stops by itself after 110 s. A plain second ask follows so a check that the
 // first Stop left for later has a Stop to run in.
 const WAIT = 'i=0; until [ -e {SHARED}/go ] || [ $i -ge 366 ]; do sleep 0.3; i=$((i+1)); done; echo waited';
-const STOP = `The welcome greeting after I sign in as the demo user looks right, thanks. Before you answer, run this once in a shell, it only waits for a moment: \`${WAIT}\` Then reply with just: Done.`;
+const STOP = `The welcome greeting works: after I sign in as the demo user, the page greets me by name. Before you answer, run this once in a shell, it only waits for a moment: \`${WAIT}\` Then reply with just: Done.`;
 const NEXT = 'Thanks. Which port does the app use when I do not pass one?';
 
 export const CAL_L4D_SESSIONS = {
