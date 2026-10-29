@@ -17,7 +17,7 @@
 Good to know:
 - Optional commands: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
 - A failing check tells the AI. It can stop the AI only after you run `torpor gate on` yourself, and then only a check that Torpor trusts (see "Tell, not stop" below).
-- Speed, in the Muse Code proof (E1 in [e2e/PROOF.md](e2e/PROOF.md)): 450 hook runs took p50 11.34 ms and p99 40.05 ms. One Stop took 3.03 s (cause not verified). The 12 Stops that ran a saved check are counted apart: p50 654.37 ms, at most 1,868.31 ms.
+- Speed, in the Muse Code proof (E1 in [e2e/PROOF.md](e2e/PROOF.md)): 450 hook runs took p50 11.34 ms and p99 40.05 ms. One Stop took 3.03 s (its likely cause and the fix: see [Measured](#measured)). The 12 Stops that ran a saved check are counted apart: p50 654.37 ms, at most 1,868.31 ms.
 - Cost details: [docs/voice.md](docs/voice.md).
 
 ## Measured
@@ -29,6 +29,9 @@ Good to know:
 - **Not triggered:** E9 (a false "Done": the AI did not write one) and V11 (can the AI turn Torpor off: it refused by itself, and Torpor's own refusal was not exercised). So this README does not say the AI cannot turn Torpor off (a test without a model: two of the three ways are refused, the script file is not; see "The guide" under [Hands-free](#hands-free-you-talk-the-ai-runs-torpor)).
 - Each case ran once, on one machine, with one model version, on the demo app only.
 - The first run, L4b, found two failures. Fixes U and E7fix were made for them, and L4c ran the proof again. Both runs stay published.
+- **Changed after the measured build 56d0a8f** (not measured again with Muse Code yet):
+  - The 3.03 s Stop. The pinned engine's Stop waits at most 3 s for the engine's run lock, then leaves the saved checks unchecked until the next turn that touches them. The engine holds that lock while it proves a new check for the check-writer, and five such runs filled that Stop's time (E1 in [e2e/PROOF.md](e2e/PROOF.md)). A test without a model shows the same 3.0 s and the same skip ([tests/hook_stop_save_wait.rs](tests/hook_stop_save_wait.rs)). The Stop now first waits, at most 12 s, until such a save is done. This is the likely cause, not a verified one: the proof run was not repeated.
+  - The check-writer's reasons. In a pre-registered A/B with the real model (50 runs, 5 per case and arm), saved checks went from 12 of 25 to 20 of 25, and reasons that named the user's request instead of an untested part from 9 of 25 to 0 of 25 (8 of those 9 explained why no check was written) ([eval/gap/RESULT.md](eval/gap/RESULT.md); a keyword count, no significance test).
 
 <!-- CLIP: a 20-second clip goes here -->
 
