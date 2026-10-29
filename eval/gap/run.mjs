@@ -132,7 +132,9 @@ export function ledgerTotal(file, cap = CAP_HI) {
 // ---- the stand-in for the API ----
 
 // Answers the first question with a canned claim. Sends the writer's call on to `upstream` unless `flag` (when given) is gone or the
-// ledger's hi total plus the worst case of this call would pass `cap`; then it answers 503 and `state.stopped` says why.
+// ledger's hi total plus the worst case of this call would pass `cap`; then it answers 503 and `state.stopped` says why. Any answer of
+// `upstream` other than HTTP 200, and any network failure, stops the same way once its ledger row is written: that is an error of the
+// provider or the network, not a result, so the run in flight is dropped and a resume runs it again.
 export function startProxy({ ledger, upstream, key, flag = '', cap = CAP_HI }) {
   const state = { ...ledgerOpen(ledger), cur: null, stopped: '', model: null };
   const reply = (res, status, obj, headers = {}) => {
@@ -170,11 +172,9 @@ export function startProxy({ ledger, upstream, key, flag = '', cap = CAP_HI }) {
     const t0 = performance.now();
     let status = 0;
     let text = '';
-    let retryAfter = null;
     try {
       const r = await fetch(`${upstream}/v1/responses`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: raw, signal: AbortSignal.timeout(150_000) });
       status = r.status;
-      retryAfter = r.headers.get('retry-after');
       text = await r.text();
     } catch (e) {
       call.error = e?.name ?? 'error';
@@ -194,7 +194,12 @@ export function startProxy({ ledger, upstream, key, flag = '', cap = CAP_HI }) {
     const u0 = u ?? { input: '?', cached: '?', output: '?', reasoning: '?' };
     const label = `writer${status === 200 ? '' : ` (HTTP ${status})`}`;
     fs.appendFileSync(ledger, `| ${state.n} | ${state.cur.label} | ${label} | ${new Date().toISOString().slice(11, 19)}Z | ${body.model} | ${u0.input} | ${u0.cached} | ${u0.output} | ${u0.reasoning} | ${call.lo.toFixed(4)} | ${call.hi.toFixed(4)} | ${state.hi.toFixed(4)} |\n`);
-    res.writeHead(status || 502, { 'content-type': 'application/json', ...(retryAfter ? { 'retry-after': retryAfter } : {}) });
+    if (status !== 200) {
+      state.stopped ||= call.error ? `upstream transport error (${call.error})` : `upstream HTTP ${status}`;
+      call.stopped = true;
+      return reply(res, 503, { error: `eval stopped: ${state.stopped}` });
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
     res.end(text);
   });
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, state, port: server.address().port })));
@@ -344,6 +349,7 @@ async function runAll(rowsFile) {
     meta.model = state.model;
     meta.finished = new Date().toISOString();
     meta.stopped = stopped || undefined;
+    if (stopped) (meta.stops ??= []).push({ at: meta.finished, reason: stopped });
     const lines = fs.readFileSync(rowsFile, 'utf8').split('\n');
     lines[0] = JSON.stringify({ meta });
     fs.writeFileSync(rowsFile, lines.join('\n'));
@@ -385,7 +391,7 @@ export function report(meta, rows) {
   const L = [];
   L.push('# S3g result: the writer names only what the developer said works', '');
   L.push('Made by `node eval/gap/run.mjs report eval/gap/rows.jsonl` from the recorded runs. The bars were fixed in PREREG.md before the first keyed call. Nothing here was re-run.', '');
-  L.push(`Model ${meta.model}; engine ${meta.engine}; harness commit ${meta.harness}; BASE binary sha256 ${meta.base_sha256.slice(0, 16)}, HEAD binary sha256 ${meta.head_sha256.slice(0, 16)}; upstream ${meta.upstream}; ${meta.started} to ${meta.finished}${meta.resumes ? `; resumed ${meta.resumes} time(s)` : ''}.`, '');
+  L.push(`Model ${meta.model}; engine ${meta.engine}; harness commit ${meta.harness}; BASE binary sha256 ${meta.base_sha256.slice(0, 16)}, HEAD binary sha256 ${meta.head_sha256.slice(0, 16)}; upstream ${meta.upstream}; ${meta.started} to ${meta.finished}${meta.resumes ? `; resumed ${meta.resumes} time(s)` : ''}${meta.stops?.length ? `; stops: ${meta.stops.map((x) => `${x.at} ${x.reason}`).join(', ')}` : ''}.`, '');
   if (meta.stopped || !complete) L.push(`INCOMPLETE: ${meta.stopped ? `stopped (${meta.stopped}); ` : ''}BASE ${b.n} of 25 runs, HEAD ${h.n} of 25 runs.`, '');
   L.push('## Pass lines', '', '| bar | result | met |', '|---|---|---|');
   for (const l of lines) L.push(`| ${l.bar} | ${l.have} | ${l.ok ? 'yes' : 'NO'} |`);
@@ -533,6 +539,7 @@ async function selftest() {
   const bugged = mk((i, arm, rep) => (arm === 'base' && rep <= 3 ? { junk: 1, note: 1, reason: 'The link | is\nnew' } : {}));
   assert(!report(meta, bugged).includes('bug not reproduced'));
   assert(report(meta, bugged).includes('The link \\| is new'));
+  assert(report({ ...meta, resumes: 1, stops: [{ at: 't1', reason: 'upstream HTTP 429' }] }, bugged).includes('resumed 1 time(s); stops: t1 upstream HTTP 429.'));
   assert.equal(passLines(bugged).b.junk, 15);
   const edge = (f) => passLines(mk(f)).lines.map((l) => l.ok);
   assert.deepEqual(edge((i, arm, rep) => (arm === 'head' && i.id === 'A1' && rep === 1 ? { junk: 1 } : {})), [true, true, true]);
@@ -587,6 +594,37 @@ async function selftest() {
     assert.equal(r.status, 503);
     assert.equal(cap.state.stopped, 'the spend cap');
     cap.server.close();
+    // an error of the provider or the network stops the sitting: the failed call is a ledger row, the adapter gets 503, and nothing more is sent on
+    let hits = 0;
+    const bad = http.createServer(async (rq, rs) => {
+      for await (const c of rq); // drain
+      hits += 1;
+      rs.writeHead(401, { 'content-type': 'application/json' });
+      rs.end('{"error":"no"}');
+    });
+    await new Promise((ok) => bad.listen(0, '127.0.0.1', ok));
+    const errLedger = path.join(dir, 'err.md');
+    const er = await startProxy({ ledger: errLedger, upstream: `http://127.0.0.1:${bad.address().port}`, key: 'k', cap: 0.5 });
+    er.state.cur = { calls: [], label: 'x' };
+    const again = () => fetch(`http://127.0.0.1:${er.port}/v1/responses`, { method: 'POST', body: JSON.stringify({ model: 'm', max_output_tokens: 6000, text: { format: { name: CHECK } }, input: 'x' }) });
+    assert.equal((await again()).status, 503);
+    assert.equal(er.state.stopped, 'upstream HTTP 401');
+    assert.equal(ledgerRows(errLedger).length, 1);
+    assert(fs.readFileSync(errLedger, 'utf8').includes('writer (HTTP 401)'));
+    assert.equal((await again()).status, 503);
+    assert.equal(hits, 1);
+    er.server.close();
+    bad.close();
+    const dead = http.createServer();
+    await new Promise((ok) => dead.listen(0, '127.0.0.1', ok));
+    const deadPort = dead.address().port;
+    await new Promise((ok) => dead.close(ok));
+    const nf = await startProxy({ ledger: path.join(dir, 'net.md'), upstream: `http://127.0.0.1:${deadPort}`, key: 'k', cap: 0.5 });
+    nf.state.cur = { calls: [], label: 'x' };
+    const r2 = await fetch(`http://127.0.0.1:${nf.port}/v1/responses`, { method: 'POST', body: JSON.stringify({ model: 'm', max_output_tokens: 6000, text: { format: { name: CHECK } }, input: 'x' }) });
+    assert.equal(r2.status, 503);
+    assert(nf.state.stopped.startsWith('upstream transport error'), nf.state.stopped);
+    nf.server.close();
     up.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

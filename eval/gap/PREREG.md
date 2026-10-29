@@ -143,11 +143,12 @@ If BASE junk is 0 of 25, RESULT.md says "bug not reproduced" next to the pass li
 
 - Keyed calls only while `/tmp/claude-1000/meta-billing-ok` exists; the stand-in checks it before every forwarded call. Every keyed run holds `flock /tmp/claude-1000/meta-keyed.lock`. The key reaches the harness only through the environment, read from the key file inside the same command; no child process sees it.
 - Cap $3.00 hi for the stage, enforced by the stand-in before every forwarded call (the worst case of the call is added to the ledger's hi total). Near the cap, or if the flag is gone: stop, report, never go past it. A stopped sitting leaves the missing runs missing; RESULT.md then says INCOMPLETE.
+- An error of the provider or the network is not a result. Any answer from the API other than HTTP 200, or no answer, stops the sitting at once, after the failed call's ledger row (counted at its worst case when no usage came back). The run in flight is dropped, not recorded, and runs again from scratch if the sitting is resumed. After a transient error (HTTP 429, 5xx, a timeout) the stage resumes, at most 3 times in all; after a refusal of the key or the request (HTTP 400, 401, 402, 403, 404) it does not resume and reports to the lead. An HTTP 200 answer is always a result, even one the adapter cannot use (it is scored as above). RESULT.md lists every stop.
 - Ledger: `scratch/torpor-s3/spend-S3g.md` (relative to the project root), one row per forwarded response, written by the stand-in from the recorded usage, columns as spend-L4-proof.md, with a total line against $3.00.
 
 ## After the first keyed call
 
-- Nothing is re-run because a result is bad. A run that did not finish (a crash, a kill, a stop) is the only reason to start the same command again; it skips the runs already recorded.
+- Nothing is re-run because a result is bad. A run that did not finish (a crash, a kill, a stop, an error of the provider or the network) is the only reason to start the same command again; it skips the runs already recorded.
 - Results go to eval/gap/RESULT.md (made by `report` from eval/gap/rows.jsonl) whatever they show. Anything learned later is written there as a note, never here.
 
 ## Known limits
@@ -161,4 +162,11 @@ If BASE junk is 0 of 25, RESULT.md says "bug not reproduced" next to the pass li
 
 ## Before this file was pushed
 
-No keyed call had been made. The harness passed its selftest and was rehearsed twice against the local mock server (`mock/server.mjs`), 50 runs each, one with key words in the mock's reason and one with an empty reason, with the real adapters and the real engine.
+No keyed call had been made. The harness passed its selftest (which also checks this file's key-word lines and edit texts, and the stand-in against a local fake upstream: the canned first question, the ledger row, the flag, the cap, and the stop on an HTTP 401 and on a refused connection).
+
+It was rehearsed against the local mock server (`mock/server.mjs`) with the real adapters and the real engine:
+
+- Twice with 50 runs: once with key words in the mock's reason (junk 25 of 25 in both arms, so pass line 1 showed NO, as it must) and once with an empty reason (junk 0, "bug not reproduced"). These two used an earlier `run.mjs` that differs from the pushed one in the stop on an error of the provider or the network, in two wording changes and in one test string.
+- Once with the pushed `run.mjs`, as a stop-and-resume test: a loopback upstream answering HTTP 401 stopped the sitting at the first call with exit code 3 and no run recorded, and the resume against the mock then ran all 50 runs (one stop and one resume listed in the report header).
+
+The call to the real API (`fetch` with the key as a bearer token, nothing else of the adapter's request) is the same line as in eval/first-pass/run.mjs, whose 65 real calls all answered HTTP 200. For this stage it has not run before the first keyed call.
