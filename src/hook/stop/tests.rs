@@ -1,4 +1,4 @@
-//! Tests of the one Stop block's words: the engine's fail lines, the rows of a turn, the save points, the reason.
+//! Tests of the Stop blocks' words: the engine's fail lines, the rows of a turn, the save points, the reasons.
 
 use super::*;
 use serde_json::json;
@@ -281,6 +281,7 @@ fn the_block_names_the_promise_the_turn_and_what_to_do_about_it() {
         "Fix the app, not the check, and do not special-case test values.",
         "Run `/opt/torpor check 3` before you say it is fixed.",
         "run `/opt/torpor promise dispute 3 \"<why>\"` and tell the user.",
+        "tell the user. Your reply to the user must start with what broke, even if the user asked for a specific reply.",
     ] {
         assert!(r.contains(want), "{want}: {r}");
     }
@@ -306,6 +307,11 @@ fn the_block_names_the_promise_the_turn_and_what_to_do_about_it() {
     assert!(r.contains(" and 2 more failed after this turn."), "{r}");
     assert!(
         !r.contains("#4") && r.contains("check ID") && r.contains("dispute ID"),
+        "{r}"
+    );
+    assert!(
+        r.contains("specific reply. (ID is the number after #.)")
+            && r.matches("must start with what broke").count() == 1,
         "{r}"
     );
     // words that could end the quotation, or hold control characters, are made harmless
@@ -334,6 +340,7 @@ fn a_risky_turn_is_told_in_one_plain_sentence_and_a_database_names_its_command()
     .unwrap();
     assert!(r.starts_with("[Torpor] Before you finish:\n- This turn deleted a.txt, b.txt (files that existed before this turn). Tell the user in one plain sentence what was deleted or changed and that they can get it back by asking you. Do not undo anything unless they ask."), "{r}");
     assert!(!r.contains("back --id") && !r.contains("Promise"), "{r}");
+    assert!(!r.contains("must start with what broke"), "{r}");
     let five = names(&["1", "2", "3", "4", "5"]);
     let r = reason(
         e,
@@ -400,4 +407,43 @@ fn the_database_sentence_takes_the_ask_for_enough_when_only_what_was_deleted_com
         "{r}"
     );
     assert_eq!(r.matches("only if the user asks").count(), 1, "{r}");
+}
+
+/// SN2: the second block of a turn gives the sentence to open the reply with, and says nothing when no check fails.
+#[test]
+fn the_second_block_gives_the_sentence_to_open_the_reply_with() {
+    let e = "/opt/torpor";
+    let one = again(e, &[fail(3, "login works", "")]).unwrap();
+    assert_eq!(
+        one,
+        "[Torpor] Before you finish:\n- Check #3 (login works) still fails, and only your reply reaches the user. Start your next reply with this sentence, even if the user asked for a specific reply: \"Check #3 (login works) is failing; run `/opt/torpor check 3` to see why.\""
+    );
+    // several: at most 3 listed, one shared command
+    let many: Vec<Fail> = (1..=5).map(|i| fail(i, "w", "")).collect();
+    let r = again(e, &many).unwrap();
+    assert!(
+        r.contains("Checks #1 (w), #2 (w), #3 (w) and 2 more still fail, and only your reply reaches the user."),
+        "{r}"
+    );
+    assert!(
+        r.ends_with("\"Checks #1 (w), #2 (w), #3 (w) and 2 more are failing; run `/opt/torpor check ID` to see why (ID is the number after #).\""),
+        "{r}"
+    );
+    // no words: the number alone; words that could end the quotation are made harmless
+    let r = again(e, &[fail(4, "", "")]).unwrap();
+    assert!(
+        r.contains("Check #4 still fails") && !r.contains("()"),
+        "{r}"
+    );
+    let r = again(e, &[fail(1, "say \"hi\" `rm`\nnow", "")]).unwrap();
+    assert!(
+        r.contains("Check #1 (say 'hi' 'rm' now) still fails"),
+        "{r}"
+    );
+    assert_eq!(
+        r.matches('"').count(),
+        2,
+        "only the sentence is quoted: {r}"
+    );
+    assert_eq!(again(e, &[]), None);
 }

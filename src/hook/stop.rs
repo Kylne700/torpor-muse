@@ -1,6 +1,6 @@
-//! F4 items 2 and 3: the words of the one Stop block that `hook::stop_note::stop_note` gives when the turn that just
-//! ended broke a saved check or did something risky. This file reads the engine's own text and writes ours; it starts
-//! nothing.
+//! F4 items 2 and 3 and SN2: the words of the Stop blocks that `hook::stop_note::stop_note` gives when the turn that just
+//! ended broke a saved check or did something risky: the first block (`reason`), and a second one (`again`) when the check
+//! still fails at the next Stop of the turn. This file reads the engine's own text and writes ours; it starts nothing.
 
 use super::busy::is_db_name;
 use crate::suggest::scrub;
@@ -263,7 +263,8 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
         parts.push(format!(
             "- Promise{} {}{more} failed after this turn. Fix the app, not the check, and do not special-case test \
              values. Run `{cmd} check {id}` before you say it is fixed. If the promise itself is wrong, run `{cmd} \
-             promise dispute {id} \"<why>\"` and tell the user.{}",
+             promise dispute {id} \"<why>\"` and tell the user. Your reply to the user must start with what broke, even \
+             if the user asked for a specific reply.{}",
             if one { "" } else { "s" },
             items.join(", "),
             if one {
@@ -306,6 +307,40 @@ pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
         parts.push(s);
     }
     (!parts.is_empty()).then(|| format!("{HEAD}\n{}", parts.join("\n")))
+}
+
+/// The reason of the second Stop block of a turn (SN2): the first one did not make the reply tell the user (a reply format
+/// the user asked for won over the note in 1 of 2 takes), the check still fails at this Stop (`fails` = the fail lines of
+/// this Stop's engine text), and Muse shows nothing of Torpor's own line, so only the AI's reply reaches the user. The
+/// sentence to open that reply with is given whole. None = no check fails.
+pub fn again(cmd: &str, fails: &[Fail]) -> Option<String> {
+    let id = match fails {
+        [] => return None,
+        [f] => f.id.to_string(),
+        _ => "ID".into(),
+    };
+    let items: Vec<String> = fails
+        .iter()
+        .take(LIST)
+        .map(|f| match name(&f.name).as_str() {
+            "" => format!("#{}", f.id),
+            words => format!("#{} ({words})", f.id),
+        })
+        .collect();
+    let more = match fails.len().saturating_sub(LIST) {
+        0 => String::new(),
+        k => format!(" and {k} more"),
+    };
+    let (what, still, is, ids) = if fails.len() == 1 {
+        ("Check", "fails", "is", "")
+    } else {
+        ("Checks", "fail", "are", " (ID is the number after #)")
+    };
+    let list = format!("{what} {}{more}", items.join(", "));
+    Some(format!(
+        "{HEAD}\n- {list} still {still}, and only your reply reaches the user. Start your next reply with this sentence, \
+         even if the user asked for a specific reply: \"{list} {is} failing; run `{cmd} check {id}` to see why{ids}.\""
+    ))
 }
 
 #[cfg(test)]

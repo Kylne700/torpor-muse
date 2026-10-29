@@ -231,6 +231,14 @@ fn a_broken_saved_check_and_a_false_done_in_the_same_stop_are_one_block_with_bot
         why.ends_with(&format!("\n- {NO_RUN}")),
         "ours comes last: {why}"
     );
+    // the Stop that follows is not read for a false Done again; the check still fails, so it gets the second block of the
+    // turn (SN2), which says nothing of the claim, and the third Stop goes by
+    let v = json_of(&stop_with(&r, 2, "All tests pass.", true));
+    let again = blocked(&v).unwrap_or_else(|| panic!("no second block: {v}"));
+    assert!(
+        again.contains("Check #1 (proof page answers) still fails") && !again.contains("You wrote"),
+        "{again}"
+    );
     assert!(blocked(&json_of(&stop_with(&r, 2, "All tests pass.", true))).is_none());
     // a file deleted in the turn: the same one block, with the third thing
     engine_turn(&r, 6, 40, &[], &[("gone.txt", "edit", "deleted")]);

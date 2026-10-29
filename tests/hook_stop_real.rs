@@ -68,10 +68,17 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         found.contains("Turn 3 broke it"),
         "the engine agrees: {found}"
     );
+    // the Stop that follows: the real engine's text still has the fail line, so it is blocked once more (SN2); the third goes by
     let again = stop_of(&r, 4);
     assert!(
-        blocked(&again).is_none() && said(&again).contains("failed after this turn"),
+        blocked(&again).is_some_and(|w| w.contains("Check #1 (proof page answers) still fails"))
+            && said(&again).contains("failed after this turn"),
         "{again}"
+    );
+    let third = stop_of(&r, 4);
+    assert!(
+        blocked(&third).is_none() && said(&third).contains("failed after this turn"),
+        "{third}"
     );
 
     // turn 4 fixes it; the engine now stops the AI for this promise by itself
@@ -98,6 +105,7 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
     // the engine words its own block "... fails now ..." (asserted below with the gate on); with the gate off it sends none
     assert!(!why.contains("fails now"), "{why}");
     assert!(said(&off).contains("The AI was not stopped."), "{off}");
+    assert!(blocked(&stop_of(&r, 6)).is_some_and(|w| w.contains("still fails")));
     assert!(blocked(&stop_of(&r, 6)).is_none());
     // fixed again, gate on, broken again: the engine's own block goes out as it is; ours is not added, and the next Stop
     // of the turn (the engine lets it end) is not blocked either
@@ -155,7 +163,8 @@ fn real_engine_a_check_the_ai_added_is_told_too() {
         "{why}"
     );
     assert!(said(&bad).contains("The AI was not stopped."), "{bad}");
-    // told once for the turn
+    // told in the first block, once more in the second (SN2), and no third
+    assert!(blocked(&stop_of(&r, 4)).is_some_and(|w| w.contains("still fails")));
     assert!(blocked(&stop_of(&r, 4)).is_none());
 }
 

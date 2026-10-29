@@ -1,4 +1,4 @@
-//! The one Stop block of a turn against a fake engine: a broken check, a deleted file, a database, a full disk.
+//! The Stop blocks of a turn against a fake engine: a broken check, a deleted file, a database, a full disk.
 
 mod hook_common;
 
@@ -6,15 +6,16 @@ use hook_common::*;
 use serde_json::{Value, json};
 use std::fs;
 
-// ---------------------------------------------------------------- F4 items 2 and 3: the one Stop block of a turn
+// ---------------------------------------------------------------- F4 items 2 and 3 and SN2: the Stop blocks of a turn
 
 const SHADOW_FAIL: &str = "Torpor: promise #1 (proof page answers) failed after this turn (3 of 3 runs; it passed on the version from the end of turn 4). It would have stopped the AI, but it is in shadow mode. torpor promise show 1";
 const ADVISORY_FAIL: &str = "Torpor: promise #2 (login works) failed after this turn (3 of 3 runs; it passed before). The AI was not stopped. torpor promise show 2";
 
 /// F4 item 2. A promise that failed after the turn (the engine's own fail line, shadow or advisory) is told to the model in
-/// ONE Stop block per turn: the promise, its words, the turn that broke it (or how to find it), and what to do.
+/// the first Stop block of the turn: the promise, its words, the turn that broke it (or how to find it), and what to do.
+/// SN2: the Stop that follows asks the engine nothing and, while the check still fails, blocks once more; the third goes by.
 #[test]
-fn a_check_that_broke_is_told_to_the_model_in_one_stop_block_per_turn() {
+fn a_check_that_broke_is_told_to_the_model_in_the_first_stop_block_of_a_turn() {
     let r = Rig::new("f4-broke");
     let e = r.engine.display().to_string();
     started(&r);
@@ -48,10 +49,21 @@ fn a_check_that_broke_is_told_to_the_model_in_one_stop_block_per_turn() {
         ["status --json", "show 5 --json"],
         "the two calls a Stop makes, no more"
     );
-    // the next Stop of the same turn goes through, and the user's line still says it fails
+    // the next Stop of the same turn asks the engine nothing and, as the check still fails, blocks once more (SN2) with the
+    // sentence to open the reply with; the user's line still says it fails
     let again = stop_of(&r, 2);
-    assert!(blocked(&again).is_none(), "{again}");
+    let why = blocked(&again).unwrap_or_else(|| panic!("no second block: {again}"));
+    has(
+        why,
+        "Check #1 (proof page answers) still fails, and only your reply reaches the user.",
+    );
+    has(why, &format!("run `{e} check 1` to see why."));
+    assert_eq!(r.calls().len(), 2, "no engine call for the second block");
     assert!(said(&again).contains("failed after this turn"), "{again}");
+    // two blocks a turn: the third Stop goes through
+    let third = stop_of(&r, 2);
+    assert!(blocked(&third).is_none(), "{third}");
+    assert!(said(&third).contains("failed after this turn"), "{third}");
     // the next turn is told again; this check passed before, so no one turn is named: the model is told how to find it
     engine_turn(&r, 6, 40, &[], &[]);
     engine_stop(&r, &[ADVISORY_FAIL]);
@@ -68,6 +80,40 @@ fn a_check_that_broke_is_told_to_the_model_in_one_stop_block_per_turn() {
         &format!("Run `{e} check 2` before you say it is fixed."),
     );
     assert!(said(&next).contains("The AI was not stopped."), "{next}");
+}
+
+/// SN2. The Stop that follows the first block blocks once more only while the engine's own text still says a check fails,
+/// and a Stop that blocks nothing takes no slot of the turn's two blocks.
+#[test]
+fn the_stop_after_the_block_blocks_once_more_only_while_the_check_still_fails() {
+    let r = Rig::new("f4-again");
+    started(&r);
+    engine_turn(&r, 5, 30, &[], &[("app.js", "edit", "changed")]);
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    assert!(blocked(&stop_of(&r, 2)).is_some());
+    // the AI put it right: no fail line, no second block, and no slot used
+    engine_stop(&r, &[SAVED]);
+    let fixed = stop_of(&r, 2);
+    assert!(blocked(&fixed).is_none(), "{fixed}");
+    // it broke again before the turn ended: the second block goes out, the third Stop does not
+    engine_stop(&r, &[SAVED, SHADOW_FAIL]);
+    let second = stop_of(&r, 2);
+    assert!(
+        blocked(&second).is_some_and(|w| w.starts_with(
+            "[Torpor] Before you finish:\n- Check #1 (proof page answers) still fails"
+        )),
+        "{second}"
+    );
+    assert!(blocked(&stop_of(&r, 2)).is_none(), "{second}");
+    // the next turn starts at zero
+    engine_turn(&r, 6, 40, &[], &[]);
+    engine_stop(&r, &[SAVED, ADVISORY_FAIL]);
+    assert!(blocked(&stop_of(&r, 3)).is_some_and(|w| w.contains("Promise #2")));
+    // a block for a deleted file with nothing failing: the Stop after it has nothing to say
+    engine_turn(&r, 7, 50, &[], &[("notes.md", "shell", "deleted")]);
+    engine_stop(&r, &[SAVED]);
+    assert!(blocked(&stop_of(&r, 4)).is_some_and(|w| w.contains("deleted notes.md")));
+    assert!(blocked(&stop_of(&r, 4)).is_none());
 }
 
 #[test]
