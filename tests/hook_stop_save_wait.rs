@@ -10,8 +10,9 @@
 //! then the engine checks promise #1. The second test is the control: the engine's own Stop, called directly in the same
 //! scenario, gives up and checks nothing.
 //!
-//! Speed: the test, not a timer in the app, ends the slow run, so a slow runner cannot end it before the engine's 3 s
-//! poll is over (control) or keep it going near the cap (product). The cap bounds the wait, not the checks the engine
+//! Speed: in both tests the test, not a timer in the app, lets the slow run go on `HOLD` after the Stop begins; the rest
+//! of the save then takes longer on a slower runner, which only lengthens the time the lock is held (the control still
+//! gives up, the product waits longer and has less room below the cap). The cap bounds the wait, not the checks the engine
 //! runs after it. Those are two here (promise #1, and promise #2 which its own bad runs left failing): about 0.6 s each on
 //! a Linux machine, about four times that on the macOS CI runner. So the wait is measured up to the moment the engine is
 //! called (a stand-in for it notes the time, then runs the real one), and the whole hook only has to end inside Muse's
@@ -33,9 +34,9 @@ use writer_common::{FAKE_KEY, Mock, Sandbox, good_answer};
 const PRAISE: &str = "login works now, alice can sign in and then see her account";
 const PROOF_WORDS: &str = "the proof page must answer";
 const PROOF_SPEC: &str = r#"{"v":1,"name":"proof page answers","why":"the proof page must answer","start":{"cmd":"python3 -m http.server {port} --bind 127.0.0.1","ready":"/","timeout_s":90},"env":{},"steps":[{"http":{"method":"GET","path":"/proof.html"},"expect":{"status":200,"body_contains":"proof"},"why":"the proof page answers"}],"unverifiable":false}"#;
-/// How long after the Stop hook has begun the test lets the slow run go on: more than the engine's own 3 s poll of the run
-/// lock, so the hook is shown to wait longer than the engine alone, and far below `CAP` once the rest of the save is
-/// added (about 1 s on a Linux machine, about four times that on the macOS CI runner).
+/// How long after the Stop begins the test lets the slow run go on: more than the engine's own 3 s poll of the run lock,
+/// so the hook is shown to wait longer than the engine alone, and below `CAP` once the rest of the save is added (about
+/// 1 s on a Linux machine, about four times that on the macOS CI runner).
 const HOLD: Duration = Duration::from_millis(3500);
 /// `save_wait_cap` of the Stop hook's timeout (35 s): src/hook/events.rs.
 const CAP: Duration = Duration::from_secs(12);
@@ -58,6 +59,15 @@ struct InFlight {
 }
 
 impl InFlight {
+    /// Lets the slow run go on `HOLD` from now, from a thread: the caller runs the Stop meanwhile.
+    fn release_after_hold(&self) -> JoinHandle<()> {
+        let release = self.release.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(HOLD);
+            fs::write(release, "").unwrap();
+        })
+    }
+
     /// The writer's end: it must have saved the check it was saving.
     fn finish(self) -> Rig {
         let o = self.writer.join().unwrap();
@@ -223,12 +233,8 @@ fn a_stop_during_a_save_waits_for_it_and_then_runs_the_check() {
     let s = saving_turn("save-wait-product");
     let stop = at(3, s.r.fixture("Stop"));
     let (shim, note) = noting_the_engine_call(&s.r);
-    let release = s.release.clone();
     let began = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let timer = std::thread::spawn(move || {
-        std::thread::sleep(HOLD);
-        fs::write(release, "").unwrap();
-    });
+    let timer = s.release_after_hold();
     let run = s.r.hook_env(
         "Stop",
         stop.to_string().as_bytes(),
@@ -271,17 +277,17 @@ fn a_stop_during_a_save_waits_for_it_and_then_runs_the_check() {
     );
 }
 
-/// The control: the same scenario, the engine's Stop called directly (what the hook did before): it gives up on the run
-/// lock after 3 s, checks nothing and says nothing of the edit.
+/// The control: the same scenario, the engine's Stop called directly (what the hook did before), the slow run let go on
+/// the same `HOLD` after the Stop begins: it gives up on the run lock after 3 s, checks nothing and says nothing of the edit.
 #[test]
 fn the_engines_own_stop_gives_up_on_the_same_save_and_checks_nothing() {
     let s = saving_turn("save-wait-direct");
     let stop = at(3, s.r.fixture("Stop"));
     let t = Instant::now();
+    let timer = s.release_after_hold();
     let (code, text) = engine_cli_stdin(&s.r, &["hook", "Stop"], &stop.to_string());
     let took = t.elapsed();
-    // only now: the slow run held the run lock for the engine's whole poll
-    fs::write(&s.release, "").unwrap();
+    timer.join().unwrap();
     eprintln!("S3t: the engine's own Stop took {took:?}");
     assert_eq!(code, 0, "{text}");
     assert!(took >= Duration::from_millis(2500), "{took:?}");
