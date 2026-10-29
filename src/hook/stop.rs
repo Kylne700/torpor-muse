@@ -349,21 +349,22 @@ const FLASH: usize = 60;
 
 /// The one line a Stop block also writes to stderr (SN3; `hook::run` prints it, exit 0). Muse Code 1.4.14 draws it in its
 /// status label ("Hook blocked · Stop · <line>") for about 5 s and draws nothing else of Torpor's own, so it is what the user
-/// sees without the AI. At most `FLASH` characters, the most important words first, no path and no command output: the failing
-/// check by number and words and the command that shows it, else what the turn deleted, else that a false Done was told.
+/// sees without the AI. At most `FLASH` characters, no path and no command output. The label is cut at the right edge (the
+/// room for the line is 51 characters at 80 columns and 71 at 100 with the echo model, SN3), so the order is the number and
+/// the verdict, then the command that shows it, then the check's words last: a cut takes the words first. The line names the
+/// failing check by number, else says what the turn deleted, else that a false Done was told.
 /// `checks` = (id, words) of the failing checks, `gone` = (turn, files deleted), `claim` = a false Done; they win in that
 /// order. None = nothing to say.
 /// shortcut: the cap counts characters, not terminal columns (a wide character takes two); upgrade when a real name needs it.
 pub fn flash(checks: &[(u32, &str)], gone: Option<(u64, usize)>, claim: bool) -> Option<String> {
     let line = match (checks, gone) {
         ([(id, words)], _) => {
-            let head = format!("Torpor: check {id} fails");
-            let tail = format!(" · torpor check {id}");
+            let head = format!("Torpor: check {id} fails · torpor check {id}");
             // the 3 characters are " (" and ")" around the words
-            let room = FLASH.saturating_sub(head.chars().count() + tail.chars().count() + 3);
+            let room = FLASH.saturating_sub(head.chars().count() + 3);
             match fit(words, room) {
-                Some(w) => format!("{head} ({w}){tail}"),
-                None => format!("{head}{tail}"),
+                Some(w) => format!("{head} ({w})"),
+                None => head,
             }
         }
         ([], Some((turn, k))) => format!(
@@ -373,22 +374,18 @@ pub fn flash(checks: &[(u32, &str)], gone: Option<(u64, usize)>, claim: bool) ->
         ([], None) if claim => "Torpor: the AI says it works, but the record disagrees".into(),
         ([], None) => return None,
         (many, _) => {
-            // up to LIST ids, fewer when the numbers are long: the command at the end matters more than the third id
+            // up to LIST ids, fewer when the numbers are long: the command matters more than the third id
+            let n = many.len();
             let with = |k: usize| {
                 let ids: Vec<String> = many.iter().take(k).map(|c| c.0.to_string()).collect();
-                match (k, many.len() - k) {
-                    (0, n) => format!("Torpor: {n} checks fail · torpor check --all"),
-                    (_, 0) => format!(
-                        "Torpor: checks {} fail · torpor check --all",
-                        ids.join(", ")
-                    ),
-                    (_, n) => format!(
-                        "Torpor: checks {} and {n} more fail · torpor check --all",
-                        ids.join(", ")
-                    ),
+                let head = format!("Torpor: {n} checks fail · torpor check --all");
+                match k {
+                    0 => head,
+                    _ if k == n => format!("{head} ({})", ids.join(", ")),
+                    _ => format!("{head} ({}...)", ids.join(", ")),
                 }
             };
-            (0..=LIST.min(many.len()))
+            (0..=LIST.min(n))
                 .rev()
                 .map(with)
                 .find(|l| l.chars().count() <= FLASH)

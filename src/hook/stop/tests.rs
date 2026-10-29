@@ -453,7 +453,7 @@ fn the_second_block_gives_the_sentence_to_open_the_reply_with() {
 fn the_line_names_the_failing_check_and_the_command_that_shows_it() {
     assert_eq!(
         flash(&[(2, "cargo test")], None, false).as_deref(),
-        Some("Torpor: check 2 fails (cargo test) · torpor check 2")
+        Some("Torpor: check 2 fails · torpor check 2 (cargo test)")
     );
     // no words: the number alone
     assert_eq!(
@@ -463,21 +463,21 @@ fn the_line_names_the_failing_check_and_the_command_that_shows_it() {
     // a long name is cut after a whole word (41 of the 60 characters are fixed words)
     assert_eq!(
         flash(&[(1, "login accepts the demo user")], None, false).as_deref(),
-        Some("Torpor: check 1 fails (login accepts...) · torpor check 1")
+        Some("Torpor: check 1 fails · torpor check 1 (login accepts...)")
     );
     // a name of one long word is cut inside it; a cut that ends between two words keeps both
     assert_eq!(
         flash(&[(7, &"w".repeat(80))], None, false).as_deref(),
-        Some("Torpor: check 7 fails (wwwwwwwwwwwwwwww...) · torpor check 7")
+        Some("Torpor: check 7 fails · torpor check 7 (wwwwwwwwwwwwwwww...)")
     );
     assert_eq!(
         flash(&[(1, "aaaaaaa bbbbbbb cc dddd")], None, false).as_deref(),
-        Some("Torpor: check 1 fails (aaaaaaa bbbbbbb...) · torpor check 1")
+        Some("Torpor: check 1 fails · torpor check 1 (aaaaaaa bbbbbbb...)")
     );
     // no path, no key, no quotation mark that would end anything
     assert_eq!(
         flash(&[(7, "see src/main.rs and C:\\x\\y now")], None, false).as_deref(),
-        Some("Torpor: check 7 fails (see and now) · torpor check 7")
+        Some("Torpor: check 7 fails · torpor check 7 (see and now)")
     );
     assert_eq!(
         flash(&[(7, "/etc/passwd")], None, false).as_deref(),
@@ -485,11 +485,11 @@ fn the_line_names_the_failing_check_and_the_command_that_shows_it() {
     );
     assert_eq!(
         flash(&[(7, "sk-FAKECANARY1234 works")], None, false).as_deref(),
-        Some("Torpor: check 7 fails ([redacted] works) · torpor check 7")
+        Some("Torpor: check 7 fails · torpor check 7 ([redacted] works)")
     );
     assert_eq!(
         flash(&[(7, "a \"b\" `c`")], None, false).as_deref(),
-        Some("Torpor: check 7 fails (a 'b' 'c') · torpor check 7")
+        Some("Torpor: check 7 fails · torpor check 7 (a 'b' 'c')")
     );
 }
 
@@ -498,26 +498,63 @@ fn several_checks_get_three_ids_and_one_command_for_all() {
     let five: Vec<(u32, &str)> = vec![(1, "a"), (4, "b"), (3, "c"), (5, "d"), (2, "e")];
     assert_eq!(
         flash(&five, None, false).as_deref(),
-        Some("Torpor: checks 1, 4, 3 and 2 more fail · torpor check --all")
+        Some("Torpor: 5 checks fail · torpor check --all (1, 4, 3...)")
     );
     assert_eq!(
         flash(&five[..3], None, false).as_deref(),
-        Some("Torpor: checks 1, 4, 3 fail · torpor check --all")
+        Some("Torpor: 3 checks fail · torpor check --all (1, 4, 3)")
     );
     assert_eq!(
         flash(&five[..2], None, false).as_deref(),
-        Some("Torpor: checks 1, 4 fail · torpor check --all")
+        Some("Torpor: 2 checks fail · torpor check --all (1, 4)")
     );
     // longer numbers: fewer ids, the command stays whole
     let tens: Vec<(u32, &str)> = (10..15).map(|i| (i, "w")).collect();
     assert_eq!(
         flash(&tens, None, false).as_deref(),
-        Some("Torpor: checks 10, 11 and 3 more fail · torpor check --all")
+        Some("Torpor: 5 checks fail · torpor check --all (10, 11, 12...)")
+    );
+    let big: Vec<(u32, &str)> = (100_000..100_005).map(|i| (i, "w")).collect();
+    assert_eq!(
+        flash(&big, None, false).as_deref(),
+        Some("Torpor: 5 checks fail · torpor check --all (100000...)")
     );
     let huge: Vec<(u32, &str)> = vec![(u32::MAX, "w"), (u32::MAX - 1, "w"), (u32::MAX - 2, "w")];
     let l = flash(&huge, None, false).unwrap();
-    assert_eq!(l, "Torpor: 3 checks fail · torpor check --all");
+    assert_eq!(
+        l,
+        "Torpor: 3 checks fail · torpor check --all (4294967295...)"
+    );
     assert!(l.chars().count() <= 60, "{l}");
+    // no id fits: the count and the command
+    let many: Vec<(u32, &str)> = vec![(u32::MAX, "w"); 1000];
+    assert_eq!(
+        flash(&many, None, false).as_deref(),
+        Some("Torpor: 1000 checks fail · torpor check --all")
+    );
+}
+
+/// SN3: Muse cuts the label at the right edge; with the echo model at 80 columns 51 characters of the line are left. The
+/// number, the verdict and the command come first (they end inside 51 characters for an id up to six digits) and the
+/// check's words come after the command.
+#[test]
+fn the_command_ends_inside_the_first_51_characters_and_the_words_come_after_it() {
+    for id in [1, 12, 123, 4_567, 99_999, 999_999] {
+        let l = flash(&[(id, "login accepts the demo user")], None, false).unwrap();
+        let cmd = format!("torpor check {id}");
+        let end = l.find(&cmd).unwrap() + cmd.len();
+        assert!(l[..end].chars().count() <= 51, "{l}");
+        assert!(
+            l.find('(').unwrap() > end,
+            "the words come after the command: {l}"
+        );
+    }
+    for n in [2, 3, 12, 123] {
+        let several: Vec<(u32, &str)> = vec![(1, "a"); n];
+        let l = flash(&several, None, false).unwrap();
+        let end = l.find("--all").unwrap() + "--all".len();
+        assert!(l[..end].chars().count() <= 51, "{l}");
+    }
 }
 
 #[test]
@@ -533,7 +570,7 @@ fn without_a_failing_check_the_line_says_what_was_deleted_or_that_the_done_is_fa
     // a failing check comes first, then a deletion, then the false Done
     assert_eq!(
         flash(&[(2, "cargo test")], Some((5, 2)), true).as_deref(),
-        Some("Torpor: check 2 fails (cargo test) · torpor check 2")
+        Some("Torpor: check 2 fails · torpor check 2 (cargo test)")
     );
     assert_eq!(
         flash(&[], Some((5, 2)), true).as_deref(),

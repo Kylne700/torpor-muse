@@ -452,7 +452,7 @@ fn fail_line(id: u32, name: &str) -> String {
     )
 }
 
-const LINE_1: &str = "Torpor: check 1 fails (proof page answers) · torpor check 1";
+const LINE_1: &str = "Torpor: check 1 fails · torpor check 1 (proof page answers)";
 
 /// SN3. Every Stop block also writes one line to stderr, exit 0, for the status label of Muse Code 1.4.14 (it draws the
 /// stderr of a blocking Stop for about 5 s): the first block and the second of a turn, with no line break. A Stop that
@@ -504,7 +504,7 @@ fn each_stop_block_writes_one_line_to_stderr_and_a_stop_that_blocks_nothing_writ
 fn the_line_names_the_checks_first_then_what_was_deleted() {
     let r = Rig::new("sn3-kinds");
     started(&r);
-    // four checks: three ids and the count of the rest, one command for all
+    // four checks: their number, one command for all and the first three ids
     engine_turn(&r, 5, 30, &[], &[]);
     let four = [
         SAVED,
@@ -518,7 +518,7 @@ fn the_line_names_the_checks_first_then_what_was_deleted() {
     assert!(blocked(&v).is_some(), "{v}");
     assert_eq!(
         err,
-        "Torpor: checks 1, 4, 3 and 1 more fail · torpor check --all"
+        "Torpor: 4 checks fail · torpor check --all (1, 4, 3...)"
     );
     // two files deleted, nothing failing: the count and the way to see the turn; the Stop after it has nothing to say
     engine_turn(
@@ -538,7 +538,7 @@ fn the_line_names_the_checks_first_then_what_was_deleted() {
     // one file and one failing check: the check is named, in both blocks
     engine_turn(&r, 7, 50, &[], &[("a.txt", "shell", "deleted")]);
     engine_stop(&r, &[SAVED, &fail_line(2, "login works")]);
-    let line = "Torpor: check 2 fails (login works) · torpor check 2";
+    let line = "Torpor: check 2 fails · torpor check 2 (login works)";
     for block in ["first", "second"] {
         let (v, err) = stop_io(&r, 4);
         assert!(blocked(&v).is_some(), "{block}: {v}");

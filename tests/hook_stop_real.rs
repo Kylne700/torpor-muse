@@ -49,7 +49,7 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
     let bad: Value = serde_json::from_str(&bad_run.out).unwrap_or(Value::Null);
     let why = blocked(&bad).unwrap_or_else(|| panic!("no block: {bad}"));
     // SN3: the one line for Muse's status label, no line break
-    let flash = "Torpor: check 1 fails (proof page answers) · torpor check 1";
+    let flash = "Torpor: check 1 fails · torpor check 1 (proof page answers)";
     assert_eq!(bad_run.err, flash);
     for text in [
         "Promise #1 \"proof page answers\" (turn 3 broke it) failed after this turn.",
