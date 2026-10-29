@@ -51,7 +51,7 @@ const MUSE_TESTED: &str = "1.4.13";
 
 /// What a person must know while the engine's gate is off, as it is since F4b: `doctor` shows it, and so does the line the
 /// check-writer prints after it saves a check (src/suggest/attach.rs).
-pub const GATE_OFF_TELLS: &str = "A broken check is told to the AI before it says Done; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.";
+pub const GATE_OFF_TELLS: &str = "A broken check is told to the AI before its turn ends; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.";
 
 pub fn run() -> u8 {
     finish(&examine(&Ctx::from_env(install::settings_path())))

@@ -443,7 +443,7 @@ fn real_engine_a_saved_check_reaches_the_ai_at_a_resume_and_after_a_compaction()
 // ---------------------------------------------------------------- F4b: the gate is off until the user turns it on
 
 /// The engine's promise gate is on in every folder it saves. The user chose hands-free (a broken check is told to the AI
-/// before it says Done), so the first SessionStart in a saved folder switches it off there, once. After that the gate is the
+/// before its turn ends), so the first SessionStart in a saved folder switches it off there, once. After that the gate is the
 /// user's: a `torpor gate on` typed in their own terminal stays on through every later session start, whatever its source.
 /// The marker that keeps it so is a file in the store, which the engine's own guard refuses the model.
 #[test]

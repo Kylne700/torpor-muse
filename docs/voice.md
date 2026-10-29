@@ -120,7 +120,7 @@ A clip and arm that already has a row in `VOICE_ROWS` is skipped, so a run that 
 
 The transcription cost USD 0.00015 (audio 2640 ms, 5 keywords), the check-writer USD 0.005265. This was the first and only live run of it.
 
-That run was recorded before Torpor started to switch the gate off at the first Muse Code session (README, Hands-free), and the test is not a Muse Code session. With the gate off, the check-writer's line stops after "failed 2 of 2 on the start of turn 1." and then reads: A broken check is told to the AI before it says Done; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.
+That run was recorded before Torpor started to switch the gate off at the first Muse Code session (README, Hands-free), and the test is not a Muse Code session. With the gate off, the check-writer's line stops after "failed 2 of 2 on the start of turn 1." and then reads: A broken check is told to the AI before its turn ends; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.
 
 ## Not done, and shortcuts
 
