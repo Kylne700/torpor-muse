@@ -127,7 +127,7 @@ fn the_excerpt_skips_dotfiles_ignored_files_links_and_secrets() {
     fs::create_dir_all(d.join("node_modules/x")).unwrap();
     fs::write(d.join("node_modules/x/i.js"), "module.exports=1").unwrap();
     std::os::unix::fs::symlink("/etc/hosts", d.join("link.js")).unwrap();
-    let ex = excerpt(&d, true);
+    let ex = excerpt(&d, true, "");
     for gone in [
         "CANARY_ENV",
         ".env",
@@ -166,7 +166,7 @@ fn the_excerpt_holds_code_and_manifests_and_none_of_the_data_files() {
     fs::write(d.join("data.txt"), "my bank pin is in here\n").unwrap();
     fs::write(d.join("dump.sql"), "INSERT INTO users VALUES ('ana');\n").unwrap();
     fs::write(d.join("README.md"), "# my private notes\n").unwrap();
-    let ex = excerpt(&d, false);
+    let ex = excerpt(&d, false, "");
     for gone in [
         "notes.json",
         "mvqm4ta2",
@@ -210,7 +210,7 @@ fn git_ignore_rules_apply_when_git_is_there() {
     fs::write(d.join("src/app.js"), "ok").unwrap();
     fs::write(d.join("src/local.js"), "private").unwrap();
     fs::write(d.join(".gitignore"), "src/local.js\n").unwrap();
-    let ex = excerpt(&d, true);
+    let ex = excerpt(&d, true, "");
     assert!(
         ex.contains("src/app.js") && !ex.contains("local.js") && !ex.contains("private"),
         "{ex}"
@@ -225,7 +225,7 @@ fn the_excerpt_is_capped() {
     for i in 0..12 {
         fs::write(d.join(format!("f{i}.js")), &body).unwrap();
     }
-    let ex = excerpt(&d, true);
+    let ex = excerpt(&d, true, "");
     assert!(ex.len() <= TOTAL_CAP + 400, "{}", ex.len());
     assert!(
         ex.len() > TOTAL_CAP / 2,
@@ -254,6 +254,105 @@ fn the_root_is_never_slash_or_home() {
     // CLAUDE_PROJECT_DIR wins when set, as in the engine; this test only checks the plain case
     if env("CLAUDE_PROJECT_DIR").is_none() {
         assert_eq!(got.unwrap(), fs::canonicalize(&d).unwrap());
+    }
+    let _ = fs::remove_dir_all(&d);
+}
+
+/// A project whose `server.js` is long (about 10 KB of filler routes), then `route`, then a little more.
+fn long_project(name: &str, route: &str) -> PathBuf {
+    let d = ws(name);
+    let mut js = String::new();
+    for i in 0..100 {
+        js += &format!(
+            "app.get('/api/thing{i}', (req, res) => {{\n  const row = db.find({i});\n  res.json(row);\n}});\n\n"
+        );
+    }
+    js += route;
+    js += "\napp.listen(3000);\n";
+    fs::write(d.join("server.js"), js).unwrap();
+    fs::write(
+        d.join("lib.js"),
+        "exports.add = (a, b) => a + b;\n".repeat(40),
+    )
+    .unwrap();
+    fs::write(
+        d.join("package.json"),
+        r#"{"scripts":{"start":"node server.js"}}"#,
+    )
+    .unwrap();
+    d
+}
+
+const ZEBRA_ROUTE: &str = "// Zebra census: how many zebras the park holds.\napp.get('/api/zebras', (req, res) => {\n  res.json({ zebras: db.count('zebra') });\n});\n";
+
+/// The words only add: every file shows what it showed without them, and the cap holds.
+#[test]
+fn words_add_windows_after_the_start_and_change_nothing_before_it() {
+    let d = long_project("windows", ZEBRA_ROUTE);
+    let plain = excerpt(&d, true, "");
+    let with = excerpt(&d, true, "The zebra census route works.");
+    assert!(!plain.contains("/api/zebras"), "past the start: {plain}");
+    assert!(
+        with.contains("/api/zebras") && with.contains("db.count('zebra')"),
+        "{with}"
+    );
+    assert!(
+        with.len() > plain.len() && with.len() <= TOTAL_CAP,
+        "{}",
+        with.len()
+    );
+    let (head, rest) = plain.split_once("\nFILE ").unwrap();
+    assert!(with.starts_with(head), "the file list is the same");
+    let mut shown = 0;
+    for part in rest.split("\nFILE ") {
+        let part = part.trim_end_matches('\n');
+        let name = part.lines().next().unwrap();
+        let there = with
+            .split("\nFILE ")
+            .find(|p| p.starts_with(&format!("{name}\n")));
+        assert!(there.is_some_and(|p| p.starts_with(part)), "{name} changed");
+        shown += 1;
+    }
+    assert_eq!(shown, 3);
+    assert_eq!(
+        excerpt(&d, true, "The zebra census route works."),
+        with,
+        "stable"
+    );
+    let _ = fs::remove_dir_all(&d);
+}
+
+/// A window comes from the redacted text, so what the start hides, a window hides.
+#[test]
+fn a_secret_inside_a_window_is_masked() {
+    let key = fake_key();
+    let route = format!(
+        "{ZEBRA_ROUTE}app.get('/api/zebra-admin', (req, res) => {{\n  const zebraKey = '{key}';\n  const stripeSecret = \"canary-zebra-1\";\n  const url = 'postgres://admin:hunter2@db-host/zebras';\n  res.json({{ zebras: 3 }});\n}});\n"
+    );
+    let d = long_project("window-secret", &route);
+    for synthetic in [true, false] {
+        let ex = excerpt(&d, synthetic, "the zebra admin route");
+        assert!(
+            ex.contains("/api/zebra-admin") && ex.contains("const zebraKey"),
+            "{ex}"
+        );
+        for leak in [&key[..], "canary-zebra-1", "hunter2"] {
+            assert!(!ex.contains(leak), "{leak} leaked in a window:\n{ex}");
+        }
+    }
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn windows_of_many_long_files_stay_inside_the_total_cap() {
+    let d = ws("window-cap");
+    let body = "const zebra = db.find('zebra');\n".repeat(400);
+    for i in 0..6 {
+        fs::write(d.join(format!("f{i}.js")), &body).unwrap();
+    }
+    for words in ["", "zebra", "zebra find db const"] {
+        let ex = excerpt(&d, true, words);
+        assert!(ex.len() <= TOTAL_CAP, "{words}: {}", ex.len());
     }
     let _ = fs::remove_dir_all(&d);
 }

@@ -81,6 +81,8 @@ pub(super) fn plan(
     let starts = local_checks(root)?;
     let key = client::load_key(&cfg).map_err(|m| fail(m).code("key"))?;
     c.key = Some(key.clone());
+    // the words choose which parts of a long file the excerpt shows
+    let words = repo::redact(&cap_words(words), synthetic);
     Ok(Plan {
         root: root.to_path_buf(),
         ledger_dir: state::state_dir().map_err(fail)?,
@@ -89,8 +91,8 @@ pub(super) fn plan(
         base,
         cap,
         starts,
-        excerpt: repo::excerpt(root, synthetic),
-        words: repo::redact(&cap_words(words), synthetic),
+        excerpt: repo::excerpt(root, synthetic, &words),
+        words,
         http,
     })
 }
