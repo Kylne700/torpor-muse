@@ -2,6 +2,7 @@
 
 use super::state::{Gap, Last};
 use super::{client, repo, state};
+use std::time::Duration;
 
 // How the words of a run that ended with the code `nosave` begin. src/suggest/work.rs makes them from these and
 // src/hook/writer_note.rs tells them apart to say what happened; each is followed by `: ` and the reason, except the last.
@@ -25,6 +26,14 @@ pub fn gaps(cwd: &str) -> Vec<Gap> {
 /// failed).
 pub fn last_result(cwd: &str) -> Option<Last> {
     state::last_result(&repo::resolve_root(Some(cwd)).ok()?)
+}
+
+/// How long the Stop hook of the project in `cwd` waited, at most `cap`, for a check that the writer is saving (see
+/// `state::wait_for_save`; it makes no file and returns at once when nothing is being saved).
+pub fn wait_for_save(cwd: &str, cap: Duration) -> Duration {
+    repo::resolve_root(Some(cwd))
+        .and_then(|r| state::ws_path(&r))
+        .map_or(Duration::ZERO, |d| state::wait_for_save(&d, cap))
 }
 
 /// Text from outside (an engine's stderr) made safe to show: control characters become spaces, anything that looks

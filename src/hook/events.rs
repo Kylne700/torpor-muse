@@ -1,5 +1,7 @@
 //! The table of the Muse hook events Torpor registers, with the settings each one gets (`install` writes them).
 
+use std::time::Duration;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
     /// The payload goes to `torpor hook <Event>`.
@@ -109,6 +111,13 @@ pub const EVENTS: &[Ev] = &[
     },
 ];
 
+/// The longest a Stop waits for a check that is being saved before it asks the engine: 12 s, and never more than the
+/// hook's `timeout_s` less 5 s. Muse fails an overdue hook open (research/59 D7, T6): the engine's answer would be lost.
+pub fn save_wait_cap(timeout_s: u32) -> Duration {
+    let room = Duration::from_secs(u64::from(timeout_s)).saturating_sub(Duration::from_secs(5));
+    Duration::from_secs(12).min(room)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +155,15 @@ mod tests {
             stop.engine_ms > 30_000,
             "the gate may use 20 s plus its save"
         );
+    }
+
+    #[test]
+    fn the_stops_wait_for_a_save_is_12_s_and_leaves_5_s_of_the_hooks_timeout() {
+        let stop = EVENTS.iter().find(|e| e.name == "Stop").unwrap();
+        assert_eq!(save_wait_cap(stop.timeout_s), Duration::from_secs(12));
+        assert_eq!(save_wait_cap(10), Duration::from_secs(5));
+        assert_eq!(save_wait_cap(17), Duration::from_secs(12));
+        assert_eq!(save_wait_cap(3), Duration::ZERO);
     }
 
     #[test]

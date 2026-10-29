@@ -1,7 +1,7 @@
 //! The engine side: ask it for its status, hand it a check on `torpor promise add -`, and read what it answers.
 //! Private on purpose: `engine.rs` has no working folder and cannot stop a whole process group. Owner: S3b-writer.
 //! shortcut: swap `exec` for `engine::run` once that has a working folder and a group kill.
-use super::state::env;
+use super::state::{self, env};
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
@@ -292,12 +292,16 @@ fn for_gate(line: &str, gate: Option<&str>) -> String {
 
 /// Hands the check to the engine, which lints it, qualifies it on the saved versions, and saves it.
 pub fn add(root: &Path, check: &Value, limit: Duration) -> Result<Added, String> {
-    let r = exec(
-        root,
-        &["promise", "add", "-"],
-        Some(&check.to_string()),
-        limit,
-    )?;
+    let r = {
+        // while the engine proves the check it holds its run lock for seconds: a Stop waits for this one (state.rs)
+        let _saving = state::ws_dir(root).ok().and_then(|d| state::save_lock(&d));
+        exec(
+            root,
+            &["promise", "add", "-"],
+            Some(&check.to_string()),
+            limit,
+        )?
+    };
     Ok(match classify(&r) {
         Added::Proven { id, line } => {
             // one read-only look, and only for a saved check: what the line may say depends on the user's gate
