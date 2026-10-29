@@ -32,7 +32,7 @@ head_sha256 = 7a244749bf1fcea7905fc1cb87c35d56ffc34cd4ad920d962aa2c07ac946b622
 - The first question is canned. The product asks a cheap first question (`claim` or `not_a_claim`) before the writer. Here the stand-in answers it with `{"verdict":"claim","reason":""}` at no cost, so that every run reaches the writer and the writer's view of the code is what is measured. The writer never sees the first answer.
 - The path is the product's hook path: `torpor-muse suggest -` with `TORPOR_MUSE_FROM_HOOK=s1` and the developer's words in `TORPOR_MUSE_WORDS` (not in argv), stdin closed, a fresh state folder per run, a limit of 300 seconds per run. That is how the Stop hook starts the writer.
 - History. Every run is a fresh copy of `demo/app` (git-initialised, with the `.synthetic` marker) with a two-turn history made by the real engine's hooks (`torpor hook <Event>` with the payload on stdin, session `s1`): SessionStart (`startup`), UserPromptSubmit `turn one work`, the turn-1 edit below, Stop, UserPromptSubmit with the claim words (which starts turn 2). The writer runs on that state.
-- Order. Runs are numbered p = 0 to 59. Run p uses the arm BASE when p is even and HEAD when p is odd, and the input INPUTS[(p + floor(p / 6) mod 2) mod 6] (A2, N1, N2, N3, A1, A3 in turn). BASE and HEAD alternate strictly, and in every 12 consecutive runs each input meets each arm once, so every input is run 5 times with each arm: 60 runs, in one sitting. (A plain p mod 6 would give each input one arm only, because 6 is even.)
+- Order. Runs are numbered p = 0 to 59. Run p uses the arm BASE when p is even and HEAD when p is odd, and the input INPUTS[(p + (floor(p / 6) mod 2)) mod 6] (the list is A2, N1, N2, N3, A1, A3; runs 0 to 5, 12 to 17, 24 to 29, ... take it in that order, runs 6 to 11, 18 to 23, 30 to 35, ... take it shifted by one place, N1 first). BASE and HEAD alternate strictly, and in every 12 consecutive runs each input meets each arm once, so every input is run 5 times with each arm: 60 runs, in one sitting. (A plain p mod 6 would give each input one arm only, because 6 is even.)
 
 ## Inputs and app states
 
@@ -191,6 +191,8 @@ The late inputs are A2, N1, N2 and N3 (5 runs each per arm, 20 per arm); the con
 No keyed call had been made. The checks of the change were green (fmt, clippy with `-D warnings`, 499 tests passed and 0 failed at HEAD against 482 and 0 at BASE, the e2e script "21 of 21", `scripts/test/run.sh` 19 passed, `scripts/accept.sh` "accept: OK", the privacy counts all 0).
 
 The harness passed its selftest (which also checks this file's inputs, key-word lines, edit texts, hash lines and pass lines, the four patched apps, the order, the scorer, the pass-line edges, the report, and the ledger header and total against a local fake upstream).
+
+Just before the push the HEAD binary was rebuilt from the committed source with `cargo build --release --locked`: cargo compiled nothing and the file had the `head_sha256` above. The two arms differ in the excerpt only: in `src/suggest/plan.rs` the developer's words go into the request in the same redacted, capped form in both arms (HEAD builds them once, before the excerpt, and passes them to both).
 
 `node eval/late/run.mjs seen` ran the real engine's history for every input and both binaries against the local mock server (`mock/server.mjs`) and read the `repo_files` block of the writer's request. "Route-only lines" are the lines of the route that the rest of `server.js` does not have:
 
