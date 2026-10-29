@@ -1,0 +1,255 @@
+{
+ "name": "new-V0-take6",
+ "variant": "V0",
+ "arm": "new",
+ "stub": null,
+ "echo_delay_ms": null,
+ "seg": "A",
+ "mode": "keyed",
+ "started_at": "2026-10-29T20:03:25Z",
+ "clone_sha": "56a6a11ec72f8d68cfc72771529f5235e96062a0",
+ "markers": [
+  {
+   "m": "go",
+   "t": 0.03
+  },
+  {
+   "m": "turn-start",
+   "t": 2.59
+  },
+  {
+   "m": "submitted",
+   "t": 9.03
+  },
+  {
+   "m": "first-complete",
+   "t": 13.71
+  },
+  {
+   "m": "turn-end",
+   "t": 24.96
+  },
+  {
+   "m": "writer-start",
+   "t": 24.96
+  },
+  {
+   "m": "writer-result",
+   "t": 24.96,
+   "saved": true,
+   "promise": 1
+  },
+  {
+   "m": "writer-end",
+   "t": 24.96
+  },
+  {
+   "m": "seed-start",
+   "t": 24.96
+  },
+  {
+   "m": "seed-end",
+   "t": 24.96
+  },
+  {
+   "m": "shell-start",
+   "t": 24.96
+  },
+  {
+   "m": "shell-end",
+   "t": 32.91
+  },
+  {
+   "m": "shell-start",
+   "t": 32.91
+  },
+  {
+   "m": "shell-end",
+   "t": 38.86
+  },
+  {
+   "m": "turn-start",
+   "t": 38.86
+  },
+  {
+   "m": "submitted",
+   "t": 39.58
+  },
+  {
+   "m": "first-complete",
+   "t": 76.65
+  },
+  {
+   "m": "turn-end",
+   "t": 92.81
+  },
+  {
+   "m": "shell-start",
+   "t": 92.81
+  },
+  {
+   "m": "shell-end",
+   "t": 98.81
+  },
+  {
+   "m": "end",
+   "t": 101.32
+  }
+ ],
+ "facts": {
+  "break_prompt_equals_proof_e7_harm": true,
+  "writer_procs_seen": 0,
+  "turn1_completed": 1,
+  "accepted_before_break": 1,
+  "turn2_completed": 2,
+  "break_turn_accepted": 1,
+  "break_seen": true,
+  "broken_at_s": 46.6,
+  "fixed_at_s": 67.5,
+  "server_js_has_break_at_end": false,
+  "check_all": {
+   "status": 0,
+   "out": "Promise #1 Login succeeds and wrong password refused: PASS (3 checks, 0.8 s).\n"
+  },
+  "promise_list": "#1 Login succeeds and wrong password refused · guard only · passed 20:05 · your words, turn 1\n",
+  "folders": {
+   "old_notes": null,
+   "db": null,
+   "docs": null
+  }
+ },
+ "engine_sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+ "adapter_sha256": "16abbfc2617c811bad305d75530fd5b9f2e64c3a76ffb93046ffea1993bf4ef5",
+ "muse_banner": "Muse Code 1.4.14",
+ "writer_result": {
+  "at": "2026-10-29T20:03:46Z",
+  "calls": 2,
+  "code": "",
+  "message": "Promise #1 \"Login succeeds and wrong password refused\" saved as a guard only: no earlier version fails it, so Torpor can't prove it tests the new work.",
+  "model": "muse-spark-1.3",
+  "ms": 12259,
+  "outcome": "advisory",
+  "promise": 1,
+  "saved": true,
+  "usd": 0.010223,
+  "v": 1
+ },
+ "writer_result_last": {
+  "at": "2026-10-29T20:04:07Z",
+  "calls": 1,
+  "code": "",
+  "message": "nothing to check: not a statement that something works (The message is a request to edit code.)",
+  "model": "muse-spark-1.3",
+  "ms": 2566,
+  "outcome": "advisory",
+  "promise": null,
+  "saved": false,
+  "usd": 0.001946,
+  "v": 1
+ },
+ "spend": {
+  "lo": 0.01982,
+  "hi": 0.038789,
+  "rows": [
+   {
+    "at": 1793304219069538,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 30931,
+    "cached": 0,
+    "output": 297,
+    "reasoning": 233
+   },
+   {
+    "at": 1793304251907743,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 31460,
+    "cached": 30833,
+    "output": 394,
+    "reasoning": 249
+   },
+   {
+    "at": 1793304254230138,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 31908,
+    "cached": 31345,
+    "output": 21,
+    "reasoning": 10
+   },
+   {
+    "at": 1793304263879226,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 32102,
+    "cached": 0,
+    "output": 744,
+    "reasoning": 633
+   },
+   {
+    "at": 1793304272884138,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 34632,
+    "cached": 31985,
+    "output": 795,
+    "reasoning": 620
+   },
+   {
+    "at": 1793304278097632,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 35460,
+    "cached": 34545,
+    "output": 120,
+    "reasoning": 13
+   },
+   {
+    "at": 1793304281910124,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 35687,
+    "cached": 35441,
+    "output": 225,
+    "reasoning": 97
+   },
+   {
+    "at": 1793304214000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 314,
+    "cached": 241,
+    "output": 264,
+    "reasoning": 0,
+    "usd": 0.001249,
+    "est": false
+   },
+   {
+    "at": 1793304216000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 3301,
+    "cached": 1265,
+    "output": 1468,
+    "reasoning": 0,
+    "usd": 0.008974,
+    "est": false
+   },
+   {
+    "at": 1793304245000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 368,
+    "cached": 241,
+    "output": 412,
+    "reasoning": 0,
+    "usd": 0.001946,
+    "est": false
+   }
+  ]
+ },
+ "why_stopped": null,
+ "ended_at": "2026-10-29T20:05:12Z",
+ "ok": true
+}
