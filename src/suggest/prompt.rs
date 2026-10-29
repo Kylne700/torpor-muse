@@ -62,8 +62,9 @@ pub struct Rejected<'a> {
     pub message: &'a str,
 }
 
-/// The data part of the request. The repo excerpt comes before the developer's words, so that for one project it
-/// is the same text on every run and the provider's prefix cache can hold it.
+/// The data part of the request. The repo excerpt comes before the developer's words, so that the file starts it opens
+/// with are the same text on every run for one project and the provider's prefix cache can hold them (the pieces of
+/// long files after the starts depend on the words).
 pub fn input(
     nonce: &str,
     starts: &[Start],
