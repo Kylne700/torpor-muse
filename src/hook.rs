@@ -4,7 +4,9 @@
 //! Policy: a hook never fails a Muse turn. Whatever goes wrong (bad payload, engine missing or of the wrong version,
 //! timeout, output Muse would reject) is written to `<TORPOR_HOME>/muse/problems.log`, the hook exits 0, and the user
 //! is told once per session that Torpor is not saving. The only way a hook stops a turn is a Stop block in the JSON
-//! form with a reason (never exit 2).
+//! form with a reason (never exit 2). A Stop block also writes one line to stderr (`Done.stderr`, SN3): Muse Code 1.4.14
+//! draws it in its status label for about 5 s, and nothing else of Torpor's own at a Stop, so it is the one thing the user
+//! sees that does not depend on the AI. Nothing else reaches stderr at a Stop (`state::problem` leaves it out).
 
 mod busy;
 mod compact_note;
@@ -32,6 +34,8 @@ use std::path::Path;
 #[derive(Default)]
 struct Done {
     stdout: Option<String>,
+    /// The one line of a Stop block that goes out (`stop::flash`), written to stderr without a newline, as in SN2 take B5.
+    stderr: Option<String>,
     /// (session id, cwd, prompt) for `suggest::trigger`: a main-session UserPromptSubmit the engine took.
     prompt: Option<(String, String, String)>,
 }
@@ -66,6 +70,9 @@ pub fn run(event: &str) -> u8 {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{text}");
         let _ = out.flush();
+    }
+    if let Some(line) = &done.stderr {
+        let _ = std::io::stderr().lock().write_all(line.as_bytes());
     }
     if let Some((sid, cwd, prompt)) = done.prompt {
         // Muse waits for its pipe to close, and anything started now would inherit it: close ours first.

@@ -1,10 +1,12 @@
-//! The one Stop block of a turn: what broke, what was deleted or lost, and what is not being saved.
+//! The Stop blocks of a turn (the first, and a second when a check still fails): what broke, what was deleted or lost, and
+//! what is not being saved. Each block that goes out also leaves its one stderr line in `Ended.flash` (`stop::flash`).
 
 use super::handle::turn_ended;
 use super::paths::{engine_cmd, project_root};
 use super::{done, state, stop};
 use crate::{engine, schema, suggest};
 use serde_json::Value;
+use std::cell::Cell;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,8 @@ pub(super) struct Ended<'a> {
     pub(super) left: Duration,
     /// The AI's last message, to read for a false Done (`done::said`; empty at the Stop that follows a block).
     pub(super) said: &'a str,
+    /// Out: the line of the block this Stop gives (`stop::flash`), set only when the block goes out.
+    pub(super) flash: Cell<Option<String>>,
 }
 
 /// The user's line for a database turn (L3 N2): at most 100 characters, the command at its end is never cut, long names
@@ -67,35 +71,67 @@ fn not_saving(e: &Ended, status: &Value, body: Option<String>) -> Option<String>
     }
 }
 
+/// The promises the engine's Stop text says failed after the turn (`stop::fails`).
+fn fail_lines(engine_out: &[u8]) -> Vec<stop::Fail> {
+    serde_json::from_slice::<Value>(engine_out)
+        .ok()
+        .and_then(|v| v["systemMessage"].as_str().map(stop::fails))
+        .unwrap_or_default()
+}
+
+/// The Stop that follows our first block in the same turn (SN2): a second block (`stop::again`) when the engine's text of
+/// this Stop still has a fail line, so the model is asked once more to open its reply with what broke. The block is built
+/// before the turn's cap is used, so a Stop with nothing to say uses none of it; the cap of 2 drops the third. It leaves the
+/// same line as the first block for the label (`stop::flash`).
+/// shortcut: a check that fails for the first time at this Stop (the first block was about a deleted file) is also told
+/// as "still fails"; upgrade when a real turn shows it.
+fn again(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<String> {
+    let fails = fail_lines(engine_out);
+    let Some(reason) = stop::again(&engine_cmd(e.bin), &fails) else {
+        return body;
+    };
+    let Some(block) = schema::block(body.as_deref(), &reason) else {
+        return body;
+    };
+    if state::with_session(e.dir, e.sid, |s| s.allow_block(e.turn)).unwrap_or(false) {
+        let checks: Vec<(u32, &str)> = fails.iter().map(|f| (f.id, f.name.as_str())).collect();
+        e.flash.set(stop::flash(&checks, None, false));
+        Some(block)
+    } else {
+        body
+    }
+}
+
 /// What the turn that just ended did, from the engine's own records, told to the user and to the model. Only when the
 /// engine did not block the turn itself (its reason says the same), and not after `torpor off`.
 /// - The user's line (L3 N2), when the turn's own commands changed or deleted a database file: it starts with the command
 ///   that does put the data back, for `torpor undo N` and a plain `torpor back` leave database content as it is (dogfood1
 ///   M1). The turn is kept for its folder past SessionEnd (L3 N1, `state::db_add`) and `db_note` gives it to the model.
-/// - ONE Stop block per turn (F4 items 2 and 3; `Session::allow_note_block`, inside the cap of `allow_block`): Muse runs
-///   the turn on with the reason (`stop::reason`), which makes the model say to the user in its reply what is broken or
-///   what was deleted, and what to run. For a promise that failed after this turn (the engine's own fail line in its Stop
-///   text, `stop::fails`: advisory or shadow; the engine has no other form of it) and for a turn that deleted a file that
+/// - A Stop block (F4 items 2 and 3; `Session::allow_note_block`, inside the cap of `allow_block`): Muse runs the turn on
+///   with the reason (`stop::reason`), which makes the model say to the user in its reply what is broken or what was
+///   deleted, and what to run. For a promise that failed after this turn (the engine's own fail line in its Stop text,
+///   `stop::fails`: advisory or shadow; the engine has no other form of it) and for a turn that deleted a file that
 ///   existed before it or deleted a database (`stop::rows`: a changed one only gets the user's line).
+/// - A second block in the same turn (SN2, `again`), only when the Stop that follows the first still has a fail line:
+///   Muse draws none of Torpor's own line in the conversation, so only the model's reply stays on the screen, and a reply
+///   format the user asked for won over the first block in 1 of 2 takes. At most 2 blocks per turn, the cap of `allow_block`.
+/// - Each block that goes out also leaves its one line for the status label in `Ended.flash` (SN3, `stop::flash`).
 ///
 /// Costs the `status` and `show` calls of L3, plus up to 3 dry runs of `back` to find a save point that has a database
 /// that was in use when the turn began and is gone now (`stop::restoring_point`): all within 4 s and `left`. A call that
 /// is cut short leaves out what it would have told: the fail-line block still goes out, with `find-break` for the turn.
-/// The Stop that follows the block, in the same turn, costs none of this and adds nothing.
+/// The Stop that follows the first block, in the same turn, costs none of this: it asks the engine nothing.
 pub(super) fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> Option<String> {
     if e.cwd.is_empty() || !turn_ended("Stop", body.as_deref()) {
         return body;
     }
-    // Muse runs a blocked turn on and stops again in the same turn: that Stop has told its one block already, so it asks
-    // the engine nothing and says nothing twice (F4c)
+    // Muse runs a blocked turn on and stops again in the same turn: that Stop has told the turn's first block already, so it
+    // asks the engine nothing and says nothing twice (F4c), unless the check still fails (`again`)
     let told = |s: &mut state::Session| s.noted == e.turn;
     if !e.turn.is_empty() && state::with_session(e.dir, e.sid, told).unwrap_or(false) {
-        return body;
+        return again(e, engine_out, body);
     }
-    let fails = serde_json::from_slice::<Value>(engine_out)
-        .ok()
-        .and_then(|v| v["systemMessage"].as_str().map(stop::fails))
-        .unwrap_or_default();
+    let fails = fail_lines(engine_out);
     let end = Instant::now() + e.left.min(Duration::from_secs(4));
     let ask = |args: &[&str]| {
         let t = end
@@ -184,16 +220,17 @@ pub(super) fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> O
         dbs: rows.risky,
         lost,
     };
-    // a false Done (`done`) joins the one block; without a status the engine may be off, and then nothing is said
+    // a false Done (`done`) joins the first block; without a status the engine may be off, and then nothing is said
     let ours = if saving {
         done::verdict(e.dir, e.sid, e.turn, e.said)
     } else {
         None
     };
+    let claim = ours.is_some();
     let Some(reason) = done::join(stop::reason(&engine_cmd(e.bin), &broke, &risk), ours) else {
         return body;
     };
-    // the block is built before the turn is marked as told: a block that cannot go out must not use up the turn's one
+    // the block is built before the turn is marked as told: a block that cannot go out must not use up the turn's first
     let Some(block) = schema::block(body.as_deref(), &reason) else {
         return body;
     };
@@ -201,5 +238,9 @@ pub(super) fn stop_note(e: &Ended, engine_out: &[u8], body: Option<String>) -> O
     if !state::with_session(e.dir, e.sid, |s| s.allow_note_block(e.turn)).unwrap_or(false) {
         return body;
     }
+    let checks: Vec<(u32, &str)> = broke.iter().map(|b| (b.id, b.name.as_str())).collect();
+    let files = risk.deleted.len() + risk.dbs.len();
+    let gone = n.filter(|_| files > 0).map(|n| (n, files));
+    e.flash.set(stop::flash(&checks, gone, claim));
     Some(block)
 }

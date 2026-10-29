@@ -1,7 +1,7 @@
 //! What the hooks logged themselves: shim-errors.log and problems.log, and which lines mean a call went unchecked.
 
-use super::MUSE_TESTED;
 use super::report::{Level, Report, ago, clip};
+use super::tested;
 use crate::liveness;
 use crate::util::quote;
 use std::fs::{self, File};
@@ -156,8 +156,9 @@ pub(crate) fn check_problems(vault: &Path, now_ms: u64, r: &mut Report) {
                 newest(&warn)
             ),
             format!(
-                "read {}: an output Muse would reject was cut, or Muse's payload changed shape (tested only with Muse Code {MUSE_TESTED})",
-                f.display()
+                "read {}: an output Muse would reject was cut, or Muse's payload changed shape (tested only with Muse Code {})",
+                f.display(),
+                tested(" and ")
             ),
         );
     }

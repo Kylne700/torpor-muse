@@ -1,5 +1,5 @@
 //! The false Done (hook::done) at the hook, against a fake engine: a Stop whose last message says the tests pass or the build
-//! succeeds gets the one Stop block when this session's own record says otherwise; every other Stop is left as it was.
+//! succeeds gets the turn's first Stop block when this session's own record says otherwise; every other Stop is left as it was.
 
 mod hook_common;
 
@@ -231,8 +231,16 @@ fn a_broken_saved_check_and_a_false_done_in_the_same_stop_are_one_block_with_bot
         why.ends_with(&format!("\n- {NO_RUN}")),
         "ours comes last: {why}"
     );
+    // the Stop that follows is not read for a false Done again; the check still fails, so it gets the second block of the
+    // turn (SN2), which says nothing of the claim, and the third Stop goes by
+    let v = json_of(&stop_with(&r, 2, "All tests pass.", true));
+    let again = blocked(&v).unwrap_or_else(|| panic!("no second block: {v}"));
+    assert!(
+        again.contains("Check #1 (proof page answers) still fails") && !again.contains("You wrote"),
+        "{again}"
+    );
     assert!(blocked(&json_of(&stop_with(&r, 2, "All tests pass.", true))).is_none());
-    // a file deleted in the turn: the same one block, with the third thing
+    // a file deleted in the turn: the same first block, with the third thing
     engine_turn(&r, 6, 40, &[], &[("gone.txt", "edit", "deleted")]);
     engine_stop(&r, &[SAVED]);
     let v = json_of(&stop_with(&r, 3, "All tests pass.", false));
@@ -344,4 +352,36 @@ fn a_subagents_runs_and_edits_are_the_sessions_own() {
         blocked(&v).is_some_and(|w| w.contains("code was changed after")),
         "{v}"
     );
+}
+
+/// SN3. The first block for a false Done writes its one line to stderr when the claim is all it holds; with a failing check
+/// or a deleted file in the same block the line names those first. The Stop that follows and a Stop that claims nothing
+/// write none.
+#[test]
+fn the_block_for_a_false_done_writes_one_line_and_checks_and_deletions_come_first() {
+    let r = session("done-line");
+    let first = stop_with(&r, 2, "All tests pass.", false);
+    assert!(blocked(&json_of(&first)).is_some(), "{}", first.out);
+    assert_eq!(
+        first.err,
+        "Torpor: the AI says it works, but the record disagrees"
+    );
+    let again = stop_with(&r, 2, "All tests pass.", true);
+    assert!(blocked(&json_of(&again)).is_none(), "{}", again.out);
+    assert_eq!(again.err, "");
+    assert_eq!(stop_with(&r, 3, "Fixed the layout bug.", false).err, "");
+    // a failing check in the same block: it is named, and the claim is not
+    engine_stop(&r, &[SAVED, BROKE]);
+    let both = stop_with(&r, 4, "All tests pass.", false);
+    assert!(blocked(&json_of(&both)).is_some_and(|w| w.contains(NO_RUN)));
+    assert_eq!(
+        both.err,
+        "Torpor: check 1 fails (proof page answers) · torpor check 1"
+    );
+    // a deleted file and no failing check: the deletion
+    engine_turn(&r, 6, 40, &[], &[("gone.txt", "edit", "deleted")]);
+    engine_stop(&r, &[SAVED]);
+    let gone = stop_with(&r, 5, "All tests pass.", false);
+    assert!(blocked(&json_of(&gone)).is_some_and(|w| w.contains(NO_RUN)));
+    assert_eq!(gone.err, "Torpor: turn 6 deleted 1 file · torpor show 6");
 }

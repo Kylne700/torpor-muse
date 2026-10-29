@@ -1,9 +1,9 @@
 //! Muse's own session logs: the Muse version, hooks it rejected, and prompts that never reached the prompt hook.
 
-use super::MUSE_TESTED;
 use super::ctx::Ctx;
 use super::hooks::Hook;
 use super::report::{Level, Report, clip, short};
+use super::{MUSE_TESTED, tested};
 use crate::transcript;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
@@ -172,13 +172,25 @@ pub(crate) fn check_logs(c: &Ctx, ours: &[&Hook], r: &mut Report) {
         version = scan.version.take().or(before).or(version);
     }
     match version.as_deref() {
-        Some(v) if v == MUSE_TESTED => r.add(Level::Ok, format!("Muse Code {v} (the version these hooks were tested with)")),
+        Some(v) if MUSE_TESTED.contains(&v) => r.add(
+            Level::Ok,
+            format!("Muse Code {v} (the version these hooks were tested with)"),
+        ),
         Some(v) => r.problem(
             Level::Warn,
-            format!("Muse Code {v}: the hooks and the log translation were tested only with {MUSE_TESTED}"),
-            format!("if something below fails, install Muse Code {MUSE_TESTED}"),
+            format!(
+                "Muse Code {v}: the hooks and the log translation were tested only with {}",
+                tested(" and ")
+            ),
+            format!(
+                "if something below fails, install Muse Code {}",
+                tested(" or ")
+            ),
         ),
-        None => r.add(Level::Info, "Muse Code version not found in its newest session logs"),
+        None => r.add(
+            Level::Info,
+            "Muse Code version not found in its newest session logs",
+        ),
     }
     // The key of a hook ends in a hash of its definition, so a repaired hook is a new key and the old key's failure is
     // the newest record it will ever have. That failure is history once the settings changed after it and the same event

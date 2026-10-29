@@ -1,10 +1,10 @@
 //! The gate is live only when a hook ran in a finished turn: reads the hooks' heartbeats and says what is missing.
 
-use super::MUSE_TESTED;
 use super::ctx::Ctx;
 use super::hooks::Hook;
 use super::problems::engine_down_since;
 use super::report::{Level, Report, ago, short};
+use super::tested;
 use crate::liveness::{self, PROBE_SID};
 use crate::transcript;
 use std::collections::{BTreeSet, HashSet};
@@ -151,7 +151,7 @@ pub(crate) fn check_gate(c: &Ctx, vault: &Path, ours: &[&Hook], r: &mut Report) 
             r.problem(
                 Level::Fix,
                 format!("{} lines of Muse's log for session {} hold no prompt: its log format may have changed", st.lines, short(&sid)),
-                format!("check the Muse Code version (tested only with {MUSE_TESTED}); until the translation is updated, origin and compaction checks are blind"),
+                format!("check the Muse Code version (tested only with {}); until the translation is updated, origin and compaction checks are blind", tested(" and ")),
             );
         }
         if st.bad > 0 {

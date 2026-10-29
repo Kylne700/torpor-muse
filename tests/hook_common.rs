@@ -505,7 +505,8 @@ pub fn engine_turn(r: &Rig, n: u32, start: u32, pre: &[u32], rows: &[(&str, &str
 }
 
 /// The Stop of the turn whose id ends in `t` (2 is the fixture's own). A test that plays several turns gives each its own
-/// id, as Muse does: one turn id is one turn, and its Stop after the one block says nothing more (F4c).
+/// id, as Muse does: one turn id is one turn, and its Stop after the first block says nothing more unless a check still
+/// fails (F4c, SN2).
 pub fn stop_run(r: &Rig, t: u32) -> Run {
     let mut p = r.fixture("Stop");
     p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
@@ -536,6 +537,11 @@ pub fn started(r: &Rig) {
 /// One real-engine turn, the way Muse runs it: the prompt, one bash command (the hook sees it before it runs; `effect`
 /// is what the command does to the files) and the Stop, whose output comes back (Null when it printed nothing).
 pub fn real_turn(r: &Rig, t: u32, cmd: &str, effect: impl FnOnce()) -> Value {
+    serde_json::from_str(&real_turn_run(r, t, cmd, effect).out).unwrap_or(Value::Null)
+}
+
+/// `real_turn`, with the whole run of its Stop (the stderr too).
+pub fn real_turn_run(r: &Rig, t: u32, cmd: &str, effect: impl FnOnce()) -> Run {
     let at = |mut p: Value| {
         p["turn_id"] = json!(format!("00000000-0000-7000-8000-{t:012}"));
         p
@@ -552,5 +558,5 @@ pub fn real_turn(r: &Rig, t: u32, cmd: &str, effect: impl FnOnce()) -> Value {
     r.hook_ok("PreToolUse", &pre);
     effect();
     r.hook_ok("PostToolUse", &post);
-    stop_of(r, t)
+    stop_run(r, t)
 }
