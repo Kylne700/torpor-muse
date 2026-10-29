@@ -5,6 +5,7 @@
 // before Done" (E5 reports the times, not a guess).
 //   node analyze.mjs --runs DIR1,DIR2,... [--json F] [--md F] [--sheet F] [--verdicts F] [--blind]
 // --stage L4c: the wording of the L4c summary (default L4b: the published L4b summary comes back byte for byte, plus the E7 line of the L4c count).
+// --stage L4d: the wording of the L4d summary, and the three added measures (read-l4d.mjs) as its last block.
 // --cal: the held-out calibration runs of the L4c re-run (cal-*): a compact reading of each, never mixed with counted runs.
 // --blind: calibration runs are neither counted nor read for results; it only checks that the records load and prints no numbers.
 // --md: the summary for the repo (labels and numbers only). --sheet: the evidence sheet (private: Torpor texts and tool arguments).
@@ -16,6 +17,8 @@ import { priceRow, records } from '../../drill/harness/live.mjs';
 import { LINES, bashRuns, compactionFacts, diffManifest, estAware, parseWrapLog, stats, sumBy, timeline, turnOf, visible } from './lib.mjs';
 import { SESSIONS } from './scripts.mjs';
 import { CAL_SESSIONS } from './cal-scripts.mjs';
+import { CAL_L4D_SESSIONS } from './cal-scripts-l4d.mjs';
+import { added, addedMarkdown, calMarkdownL4d, calReading, listRows } from './read-l4d.mjs';
 import { askedUser, doneFacts, doneTruth, e5, e6, e7, e8, e9, finalsIn, toolsIn, v11 } from './cases.mjs';
 
 export { e5, e6, e7, e8, e9, v11 };
@@ -32,7 +35,7 @@ export function loadRun(dir) {
   const has = (f) => fs.existsSync(path.join(dir, f));
   const rd = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
   const rec = JSON.parse(rd('run.json'));
-  const base = SESSIONS[rec.id] ?? CAL_SESSIONS[rec.id];
+  const base = SESSIONS[rec.id] ?? CAL_SESSIONS[rec.id] ?? CAL_L4D_SESSIONS[rec.id];
   if (!base) throw new Error(`${path.basename(dir)}: unknown session ${rec.id}`);
   // E7 types filler turns the script does not list: the typed turns (their marks) are then the turns of the run.
   const spec = rec.turns.some((t) => t.role === 'filler') ? { ...base, turns: rec.turns.map((m) => ({ role: m.role, claim: m.claim, trigger: m.trigger, way: m.way })) } : base;
@@ -41,7 +44,7 @@ export function loadRun(dir) {
   try { status = JSON.parse(rd('status.json')); } catch { /* absent or not JSON */ }
   const json = (f) => { try { return JSON.parse(rd(f)); } catch { return null; } };
   const paneFile = fs.readdirSync(dir).find((f) => /^pane-failed-in-/.test(f)); // the driver's screen capture when a turn did not finish
-  return annotate({ label: path.basename(dir), rec, spec, recs, status, pane: paneFile ? rd(paneFile) : null, tl: timeline(recs), wl: has('wrap.log') ? parseWrapLog(rd('wrap.log')) : { runs: [], killed: [], bad: [] }, calls: has('calls.json') ? JSON.parse(rd('calls.json')).rows : [],
+  return annotate({ dir, label: path.basename(dir), rec, spec, specs: json('promise-specs.json'), recs, status, pane: paneFile ? rd(paneFile) : null, tl: timeline(recs), wl: has('wrap.log') ? parseWrapLog(rd('wrap.log')) : { runs: [], killed: [], bad: [] }, calls: has('calls.json') ? JSON.parse(rd('calls.json')).rows : [],
     eng: json('engine-runs.json'), engShow: has('engine-show.txt') ? rd('engine-show.txt') : '', engLog: has('engine-log.txt') ? rd('engine-log.txt') : '', promises: has('promise-list.txt') ? rd('promise-list.txt') : '' });
 }
 
@@ -273,7 +276,7 @@ export function apartItems(runs, verdicts) {
   }));
 }
 
-export function report(runs, verdicts = null) {
+export function report(runs, verdicts = null, opt = {}) {
   const by = (re) => runs.filter((r) => re.test(r.spec.id));
   const clean = by(/^clean/), seeded = by(/^e5-/);
   const items = clean.flatMap(e4Items);
@@ -290,12 +293,13 @@ export function report(runs, verdicts = null) {
   out.e9 = by(/^e9$/).map(e9);
   out.v11 = by(/^v11$/).map(v11);
   out.pacing = pacing(runs);
+  if (opt.added) out.added = added(runs, { filesChanged: changedIn });
   return { out, items };
 }
 
 const yn = (b) => (b === true ? 'PASS' : b === false ? 'FAIL' : 'not judged yet');
 // Nothing private reaches the repo: run folders become <run>, the sandbox HOME <sandbox-HOME>, any other path under a home folder <path>.
-export const scrub = (s) => String(s).replace(/\/tmp\/claude-1000\/l4c?\/drill\.[A-Za-z0-9]+\/home\//g, '<sandbox-HOME>/').replace(/\/tmp\/claude-1000\/l4c?\/drill\.[A-Za-z0-9]+/g, '<run>').replace(/\/home\/[^\s"'`),;]*/g, '<path>');
+export const scrub = (s) => String(s).replace(/\/tmp\/claude-1000\/l4[cd]?\/drill\.[A-Za-z0-9]+\/home\//g, '<sandbox-HOME>/').replace(/\/tmp\/claude-1000\/l4[cd]?\/drill\.[A-Za-z0-9]+/g, '<run>').replace(/\/home\/[^\s"'`),;]*/g, '<path>');
 const q = (s, n = 400) => `"${scrub(String(s ?? '')).replace(/\s+/g, ' ').slice(0, n)}"`;
 // What differs between the summary of L4b (published: regenerating it with --stage L4b gives that file back, plus the one L4c-count line under each E7) and the summary of L4c.
 const STAGES = {
@@ -309,6 +313,12 @@ const STAGES = {
     title: '# L4c proof: script-made summary',
     made: 'Made by `node e2e/proof/analyze.mjs --runs ... --md --stage L4c` from the private run records and not edited by hand. The reading, the method and the departures are in PROOF.md (section L4c). L4c runs the L4 proof again on the final SHA, after the two fixes U ("undo that" is the yes, dry run first) and E7fix (the guide and the note reach the model after a compaction without a SessionStart hook), with the same scripts, pass lines, caps and order. Pre-registered in research 71 section 3 with its amendments, the last of 2026-10-29 00:25 UTC, before any L4c run; published whatever it shows.',
     writer: 'The check-writer is the one of the L4b counted runs (W2: a words-only first question; the project\'s code goes to Meta only when the answer is yes or no usable answer came back); no file of the writer changed between the L4b build and the L4c build. The E3 line (USD 0.20) is unchanged. W2 missed its own cost bar by USD 0.00004 per non-claim prompt (ratio 0.510 against 0.50, disclosed): eval/first-pass/results.md.',
+    e7_verdict: 'Verdict by the L4b count (a session-start block only; kept for comparison)',
+  },
+  L4d: {
+    title: '# L4d proof: script-made summary',
+    made: 'Made by `node e2e/proof/analyze.mjs --runs ... --md --stage L4d` from the private run records and not edited by hand. The reading, the method and the departures are in PROOF.md (section L4d). L4d runs the L4 proof a third time, on main 8b119d65396c7bb861c68cb792a4a64189c02732, after four fixes since L4c (S3g: the check-writer\'s "does not cover" reasons name only an untested part; S3t: the Stop hook waits at most 12 s while the check-writer is still saving a check, then calls the engine; S3k: a killed engine call also kills the app servers it started; S3x: the check-writer also sees code past a file\'s first 6,000 bytes), with the same scripts (byte for byte), pass lines, caps and order. Pre-registered in research 71 section 3 with its amendments, the last of 2026-10-29 07:04 UTC, before any L4d run; published whatever it shows. Three measures were added with no pass line: the last block below.',
+    writer: 'The check-writer changed since L4c in what it says about gaps (S3g) and in how much of a file it sees (S3x: also code past a file\'s first 6,000 bytes, in pieces around the request\'s words); the rule that sends the project\'s code to Meta only when the words-only first question says yes or gives no usable answer (W2) is the one of L4b and L4c. The E3 line (USD 0.20) is unchanged. W2 missed its own cost bar by USD 0.00004 per non-claim prompt (ratio 0.510 against 0.50, disclosed): eval/first-pass/results.md.',
     e7_verdict: 'Verdict by the L4b count (a session-start block only; kept for comparison)',
   },
 };
@@ -369,6 +379,7 @@ export function markdown(rep, stage = 'L4b') {
   }
   const pc = o.pacing;
   L.push(`Writer wait: before each typed prompt the driver waits for the check-writer of the earlier prompt to finish (at most 90 s); over ${pc.turns_measured} measured turns it waited on ${pc.turns_waited}, ${pc.total_s} s in all, longest ${pc.max_s} s. Without the wait the adapter would skip a quick next prompt as busy (one writer run per folder at a time; the adapter's design, not measured here).`);
+  if (o.added) L.push('', ...addedMarkdown(o.added, scrub));
   return `${L.join('\n')}\n`;
 }
 
@@ -442,16 +453,17 @@ export function calMarkdown(cals) {
 function main() {
   const a = process.argv.slice(2), opt = {};
   for (let i = 0; i < a.length; i++) { if (a[i] === '--blind') opt.blind = true; else if (a[i] === '--cal') opt.cal = true; else opt[a[i].slice(2)] = a[++i]; }
-  if (!opt.runs) throw new Error('usage: node analyze.mjs --runs DIR1,DIR2,... [--json F] [--md F] [--sheet F] [--verdicts F] [--stage L4b|L4c] [--blind] [--cal]');
+  if (!opt.runs) throw new Error('usage: node analyze.mjs --runs DIR1,DIR2,... [--json F] [--md F] [--sheet F] [--verdicts F] [--stage L4b|L4c|L4d] [--blind] [--cal]');
   const runs = opt.runs.split(',').filter(Boolean).map(loadRun);
   if (opt.cal) { // the held-out calibration runs: read apart, never pooled with counted runs
-    const cals = runs.map(calibration), md = calMarkdown(cals);
+    const l4d = runs.some((r) => r.spec.id in CAL_L4D_SESSIONS);
+    const cals = l4d ? runs.map((r) => calReading(r, listRows(r.promises), { filesChanged: changedIn })) : runs.map(calibration), md = l4d ? calMarkdownL4d(cals, scrub) : calMarkdown(cals);
     if (opt.json) fs.writeFileSync(opt.json, `${JSON.stringify(cals, null, 1)}\n`);
     if (opt.md) fs.writeFileSync(opt.md, md);
     console.log(md);
     return;
   }
-  const rep = report(runs, opt.verdicts ? JSON.parse(fs.readFileSync(opt.verdicts, 'utf8')) : null);
+  const rep = report(runs, opt.verdicts ? JSON.parse(fs.readFileSync(opt.verdicts, 'utf8')) : null, { added: opt.stage === 'L4d' });
   if (opt.blind) { console.log(`loaded ${runs.length} run(s), ${runs.reduce((n, r) => n + r.hooks.length, 0)} hook runs, sections ${Object.keys(rep.out).join(' ')}; no numbers printed (blind)`); return; }
   if (opt.json) fs.writeFileSync(opt.json, `${JSON.stringify(rep.out, null, 1)}\n`);
   if (opt.sheet) fs.writeFileSync(opt.sheet, sheet(rep));
