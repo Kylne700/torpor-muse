@@ -141,7 +141,7 @@ mod tests {
         for e in EVENTS {
             assert!(e.timeout_s >= 1, "{}", e.name);
             if e.act == Act::Engine {
-                // the kill time, plus the pipe grace (0.3 s), the state lock (0.5 s) and the transcript step
+                // the kill (`killtree`: 0.4 s at most), the pipe grace (0.3 s), the state lock (0.5 s) and the transcript step
                 assert!(
                     e.engine_ms + 2_000 <= u64::from(e.timeout_s) * 1_000,
                     "{}: Muse would cut us off before our own kill",

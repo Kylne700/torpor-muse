@@ -13,9 +13,10 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// All of `kill`, listing included. A hook has at least 2 s between its engine limit and Muse's own (`hook/events.rs`), and
-/// `engine::PIPE_GRACE` comes after; a group left stopped for good would hold the engine's run lock.
-const BUDGET: Duration = Duration::from_millis(800);
+/// All of `kill`, listing included. It takes 30-80 ms; the rest is room for a slow `ps`. It comes out of the 2 s that a hook
+/// keeps between its engine limit and Muse's own (`hook/events.rs`), with the pipe grace, the state lock and the transcript
+/// step; and a group left stopped for good would hold the engine's run lock.
+const BUDGET: Duration = Duration::from_millis(400);
 /// A group that a stopped group's members started just before they stopped is found by the next round.
 const ROUNDS: usize = 4;
 
