@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { annotate, apartItems, calMarkdown, calibration, classify, e1, e2, e3, e4Items, e4Tally, e5, e6, e7, e8, e9, engineTurns, isE1b, loadRun, markdown, noteTruth, pacing, promiseRows, report, scrub, seenIn, undoReading, v11 } from './analyze.mjs';
 import { blocksBeforeNextRequest, doneFacts, doneTruth } from './cases.mjs';
 import { CAL_CHECK_FILE, CAL_CHECK_NAME, CAL_SESSIONS, bash as calBash, calText, edit as calEdit, scripted as calScripted } from './cal-scripts.mjs';
+import { CAL_L4D_SESSIONS, calTextL4d } from './cal-scripts-l4d.mjs';
+import { fileId, killListed, lockWatcher, newSince, parseLocks, procsInside, readStat } from './measures.mjs';
+import { buildWorkspace, snapshot } from './run.mjs';
 import { LINES, bashRuns, chars, compactionFacts, diffManifest, ledgerRows, manifest, parseWrapLog, pct, shq, stats, turnOf, visible, wrapHooks } from './lib.mjs';
 import { ASSETS, CLAIM_TURNS, CLEAN_PROMPTS, DECOY, E7_FILLERS, E7_FLAGS, E9_PACKAGE_JSON, E9_TEST_JS, FILLER_TEXT, HOLDER_JS, INTRO, REPLY, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
 
@@ -928,6 +931,130 @@ t('analyze loadRun: a calibration run is read by its own session id; an unknown 
   const mk = (id) => { const d = fs.mkdtempSync(path.join(tmp, 'cal.')); fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ id, label: id, turns: [] })); return d; };
   assert.equal(loadRun(mk('cal-e7')).spec.check_name, CAL_CHECK_NAME);
   assert.throws(() => loadRun(mk('cal-zzz')), /unknown session cal-zzz/);
+});
+
+// ------------------------------------------------------------------ L4d added measures: capture helpers (measures.mjs) and the calibration sessions
+
+const fakeProc = (entries) => { // entries: { pid: { comm, state, ppid, start, cwd } } -> a /proc-shaped folder
+  const root = fs.mkdtempSync(path.join(tmp, 'proc.'));
+  for (const [pid, e] of Object.entries(entries)) {
+    fs.mkdirSync(path.join(root, pid));
+    fs.writeFileSync(path.join(root, pid, 'stat'), `${pid} (${e.comm}) ${e.state ?? 'S'} ${e.ppid ?? 1} 0 0 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 ${e.start ?? 100} 0 0\n`);
+    if (e.cwd) fs.symlinkSync(e.cwd, path.join(root, pid, 'cwd'));
+  }
+  fs.mkdirSync(path.join(root, 'self')); // not a pid: skipped
+  return root;
+};
+t('measures: readStat takes comm up to the last bracket and the start time from field 22', () => {
+  const root = fakeProc({ 7: { comm: 'a b) (c', state: 'R', ppid: 3, start: 4242 } });
+  assert.deepEqual(readStat(7, root), { comm: 'a b) (c', state: 'R', ppid: 3, start: 4242 });
+  assert.equal(readStat(8, root), null);
+});
+t('measures: procsInside lists processes whose working folder is the run folder or below it, with their parent, and nothing else', () => {
+  const run = '/run/x', root = fakeProc({
+    10: { comm: 'node', ppid: 1, start: 5, cwd: `${run}/ws` }, 11: { comm: 'sleep', ppid: 10, start: 6, cwd: run }, 12: { comm: 'node', ppid: 1, start: 7, cwd: '/run/x2/ws' },
+    13: { comm: 'bash', ppid: 1, start: 8, cwd: '/' }, 14: { comm: 'node', ppid: 1, start: 9 }, 15: { comm: 'me', ppid: 1, start: 9, cwd: `${run}/ws` },
+  });
+  const got = procsInside(run, { proc: root, self: 15 });
+  assert.deepEqual(got.map((p) => [p.pid, p.comm, p.ppid, p.pcomm, p.cwd]), [[10, 'node', 1, null, 'ws'], [11, 'sleep', 10, 'node', '.']]);
+});
+t('measures: newSince tells a reused pid (another start time) from the same process', () => {
+  const a = { pid: 1, start: 5 }, b = { pid: 2, start: 6 };
+  assert.deepEqual(newSince([a, b], [a, { pid: 2, start: 99 }, { pid: 3, start: 1 }]), [{ pid: 2, start: 99 }, { pid: 3, start: 1 }]);
+});
+t('measures: killListed signals a listed process only if pid, start time and folder are still the same', () => {
+  const run = '/run/x', root = fakeProc({ 20: { comm: 'node', start: 5, cwd: `${run}/ws` }, 21: { comm: 'node', start: 99, cwd: `${run}/ws` }, 22: { comm: 'node', start: 7, cwd: '/elsewhere' } });
+  const sent = [];
+  const got = killListed(run, [{ pid: 20, start: 5 }, { pid: 21, start: 6 }, { pid: 22, start: 7 }, { pid: 23, start: 1 }], { proc: root, kill: (pid, sig) => sent.push([pid, sig]) });
+  assert.deepEqual(got, [20]);
+  assert.deepEqual(sent, [[20, 'SIGKILL']]);
+});
+t('measures: parseLocks reads only exclusive flocks, major and minor as hex, the inode as decimal', () => {
+  const text = ['1: FLOCK  ADVISORY  WRITE 4242 00:2b:15681564 0 EOF', '2: FLOCK  ADVISORY  READ 4243 00:2b:15681565 0 EOF', '3: POSIX  ADVISORY  WRITE 4244 08:01:99 0 EOF', '4: FLOCK  ADVISORY  WRITE 4245 fd:00:77 0 EOF', ''].join('\n');
+  assert.deepEqual(parseLocks(text), [{ pid: 4242, major: 0, minor: 43, ino: '15681564' }, { pid: 4245, major: 253, minor: 0, ino: '77' }]);
+});
+t('measures: a real flock shows up in /proc/locks under the id fileId gives (skipped where flock or /proc/locks is missing)', () => {
+  if (!fs.existsSync('/proc/locks')) return;
+  const f = path.join(tmp, 'real.lock');
+  fs.writeFileSync(f, '');
+  const id = fileId(f), held = () => parseLocks(fs.readFileSync('/proc/locks', 'utf8')).some((l) => l.major === id.major && l.minor === id.minor && l.ino === id.ino);
+  const child = cp.spawn('sh', ['-c', 'exec 9>"$1"; flock -x 9 || exit 1; exec sleep 5', 'sh', f], { stdio: 'ignore' }); // the lock lives with this one process
+  let missing = false;
+  child.on('exit', (code) => { if (code === 1 || code === 127) missing = true; }); // no flock binary, or it refused
+  const end = Date.now() + 4000;
+  while (!held() && !missing && Date.now() < end) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  const seen = held();
+  child.kill('SIGKILL');
+  if (missing) return;
+  assert.ok(seen, 'the held flock is found by major, minor and inode');
+  const end2 = Date.now() + 4000;
+  while (held() && Date.now() < end2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  assert.ok(!held(), 'and gone when its holder is');
+});
+t('measures: lockWatcher keeps the spans of the writer lock and the save lock, finds the files only under a muse folder, and closes open spans', () => {
+  const home = fs.mkdtempSync(path.join(tmp, 'torpor-home.'));
+  const other = path.join(home, 'engine'), state = path.join(home, 'muse', 'ws1');
+  fs.mkdirSync(other, { recursive: true }); fs.mkdirSync(state, { recursive: true });
+  fs.writeFileSync(path.join(other, 'lock'), ''); // an engine file with the same name: not ours
+  fs.writeFileSync(path.join(state, 'lock'), '');
+  const lockFile = path.join(tmp, 'fake-locks');
+  let clock = 1000;
+  const w = lockWatcher(home, { procLocks: lockFile, now: () => clock });
+  const line = (f, n) => `${n}: FLOCK  ADVISORY  WRITE 9 ${fileId(f).major.toString(16).padStart(2, '0')}:${fileId(f).minor.toString(16).padStart(2, '0')}:${fileId(f).ino} 0 EOF`;
+  fs.writeFileSync(lockFile, '');
+  w.poll(); // nothing held
+  assert.deepEqual(w.files, [path.join('muse', 'ws1', 'lock')]);
+  clock = 1100; fs.writeFileSync(lockFile, `${line(path.join(state, 'lock'), 1)}\n`); w.poll();
+  assert.ok(w.held('run') && !w.held('save'));
+  fs.writeFileSync(path.join(state, 'save.lock'), '');
+  clock = 1300; fs.writeFileSync(lockFile, `${line(path.join(state, 'lock'), 1)}\n${line(path.join(state, 'save.lock'), 2)}\n`); w.poll();
+  assert.ok(w.held('save'));
+  clock = 1900; fs.writeFileSync(lockFile, `${line(path.join(state, 'lock'), 1)}\n`); w.poll();
+  assert.ok(!w.held('save') && w.held('run'));
+  clock = 2500;
+  const spans = w.close(); // the run lock is still held in the fake file: its span stays open (end null)
+  assert.deepEqual(spans.map((x) => [x.kind, x.start, x.end]), [['save', 1300, 1900], ['run', 1100, null]]);
+});
+t('measures: snapshot copies the small files of a workspace and leaves .git and node_modules out', () => {
+  const ws = fs.mkdtempSync(path.join(tmp, 'ws.')), dest = path.join(tmp, 'snap');
+  fs.mkdirSync(path.join(ws, '.git')); fs.mkdirSync(path.join(ws, 'node_modules/x'), { recursive: true }); fs.mkdirSync(path.join(ws, 'lib'));
+  fs.writeFileSync(path.join(ws, 'a.js'), 'A'); fs.writeFileSync(path.join(ws, 'lib/b.js'), 'B'); fs.writeFileSync(path.join(ws, '.git/HEAD'), 'ref'); fs.writeFileSync(path.join(ws, 'node_modules/x/i.js'), 'N');
+  fs.writeFileSync(path.join(ws, 'big.bin'), Buffer.alloc(250000));
+  snapshot(ws, dest);
+  assert.deepEqual(fs.readdirSync(dest).sort(), ['a.js', 'lib']);
+  assert.equal(fs.readFileSync(path.join(dest, 'lib/b.js'), 'utf8'), 'B');
+});
+t('run.mjs buildWorkspace: the app file keeps its name for every counted session and is renamed only where a session says so', () => {
+  const calls = [];
+  const sb = { exec: (o) => { calls.push(o.argv.join(' ')); return { exit: 0, stdout: 'abc1234' }; } };
+  for (const [main, want] of [[undefined, 'server.js'], ['portal.js', 'portal.js']]) {
+    const T = fs.mkdtempSync(path.join(tmp, 'bw.'));
+    const ws = buildWorkspace({}, sb, T, { ws: 'demo', main });
+    assert.ok(fs.existsSync(path.join(ws, want)) && !fs.existsSync(path.join(ws, want === 'server.js' ? 'portal.js' : 'server.js')));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(ws, 'package.json'), 'utf8')).scripts.start, `node ${want}`);
+    assert.equal(fs.readFileSync(path.join(ws, want), 'utf8'), fs.readFileSync(path.join(HERE, '../../demo/app/server.js'), 'utf8'));
+  }
+  for (const s of Object.values(SESSIONS)) assert.equal(s.main, undefined, 'no counted session renames the app file');
+});
+t('cal-scripts-l4d: two sessions, held-out wording, a wait command that ends when the go file exists, and the trigger that matches it', () => {
+  assert.deepEqual(Object.keys(CAL_L4D_SESSIONS), ['cal-late', 'cal-stop']);
+  const counted = Object.values(SESSIONS).flatMap((s) => s.turns.map((x) => x.text)).concat(CLEAN_PROMPTS);
+  const late = CAL_L4D_SESSIONS['cal-late'], stop = CAL_L4D_SESSIONS['cal-stop'];
+  for (const x of [...late.turns, ...stop.turns]) assert.ok(!counted.includes(x.text), 'no counted prompt is reused');
+  assert.ok(late.turns[0].claim && stop.turns[0].claim && !stop.turns[1].claim);
+  assert.ok(late.turns[0].text.includes('/api/me') && !/health|login works|sign-in button/i.test(late.turns[0].text));
+  assert.deepEqual([late.turns[0].go_on_save, stop.turns[0].go_on_save, stop.turns[1].go_on_save], [undefined, true, undefined]);
+  // the route the first claim is about lies wholly past byte 6,000 of the demo app (that is what the session is for)
+  const server = fs.readFileSync(path.join(HERE, '../../demo/app/server.js'), 'utf8'), at = Buffer.byteLength(server.slice(0, server.indexOf('path === "/api/me"')));
+  assert.ok(at > 6000, `/api/me starts at byte ${at}`);
+  // the wait ends at once when go exists and the quoted command is the one the trigger looks for
+  const dir = fs.mkdtempSync(path.join(tmp, 'cal.')), text = fill(stop.turns[0].text, { T: dir.replace(/\/shared$/, ''), ws: dir });
+  fs.mkdirSync(path.join(dir, 'shared')); fs.writeFileSync(path.join(dir, 'shared/go'), 'go\n');
+  const cmd = /`([^`]+)`/.exec(fill(stop.turns[0].text, { T: dir, ws: dir }))[1];
+  const r = cp.spawnSync('sh', ['-c', cmd], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(r.stdout.trim(), 'waited');
+  assert.ok(new RegExp(stop.turns[0].trigger).test(`bash ${JSON.stringify({ command: cmd })}`) && text.includes('Then reply with just: Done.'));
+  assert.ok(calTextL4d().includes('### cal-late') && calTextL4d().includes('go file on save lock'));
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

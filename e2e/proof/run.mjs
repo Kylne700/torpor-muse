@@ -5,7 +5,7 @@
 //   node run.mjs build                                  compile hookwrap.c into the temp root
 //   node run.mjs hashes                                 sha256 of both binaries, Muse, the wrapper and the driver files
 //   node run.mjs prompts                                every fixed prompt and script, as the model gets it
-//   node run.mjs calprompts                             the held-out calibration sessions of cal-scripts.mjs (L4c), as the model gets them
+//   node run.mjs calprompts                             the held-out calibration sessions of cal-scripts.mjs (L4c) and cal-scripts-l4d.mjs (L4d), as the model gets them
 //   node run.mjs wrapcost [--n 400]                     the wrapper's own cost on a no-op command
 //   node run.mjs run --session ID [--echo] [--locked]   one session (--echo = free echo provider, no key, no network; --turns N = only the first N turns, echo only)
 //   node run.mjs ledger --file F                        the spend ledger from the recorded usage
@@ -27,6 +27,8 @@ import { GuardError, InfraError, NODE_BIN, NODE_EXEC, findBwrap, makeRunFolder, 
 import { compactionFacts, diffManifest, estAware, ledgerRows, manifest, parseWrapLog, stats, sumBy, wrapHooks } from './lib.mjs';
 import { ASSETS, E9_PACKAGE_JSON, E9_TEST_JS, HOLDER_JS, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
 import { CAL_SESSIONS, calText } from './cal-scripts.mjs';
+import { CAL_L4D_SESSIONS, calTextL4d } from './cal-scripts-l4d.mjs';
+import { killListed, lockWatcher, procsInside } from './measures.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
@@ -81,7 +83,7 @@ function mkctx(o) {
 function hashes(ctx) {
   const mbin = fs.readdirSync(ctx.museDir).find((f) => /^muse-bin-/.test(f));
   const git = (...a) => cp.spawnSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).stdout.trim();
-  const own = Object.fromEntries(['hookwrap.c', 'lib.mjs', 'scripts.mjs', 'cal-scripts.mjs', 'cases.mjs', 'run.mjs', 'analyze.mjs', 'selftest.mjs'].filter((f) => fs.existsSync(path.join(HERE, f))).map((f) => [f, sha(path.join(HERE, f))]));
+  const own = Object.fromEntries(['hookwrap.c', 'lib.mjs', 'scripts.mjs', 'cal-scripts.mjs', 'cal-scripts-l4d.mjs', 'measures.mjs', 'cases.mjs', 'run.mjs', 'analyze.mjs', 'selftest.mjs'].filter((f) => fs.existsSync(path.join(HERE, f))).map((f) => [f, sha(path.join(HERE, f))]));
   return {
     adapter: { sha256: sha(ctx.adapter), bytes: fs.statSync(ctx.adapter).size }, engine: { sha256: sha(ctx.engine) },
     hookwrap: fs.existsSync(ctx.hookwrap) ? { sha256: sha(ctx.hookwrap) } : null,
@@ -133,6 +135,14 @@ const walkFiles = (dir, pred, out = []) => {
   for (const e of es) { const p = path.join(dir, e.name); if (e.isDirectory()) walkFiles(p, pred, out); else if (pred(p)) out.push(p); }
   return out;
 };
+// L4d measure (iii): the workspace's small files as they were when a claim was typed (the check-writer reads them then), kept to map the saved check to file lines. Reads only.
+const snapshot = (ws, dest) => {
+  for (const f of walkFiles(ws, (p) => !/\/(\.git|node_modules)\//.test(p) && fs.statSync(p).size < 2e5)) {
+    const to = path.join(dest, path.relative(ws, f));
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(f, to);
+  }
+};
 const isSub = (p) => p.includes(`${path.sep}subagent${path.sep}`);
 const sessionFiles = (T) => walkFiles(path.join(T, 'home/.local/share/muse/sessions'), (p) => path.basename(p) === 'session.jsonl').sort();
 const writerLedger = (T) => walkFiles(path.join(T, 'torpor-home'), (p) => path.basename(p) === 'ledger.jsonl').flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }));
@@ -168,8 +178,9 @@ function buildWorkspace(ctx, sb, T, spec) {
   if (spec.ws === 'demo') {
     const ws = path.join(T, 'ws');
     fs.mkdirSync(ws);
-    fs.copyFileSync(path.join(REPO, 'demo/app/server.js'), path.join(ws, 'server.js'));
-    fs.writeFileSync(path.join(ws, 'package.json'), spec.tests ? E9_PACKAGE_JSON : `${JSON.stringify({ name: 'login-demo', version: '1.0.0', private: true, scripts: { start: 'node server.js' } }, null, 2)}\n`);
+    const main = spec.main ?? 'server.js'; // only the L4d calibration sessions rename the app file
+    fs.copyFileSync(path.join(REPO, 'demo/app/server.js'), path.join(ws, main));
+    fs.writeFileSync(path.join(ws, 'package.json'), spec.tests ? E9_PACKAGE_JSON : `${JSON.stringify({ name: 'login-demo', version: '1.0.0', private: true, scripts: { start: `node ${main}` } }, null, 2)}\n`);
     if (spec.tests) { fs.mkdirSync(path.join(ws, 'test')); fs.writeFileSync(path.join(ws, 'test/login.test.js'), E9_TEST_JS); }
     fs.writeFileSync(path.join(ws, 'README.md'), '# Login demo\n\nA small login page. Start it with `npm start` (port 3000, or `--port N`).\n');
     fs.writeFileSync(path.join(ws, '.synthetic'), 'synthetic workspace for the L4 proof\n');
@@ -193,9 +204,9 @@ async function runSession(ctx, spec, o) {
   const echo = !!o.echo, label = o.label ?? `${spec.id}-${utc().replace(/\D/g, '').slice(4, 14)}`;
   const base = path.join(ctx.out, echo ? 'echo-runs' : 'runs', label); // echo (free) runs stay out of the ledger
   fs.mkdirSync(base, { recursive: true });
-  const rec = { schema: 'torpor-l4-run/1', id: spec.id, label, mode: echo ? 'echo' : 'keyed', calibration: !!o.calibration, started_at: utc(), turns: [], notes: [] };
+  const rec = { schema: 'torpor-l4-run/1', id: spec.id, label, mode: echo ? 'echo' : 'keyed', calibration: !!o.calibration, started_at: utc(), turns: [], notes: [], go: null, procs: {} };
   const t0 = Date.now();
-  let T = null, sb = null, outcome = 'INFRA-FAILURE', reason = null, stageStop = false, phase = 'setup', ws = null;
+  let T = null, sb = null, outcome = 'INFRA-FAILURE', reason = null, stageStop = false, phase = 'setup', ws = null, watchTimer = null, locks = null;
   const turnsDone = () => rec.turns.filter((t) => t.done).length;
   const wrapLog = () => { try { return parseWrapLog(fs.readFileSync(path.join(T, 'live/wrap.log'), 'utf8')); } catch { return { runs: [], killed: [], bad: [] }; } };
   let cache = { sig: '', logs: [] };
@@ -209,6 +220,7 @@ async function runSession(ctx, spec, o) {
   const writerRows = () => writerLedger(T).map((r) => ({ at: Date.parse(r.at) * 1000, call: 'writer', model: r.model, input: r.input ?? 0, cached: r.cached ?? 0, output: r.output ?? 0, reasoning: 0, usd: r.usd ?? null, est: !!r.est, status: r.status ?? null }));
   const allRows = () => [...readLogs().flatMap((l) => usageRows(l.recs)), ...writerRows()];
   const spend = () => sumCost(allRows());
+  const scanProcs = () => { try { return procsInside(T); } catch (e) { rec.notes.push(`process scan: ${String(e.message).slice(0, 120)}`); return null; } };
   try {
     if (freeGiB('/') < ctx.minRoot || freeGiB('/tmp') < ctx.minTmp) throw new Stop(`disk: / ${freeGiB('/').toFixed(1)} GiB, /tmp ${freeGiB('/tmp').toFixed(1)} GiB free`, 'disk', true);
     const pin = cp.spawnSync('sh', [path.join(REPO, 'scripts/verify-engine.sh'), ctx.engine, 'linux-x64'], { encoding: 'utf8' });
@@ -260,6 +272,20 @@ async function runSession(ctx, spec, o) {
     const man = () => manifest(ws, sha1);
     const eng = (argv) => sb.exec({ argv: [path.join(T, 'bin/torpor'), ...argv], cwd: ws, env: toolEnv(T), merge: true, timeoutMs: 60000 }); // engine CLI between turns (read-only questions)
     rec.manifest_start = man();
+    // L4d measures (i) and cal (b): the check-writer's lock spans, read from /proc/locks (no lock of ours); for a turn with go_on_save, the file its AI waits for
+    // is created the moment the engine is seen saving a check (or after go_cap_s if it never is). All reads; a failure in here is noted and never stops the run.
+    locks = lockWatcher(path.join(T, 'torpor-home'));
+    let goArmed = null;
+    watchTimer = setInterval(() => {
+      try {
+        locks.poll();
+        if (goArmed && !rec.go) {
+          const held = locks.held('save'), late = Date.now() - goArmed.since > goArmed.cap_s * 1000;
+          if (held || late) { fs.writeFileSync(path.join(T, 'shared/go'), 'go\n'); rec.go = { reason: held ? 'save-held' : 'cap', after_ms: Date.now() - goArmed.since, at: Date.now() }; }
+        }
+      } catch (e) { if (rec.notes.length < 20) rec.notes.push(`lock watcher: ${String(e.message).slice(0, 120)}`); }
+    }, 100);
+    watchTimer.unref();
 
     if (!(spec.muse_flags ?? []).every((f) => /^[\w.=-]+$/.test(f))) throw new GuardError('a Muse flag has a character that the pane command cannot carry safely');
     const muse = [path.join(ctx.museDir, 'muse'), ...(echo ? FREE : KEYED), ...(spec.muse_flags ?? [])];
@@ -310,7 +336,9 @@ async function runSession(ctx, spec, o) {
       }
       // A person types after the last answer, not at the same instant: the detached check-writer of the earlier prompt gets to finish (else the adapter skips the next prompt as "busy").
       if (n > 1) { const w0 = Date.now(); await soft('the check-writer of the earlier prompt to finish', 90000, () => !epProcs(T).some((p) => /\bsuggest\b/.test(p.cmd))); mark.writer_wait_s = round((Date.now() - w0) / 1000, 1); }
+      if (t.claim) { try { snapshot(ws, path.join(base, `claim-${n}`)); } catch (e) { rec.notes.push(`claim snapshot ${n}: ${String(e.message).slice(0, 120)}`); } }
       mark.sent = Date.now();
+      if (t.go_on_save) goArmed = { since: mark.sent, cap_s: t.go_cap_s ?? 100 };
       if (t.role === 'undo') undoSentAt = mark.sent;
       rec.turns.push(mark);
       if (text.includes('\n')) await pasteText(ctx.S, text); else await typeLine(ctx.S, text);
@@ -323,6 +351,7 @@ async function runSession(ctx, spec, o) {
         return i && i.completed >= n ? i : null;
       });
       mark.done = Date.now();
+      goArmed = null;
       await soft(`the Stop hook of turn ${n}`, 40000, () => wrapLog().runs.filter((r) => r.ev === 'Stop').length >= n && wrapLog().killed.filter((k) => k.ev === 'Stop').length === 0);
       await sleep(1500);
       mark.settled = Date.now();
@@ -346,6 +375,7 @@ async function runSession(ctx, spec, o) {
     await until('the TUI prompt', 90000, () => pane(ctx.S).includes('❯'));
     await sleep(1500);
     rec.tui_ready = Date.now();
+    rec.procs.boot = scanProcs(); // measure (ii): what belongs to Muse itself, before the first prompt
     // E7: while no compaction has come after the saved check, a filler turn (a harmless read of a long file) goes in front of the break, at most spec.fillers.max
     // (echo: one). The check below is the Muse log's own record of an installed compaction followed by a SessionStart hook run.
     const mainRecs = () => readLogs().filter((l) => !isSub(l.f))[0]?.recs ?? [];
@@ -369,6 +399,7 @@ async function runSession(ctx, spec, o) {
     phase = 'exit';
     // The check-writer runs detached after a prompt; its call is billed when it starts, so wait for it before Muse (and the sandbox) goes away.
     await soft('the check-writer to finish', 150000, () => !epProcs(T).some((p) => /\bsuggest\b/.test(p.cmd)));
+    rec.procs.pre_exit = scanProcs(); // measure (ii): record only, nothing is killed while Muse is still up
     await typeLine(ctx.S, '/exit');
     await soft('Muse to exit', 30000, () => /EXITED \d+/.test(pane(ctx.S)));
     tick();
@@ -384,6 +415,11 @@ async function runSession(ctx, spec, o) {
   // --- collect (Muse first, then the run folder), after the Muse process is gone
   try {
     if (T) {
+      // measure (ii): after Muse has exited, what still has its working folder in the run folder; those are killed by exact pid (re-read just before), then the old sweep runs as before
+      await sleep(300);
+      rec.procs.muse_exited = /EXITED \d+/.test(pane(ctx.S));
+      rec.procs.post_exit = scanProcs();
+      rec.procs.post_exit_killed = killListed(T, rec.procs.post_exit ?? []);
       tm(ctx.S, 'kill-server');
       killEp(T);
       for (let i = 0; i < 20 && epProcs(T).length; i++) await sleep(250);
@@ -402,7 +438,10 @@ async function runSession(ctx, spec, o) {
       if (ws && outcome !== 'REFUSED') {
         const st = engineCmd(['status', '--json']);
         fs.writeFileSync(path.join(base, 'status.json'), st.stdout);
-        fs.writeFileSync(path.join(base, 'promise-list.txt'), engineCmd(['promise', 'list']).stdout);
+        const plist = engineCmd(['promise', 'list']).stdout;
+        fs.writeFileSync(path.join(base, 'promise-list.txt'), plist);
+        // measure (iii): the stored check of every saved promise, raw (read-only), to see which file lines each one is about
+        fs.writeFileSync(path.join(base, 'promise-specs.json'), `${JSON.stringify(Object.fromEntries([...plist.matchAll(/^#(\d+) /gm)].map((m) => [m[1], engineCmd(['promise', 'show', m[1], '--spec']).stdout.slice(0, 70000)])))}\n`);
         fs.writeFileSync(path.join(base, 'engine-log.txt'), engineCmd(['log']).stdout.slice(0, 200000));
         const er = await engineRecords(T); // before the final check run below, which may add rows of its own
         if (er) {
@@ -427,6 +466,7 @@ async function runSession(ctx, spec, o) {
       rec.hook_runs = { n: w.runs.length, killed: w.killed.length, bad_lines: w.bad.length, by_event: Object.fromEntries([...new Set(w.runs.map((r) => r.ev))].map((ev) => [ev, w.runs.filter((r) => r.ev === ev).length])) };
       rec.key = { runs_had_key: w.runs.filter((r) => r.hadKey === 1).length, runs_got_key: w.runs.filter((r) => r.gotKey === 1).length, ups: w.runs.filter((r) => r.ev === 'UserPromptSubmit').length };
       rec.egress = egressRead(T);
+      if (locks) rec.locks = { files: locks.files, spans: locks.close() };
       rec.e1_floor_ms = stats(w.runs.map((r) => r.ns / 1e6));
     }
   } catch (e) {
@@ -434,6 +474,7 @@ async function runSession(ctx, spec, o) {
     reason = `collect: ${e instanceof InfraError ? e.message : String(e.stack ?? e).split('\n').slice(0, 4).join(' | ')}`;
     stageStop = !(e instanceof InfraError);
   } finally {
+    if (watchTimer) clearInterval(watchTimer);
     if (sb) sb.reapRun();
     if (T) { killEp(T); safeDelete(T); }
     active = null;
@@ -470,7 +511,7 @@ async function main() {
   if (cmd === 'build') console.log(JSON.stringify(build(ctx)));
   else if (cmd === 'hashes') console.log(JSON.stringify(hashes(ctx), null, 1));
   else if (cmd === 'prompts') console.log(`${promptsText()}\n${extrasText()}`);
-  else if (cmd === 'calprompts') console.log(calText());
+  else if (cmd === 'calprompts') console.log(`${calText()}\n${calTextL4d()}`);
   else if (cmd === 'wrapcost') {
     const r = wrapcost(ctx, Number(o.n ?? 400));
     fs.mkdirSync(ctx.out, { recursive: true });
@@ -480,8 +521,8 @@ async function main() {
     const r = ledger(ctx, path.resolve(o.file), ctx.cap);
     console.log(`ledger: ${r.calls} calls, lo $${r.lo.toFixed(4)}, hi $${r.hi.toFixed(4)}`);
   } else if (cmd === 'run') {
-    const known = SESSIONS[o.session] ?? CAL_SESSIONS[o.session];
-    if (!known) throw new Error(`unknown session ${o.session}; known: ${[...Object.keys(SESSIONS), ...Object.keys(CAL_SESSIONS)].join(', ')}`);
+    const known = SESSIONS[o.session] ?? CAL_SESSIONS[o.session] ?? CAL_L4D_SESSIONS[o.session];
+    if (!known) throw new Error(`unknown session ${o.session}; known: ${[...Object.keys(SESSIONS), ...Object.keys(CAL_SESSIONS), ...Object.keys(CAL_L4D_SESSIONS)].join(', ')}`);
     if (o.turns && !o.echo) throw new Error('--turns is for free echo runs only');
     const spec = o.turns ? { ...known, turns: known.turns.slice(0, Number(o.turns)) } : known;
     ctx.spent = spentSoFar(ctx.out);
@@ -495,4 +536,4 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main().catch((e) => { console.error(e.message); process.exitCode = 1; });
-export { buildWorkspace, engineRecords, hashes };
+export { buildWorkspace, engineRecords, hashes, snapshot };
