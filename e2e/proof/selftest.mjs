@@ -14,6 +14,7 @@ import { blocksBeforeNextRequest, doneFacts, doneTruth } from './cases.mjs';
 import { CAL_CHECK_FILE, CAL_CHECK_NAME, CAL_SESSIONS, bash as calBash, calText, edit as calEdit, scripted as calScripted } from './cal-scripts.mjs';
 import { CAL_L4D_SESSIONS, calTextL4d } from './cal-scripts-l4d.mjs';
 import { fileId, killListed, lockWatcher, newSince, parseLocks, procsInside, readStat } from './measures.mjs';
+import { addedMarkdown, anchorsOf, calMarkdownL4d, calReading, claimMeasure, listRows, mapAnchor, pool, procsMeasure, stopMeasure } from './read-l4d.mjs';
 import { buildWorkspace, snapshot } from './run.mjs';
 import { LINES, bashRuns, chars, compactionFacts, diffManifest, ledgerRows, manifest, parseWrapLog, pct, shq, stats, turnOf, visible, wrapHooks } from './lib.mjs';
 import { ASSETS, CLAIM_TURNS, CLEAN_PROMPTS, DECOY, E7_FILLERS, E7_FLAGS, E9_PACKAGE_JSON, E9_TEST_JS, FILLER_TEXT, HOLDER_JS, INTRO, REPLY, SESSIONS, extrasText, fill, promptsText } from './scripts.mjs';
@@ -852,7 +853,7 @@ t('analyze markdown: stage L4b keeps its own header and adds the L4c-count line;
   assert.ok(c.startsWith('# L4c proof: script-made summary') && c.includes('2026-10-29 00:25 UTC, before any L4c run') && !c.includes('amended 07:57 UTC'));
   assert.ok(c.includes('The check-writer is the one of the L4b counted runs') && c.includes('ratio 0.510 against 0.50') && !c.includes('The check-writer changed after'));
   assert.ok(c.includes('Verdict by the L4b count (a session-start block only; kept for comparison): FAIL.') && c.includes('(the E7 verdict of this stage): PASS.'));
-  assert.throws(() => markdown(report([run]), 'L4d'), /unknown stage L4d/);
+  assert.throws(() => markdown(report([run]), 'L4e'), /unknown stage L4e/);
 });
 t('analyze scrub: the L4c temp base is scrubbed like the L4 one', () => {
   const run = '/tmp/claude-1000/l4c/drill.AbC123';
@@ -1055,6 +1056,180 @@ t('cal-scripts-l4d: two sessions, held-out wording, a wait command that ends whe
   assert.equal(r.stdout.trim(), 'waited');
   assert.ok(new RegExp(stop.turns[0].trigger).test(`bash ${JSON.stringify({ command: cmd })}`) && text.includes('Then reply with just: Done.'));
   assert.ok(calTextL4d().includes('### cal-late') && calTextL4d().includes('go file on save lock'));
+});
+
+// ------------------------------------------------------------------ L4d readers (read-l4d.mjs): the three added measures
+
+const DEMO = fs.readFileSync(path.join(HERE, '../../demo/app/server.js'), 'utf8');
+const LATE_SPEC = JSON.stringify({ name: '/api/me returns name and email', start: { cmd: 'npm start --silent', ready: '/', timeout_s: 30 }, unverifiable: false, v: 1, why: 'w', steps: [
+  { expect: { json_has: ['ok'], status: 200 }, http: { json: { email: 'a@b.c', password: 'x' }, method: 'POST', path: '/api/login' }, why: 'w' },
+  { expect: { body_contains: 'Sam', json_has: ['name', 'email'], status: 200 }, http: { method: 'GET', path: '/api/me' }, why: 'w' }] });
+const calRun = (id, { hooks = [], eng = null, rec = {}, promises = '', specs = null } = {}) => annotate({ label: `${id}-fake`, spec: CAL_L4D_SESSIONS[id], recs: [], status: null, tl: [], calls: [], wl: { runs: hooks, killed: [], bad: [] }, eng, promises, specs,
+  rec: { id, outcome: 'DONE', minutes: 1, turns: CAL_L4D_SESSIONS[id].turns.map((x, i) => ({ n: i + 1, role: 'prompt', claim: !!x.claim, sent: 1000 * (i + 1), done: 20000 * (i + 1) })), ...rec } });
+const create = (id, atMs, ms) => ({ id: 100 + id * 10 + ms, promise_id: id, kind: 'create', verdict: 'PASS', failed_step: null, ms, at_ns: String(atMs * 1e6) });
+const gate = (id, atMs) => ({ id: 900 + atMs, promise_id: id, kind: 'gate', verdict: 'PASS', failed_step: null, ms: 600, at_ns: String(atMs * 1e6) });
+const turnRow = (n, endedMs) => ({ id: n, n, start_point: 2 * n - 1, end_point: 2 * n, end_kind: 'stop', origin: 'human', started_ns: String(0), ended_ns: String(endedMs * 1e6), bash_count: 1 });
+const LIST1 = '#1 Welcome greeting after demo sign-in · guard only · passed 07:58 · your words, turn 1\n';
+
+t('L4d readers: the promise list gives name, tier and source turn; checks without "your words" are left out; pool has p90', () => {
+  assert.deepEqual(listRows(`${LIST1}#2 seeded check · blocking · passed 07:59\n#3 Other · guard only · passed 08:00 · your words, turn 10\n`), [{ id: 1, name: 'Welcome greeting after demo sign-in', tier: 'guard only', turn: 1 }, { id: 3, name: 'Other', tier: 'guard only', turn: 10 }]);
+  assert.deepEqual(pool([]), { n: 0, p50: null, p90: null, p99: null, max: null });
+  const p = pool(Array.from({ length: 100 }, (_, i) => i + 1));
+  assert.deepEqual([p.p50, p.p90, p.p99, p.max, p.n], [50, 90, 99, 100, 100]);
+});
+
+t('L4d readers: which strings of a saved check are looked up in the code (routes and text, nothing else)', () => {
+  const spec = { name: 'not an anchor', start: { cmd: 'npm start', ready: '/ready', timeout_s: 30 }, steps: [
+    { goto: '/login?next=1', why: 'w' }, { wait_http: '/api/health' }, { fill: { label: 'Password' }, value: 'secret-value', why: 'w' }, { click: { role: 'button', name: 'Sign in' }, why: 'w' },
+    { press: { testid: 'pw-input' }, key: 'Enter' }, { expect_url: { path: '/home' }, why: 'w' }, { expect_url: { path_re: '^/h' }, why: 'w' }, { expect_text: { text: 'Welcome' }, contains: 'Sam', why: 'w' },
+    { expect_count: { text_re: 'item' }, n: 3, why: 'w' }, { expect_visible: { text: 'ab' }, why: 'w' }, { expect_console_clean: true, why: 'w' },
+    { http: { method: 'GET', path: '/api/me' }, expect: { body_contains: 'Sam', status: 200 }, why: 'w' }, { check: { label: 'Remember me' }, why: 'w' }] };
+  const a = anchorsOf(spec).map((x) => `${x.step}:${x.verb}:${x.route ?? x.text}${x.method ? ':method' : ''}`);
+  assert.deepEqual(a, ['1:goto:/login?next=1', '2:wait_http:/api/health', '3:fill:Password', '4:click:Sign in', '5:press:pw-input', '6:expect_url:/home', '8:expect_text:Welcome', '8:expect_text:Sam', '12:http:/api/me:method', '13:check:Remember me']);
+  // 'ab' is under 3 characters; text_re, path_re, role, value, key, body_contains and start.ready are not anchors; the check's own name is not a step
+  assert.deepEqual(anchorsOf(null), []);
+});
+
+t('L4d readers: a route block runs to where the braces close; offsets are UTF-8 bytes; the 6,000 byte edge gives before, straddle, past', () => {
+  const file = (text) => [{ name: 'app.js', text }];
+  const one = mapAnchor({ step: 1, verb: 'goto', route: '/a' }, file('x\napp.get("/a", () => { ok(); });\nlater();\n'));
+  assert.deepEqual(one.map((m) => [m.first, m.last, m.cls]), [[2, 2, 'before']]); // a line whose braces balance is a block of its own
+  const m1 = mapAnchor({ step: 1, verb: 'http', route: '/b', method: true }, file('// "/b" is the route\nif (req.method === "POST" && path === "/b") {\n  if (x) {\n    y();\n  }\n  z();\n}\nafter();\n'));
+  assert.deepEqual(m1.map((m) => [m.first, m.last]), [[2, 7]]); // the first line with the path AND the word method, not the comment before it
+  assert.deepEqual(mapAnchor({ step: 1, verb: 'goto', route: '/b?x=1#top' }, file('go("/b");\n')).map((m) => m.first), [1]); // query and fragment are not part of the literal
+  assert.equal(mapAnchor({ step: 1, verb: 'goto', route: '/zz' }, file('go("/b");\n')).length, 0);
+  assert.equal(mapAnchor({ step: 1, verb: 'goto', route: '/b' }, file("go('/b'); go(`/b`);\n")).length, 1);
+  const u = mapAnchor({ step: 1, verb: 'click', text: 'Sign in' }, file('é\nSign in here\nsign in\nSign in again\n'));
+  assert.deepEqual(u.map((m) => [m.first, m.start, m.end]), [[2, 3, 3 + 12], [4, 3 + 13 + 8, 3 + 13 + 8 + 13]]); // every line with the string, case-sensitive; the first byte count includes the 2-byte letter
+  const pad = (n) => `//${'p'.repeat(n - 3)}\n`; // a line of exactly n bytes with its newline
+  const body = 'if (req.method === "GET" && path === "/s") {\n' + '  a();\n'.repeat(30) + '}\n';
+  assert.equal(mapAnchor({ step: 1, verb: 'http', route: '/s', method: true }, file(pad(100) + body))[0].cls, 'before');
+  const st = mapAnchor({ step: 1, verb: 'http', route: '/s', method: true }, file(pad(5900) + body))[0];
+  assert.deepEqual([st.start, st.cls], [5900, 'straddle']);
+  const pa = mapAnchor({ step: 1, verb: 'http', route: '/s', method: true }, file(pad(6000) + body))[0];
+  assert.deepEqual([pa.start, pa.cls], [6000, 'past']);
+});
+
+t('L4d readers: on the real demo app the /api/me block lies wholly past byte 6,000 and the saved check of the first calibration maps to it', () => {
+  const me = mapAnchor({ step: 2, verb: 'http', route: '/api/me', method: true }, [{ name: 'portal.js', text: DEMO }]);
+  assert.equal(me.length, 1);
+  assert.equal(me[0].cls, 'past');
+  assert.ok(DEMO.split('\n').slice(me[0].first - 1, me[0].last).join('\n').includes('"/api/me"') && DEMO.split('\n')[me[0].last - 1].trim() === '}');
+  const run = calRun('cal-late', { promises: LIST1.replace('Welcome greeting after demo sign-in', '/api/me returns name and email'), specs: { 1: LATE_SPEC } });
+  const [c] = claimMeasure(run, listRows(run.promises), () => [{ name: 'portal.js', text: DEMO }]);
+  assert.equal(c.turn, 1);
+  assert.deepEqual([c.saved.length, c.saved[0].steps, c.saved[0].mapped.length, c.saved[0].unmapped, c.saved[0].past], [1, 2, 2, 0, 1]);
+  const rd = calReading(run, listRows(run.promises), { filesOf: () => [{ name: 'portal.js', text: DEMO }] });
+  assert.equal(rd.reading.flag, 'WORKED');
+});
+
+t('L4d readers: the claim reading says when no check was saved, when the spec is missing and when every anchor is before 6,000', () => {
+  const file = [{ name: 'portal.js', text: DEMO }];
+  const none = calReading(calRun('cal-late'), [], { filesOf: () => file });
+  assert.equal(none.reading.flag, 'STOP');
+  assert.match(none.reading.text, /no check was saved/);
+  const nospec = calRun('cal-late', { promises: LIST1 });
+  assert.equal(claimMeasure(nospec, listRows(nospec.promises), () => file)[0].saved[0].error, 'no stored spec');
+  const ui = calRun('cal-late', { promises: LIST1, specs: { 1: JSON.stringify({ steps: [{ expect_text: { text: 'Sign in' }, contains: 'zzz-nowhere', why: 'w' }] }) } });
+  const lines = claimMeasure(ui, listRows(ui.promises), () => file)[0].saved[0];
+  assert.ok(lines.mapped.length > 0 && lines.past === 0 && lines.before > 0);
+  assert.equal(calReading(ui, listRows(ui.promises), { filesOf: () => file }).reading.flag, 'STOP'); // every mapped anchor is before byte 6,000
+  const page = calRun('cal-late', { promises: LIST1, specs: { 1: JSON.stringify({ steps: [{ press: { role: 'textbox' }, key: 'Enter' }] }) } });
+  assert.equal(calReading(page, listRows(page.promises), { filesOf: () => file }).reading.flag, 'READ'); // nothing maps: reported as it is, not a stop
+  const broken = calRun('cal-late', { promises: LIST1, specs: { 1: 'not json' } });
+  assert.match(claimMeasure(broken, listRows(broken.promises), () => file)[0].saved[0].error, /not JSON/);
+  const nofiles = calRun('cal-late', { promises: LIST1, specs: { 1: LATE_SPEC } });
+  assert.equal(claimMeasure(nofiles, listRows(nofiles.promises))[0].files_error !== null, true); // no snapshot folder: said, not thrown
+});
+
+t('L4d readers: processes left running are the ones not there at the start (pid and start time), counted by kind; after-exit reading only when Muse exited', () => {
+  const P = (pid, start, comm = 'node', pcomm = 'sh') => ({ pid, ppid: 1, pcomm, comm, state: 'S', start, cwd: 'ws' });
+  const run = { rec: { procs: { boot: [P(10, 5, 'muse-bin', 'bwrap')], pre_exit: [P(10, 5, 'muse-bin', 'bwrap'), P(11, 7), P(12, 8), P(10, 9, 'node')], muse_exited: true, post_exit: [], post_exit_killed: [] } } };
+  const r = procsMeasure(run);
+  assert.deepEqual([r.boot, r.pre_exit, r.left_running, r.post_exit, r.muse_exited], [1, 4, 3, 0, true]);
+  assert.deepEqual(r.left_by, { 'node (parent sh)': 3 }); // a reused pid with another start time is a new process
+  const stuck = procsMeasure({ rec: { procs: { ...run.rec.procs, muse_exited: false, post_exit: [P(11, 7)] } } });
+  assert.equal(stuck.post_exit, null);
+  assert.equal(procsMeasure({ rec: {} }), null);
+});
+
+t('L4d readers: a Stop that began inside a save and waited has class 2; a wait with no check run is "left for a later turn" and the engine rule is named', () => {
+  const hooks = [hookRun('SessionStart', 500, 20), hookRun('UserPromptSubmit', 1010, 10), hookRun('Stop', 8300, 1700, userOut('Torpor: new promise #1 "Welcome greeting after demo sign-in" (guard only), from your words at turn 1.')), hookRun('UserPromptSubmit', 11000, 8), hookRun('Stop', 13000, 40)];
+  const eng = { turns: [turnRow(1, 9965), turnRow(2, 13030)], promise_runs: [create(1, 9280, 608), create(1, 9280, 628), create(1, 9280, 592)] };
+  const rec = { go: { reason: 'save-held', after_ms: 5300, at: 6300 }, locks: { spans: [{ kind: 'run', start: 1200, end: 9990 }, { kind: 'save', start: 6300, end: 9990 }] } };
+  const run = calRun('cal-stop', { hooks, eng, rec, promises: LIST1 });
+  const m = stopMeasure(run, listRows(run.promises), () => []);
+  assert.deepEqual(m.stops.map((s) => [s.turn, s.paired, s.waited, s.ran]), [[1, true, true, []], [2, true, false, []]]);
+  assert.equal(m.stops[0].before_engine_ms, 1665);
+  assert.equal(m.stops[0].engine_ms, 35);
+  assert.equal(m.stops[0].hook_ms, 1700);
+  assert.deepEqual(m.waits, [1665, 30]);
+  const c = m.checks[0];
+  assert.deepEqual([c.cls, c.basis, c.create_rows, c.left_for_later, c.first_run.kind], [2, 'lock span', 3, true, 'never']);
+  const rd = calReading(run, listRows(run.promises), { filesChanged: () => [] });
+  assert.equal(rd.reading.flag, 'WAIT-SHOWN');
+  assert.match(rd.reading.text, /files changed in that turn: 0/);
+  // the same Stop with a gate row of the new check in its window is the pre-registered "works"
+  const ran = calRun('cal-stop', { hooks, eng: { ...eng, promise_runs: [...eng.promise_runs, gate(1, 9990)] }, rec, promises: LIST1 });
+  assert.equal(calReading(ran, listRows(ran.promises)).reading.flag, 'WORKED');
+  assert.equal(stopMeasure(ran, listRows(ran.promises)).checks[0].first_run.kind, 'own');
+  const md = calMarkdownL4d([rd]);
+  assert.ok(md.includes('Reading: WAIT-SHOWN') && md.includes('class 2 (lock span)') && md.includes('waited true, ran no check'));
+});
+
+t('L4d readers: no wait and no gate row inside a save is the stop reading; a Stop before or after the save, or a go from the cap, is NOT-TRIGGERED', () => {
+  const base = (stopAt, stopMs, endedMs, go = { reason: 'save-held', after_ms: 5300, at: 6300 }) => {
+    const hooks = [hookRun('UserPromptSubmit', 1010, 10), hookRun('Stop', stopAt, stopMs)];
+    const eng = { turns: [turnRow(1, endedMs)], promise_runs: [create(1, 9280, 600)] };
+    return calRun('cal-stop', { hooks, eng, rec: { go, locks: { spans: [{ kind: 'save', start: 6300, end: 9990 }] } }, promises: LIST1 });
+  };
+  const flag = (run) => calReading(run, listRows(run.promises)).reading.flag;
+  assert.equal(flag(base(8300, 20, 8310)), 'STOP'); // inside the save, 10 ms before the engine, no gate row
+  assert.equal(flag(base(5000, 20, 5010)), 'NOT-TRIGGERED'); // class 3
+  assert.equal(flag(base(12000, 20, 12010)), 'NOT-TRIGGERED'); // class 1
+  assert.equal(flag(base(8300, 20, 8310, { reason: 'cap', after_ms: 100000, at: 101000 })), 'NOT-TRIGGERED');
+  const unpaired = calRun('cal-stop', { hooks: [hookRun('Stop', 8300, 20)], eng: { turns: [], promise_runs: [create(1, 9280, 600)] }, rec: { locks: { spans: [{ kind: 'save', start: 6300, end: 9990 }] } }, promises: LIST1 });
+  const u = stopMeasure(unpaired, listRows(unpaired.promises));
+  assert.deepEqual([u.stops[0].paired, u.stops[0].before_engine_ms, u.stops[0].waited, u.waits], [false, null, false, []]);
+  // without lock spans the create rows alone place the save (a run of their summed length that ended when they were stamped)
+  const noLocks = calRun('cal-stop', { hooks: [hookRun('Stop', 8300, 20)], eng: { turns: [turnRow(1, 8310)], promise_runs: [create(1, 9280, 1500), create(1, 9280, 1500)] }, rec: {}, promises: LIST1 });
+  const ck = stopMeasure(noLocks, listRows(noLocks.promises)).checks[0];
+  assert.deepEqual([ck.cls, ck.basis, ck.save_from_ms], [2, 'create rows', 6280]);
+});
+
+t('L4d readers: the added block and the stage L4d wording; the unknown stages are still refused; the L4b and L4c texts do not carry the block', () => {
+  const hooks = [hookRun('SessionStart', 500, 20), hookRun('UserPromptSubmit', 1010, 10), hookRun('Stop', 1500, 4), hookRun('UserPromptSubmit', 2010, 12), hookRun('Stop', 2500, 400)];
+  const turns = [{ promises_after: 0, manifest: { 'server.js': 'a' } }, { promises_after: 1, manifest: { 'server.js': 'b' }, writer_wait_s: 90 }];
+  const run = fakeRun('clean-1', turns, hooks, [], { manifest_start: { 'server.js': 'a' }, procs: { boot: [{ pid: 1, ppid: 0, pcomm: null, comm: 'muse-bin', state: 'S', start: 1, cwd: 'ws' }], pre_exit: [{ pid: 1, ppid: 0, pcomm: null, comm: 'muse-bin', state: 'S', start: 1, cwd: 'ws' }], muse_exited: true, post_exit: [] } });
+  run.eng = { turns: [turnRow(1, 1502), turnRow(2, 2503)], promise_runs: [create(1, 1900, 600), gate(1, 2800)] };
+  run.promises = '#1 Sign in works · guard only · passed 07:58 · your words, turn 1\n';
+  const md = markdown(report([run], null, { added: true }), 'L4d');
+  assert.ok(md.startsWith('# L4d proof: script-made summary') && md.includes('after four fixes since L4c') && md.includes('S3x: the check-writer also sees code past'));
+  assert.ok(md.includes('## Added measures (no pass line)') && md.includes('### (i) Per Stop') && md.includes('### (ii) Processes') && md.includes('### (iii) Per claim prompt'));
+  assert.ok(md.includes('2 Stops in 1 runs') && md.includes('No Stop waited.') && md.includes('timed out (90 s) before: clean-1-fake turn 2 (90 s)'));
+  // the save (rows stamped 1900, 600 ms long) was still going when the first Stop began (1500): class 2; the check first ran at the next Stop (gate row at 2800)
+  assert.ok(md.includes('| clean-1-fake | #1 Sign in works | guard only | 1 | 2 | 2 | 0 | later (turn 2) | yes |'));
+  assert.ok(md.includes('Left for a later turn although available at its own Stop (class 1 or 2): clean-1-fake #1 (turn 1, first ran later turn 2)'));
+  const plain = report([run]);
+  assert.ok(['L4b', 'L4c', 'L4d'].every((st) => !markdown(plain, st).includes('Added measures'))); // only the L4d run of analyze.mjs asks for the block
+  assert.ok(!/\/home\//.test(md));
+  assert.ok(addedMarkdown([]).join('\n').includes('0 Stops in 0 runs; 0 not paired'));
+});
+
+t('L4d readers: loadRun reads the calibration sessions, the stored specs and keeps the run folder; the folder of a claim snapshot is read back', () => {
+  const dir = path.join(tmp, 'cal-load');
+  fs.mkdirSync(path.join(dir, 'claim-1/sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({ id: 'cal-late', turns: [{ n: 1, role: 'prompt', claim: true, sent: 1000, done: 2000 }], outcome: 'DONE' }));
+  fs.writeFileSync(path.join(dir, 'promise-specs.json'), JSON.stringify({ 1: LATE_SPEC }));
+  fs.writeFileSync(path.join(dir, 'promise-list.txt'), LIST1);
+  fs.writeFileSync(path.join(dir, 'claim-1/portal.js'), DEMO);
+  fs.writeFileSync(path.join(dir, 'claim-1/README.md'), 'doc');
+  fs.writeFileSync(path.join(dir, 'claim-1/sub/page.html'), '<p>Sign in</p>\n');
+  const run = loadRun(dir);
+  assert.deepEqual([run.spec.id, run.dir === dir, Object.keys(run.specs)], ['cal-late', true, ['1']]);
+  const [c] = claimMeasure(run, listRows(run.promises));
+  assert.deepEqual(c.files, ['portal.js', 'sub/page.html']); // only .js .mjs .cjs .ts .html, in name order
+  assert.equal(c.saved[0].past, 1);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });
