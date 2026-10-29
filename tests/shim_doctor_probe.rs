@@ -276,7 +276,7 @@ fn doctor_says_what_a_broken_check_does_here_from_the_engines_own_gate() {
         (
             "The gate is off. Promises show failures but do not stop the AI. Turn it on: torpor gate on",
             0,
-            "told to the AI before it says Done",
+            "told to the AI before its turn ends",
         ),
         (
             "The gate is advisory: two disputes were upheld within 7 days. Turn it on again: torpor gate on",
