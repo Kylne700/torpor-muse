@@ -1,4 +1,4 @@
-//! The one Stop block of a turn against the real engine: a broken check named with its turn, a deleted file told.
+//! The Stop blocks of a turn against the real engine: a broken check named with its turn, a deleted file told.
 
 mod hook_common;
 
@@ -24,11 +24,12 @@ fn set_page(r: &Rig, text: &str) -> impl FnOnce() {
     move || fs::write(page, text).unwrap()
 }
 
-/// F4 item 2 with the real engine: a check of the user's that passed, then fails after a turn. The block names the promise
-/// and the turn the engine's own record says broke it (`find-break` agrees) and goes out once per turn. With the gate
-/// switched off the engine does not stop the AI and this block is all the AI hears; with it on the engine blocks by itself
-/// and there is no second block. The gate is off in a new folder (F4b) and the user's switch after that: the test turns it
-/// on the way a person does.
+/// F4 item 2 with the real engine: a check of the user's that passed, then fails after a turn. The first block names the
+/// promise and the turn the engine's own record says broke it (`find-break` agrees); a second follows while the check still
+/// fails (SN2) and the third Stop goes by. With the gate switched off the engine does not stop the AI and these blocks are
+/// all the AI hears; with it on the engine blocks by itself and ours are not added. SN3: each block of ours also writes its
+/// one line to stderr, the engine's own block and the Stops that go by write none. The gate is off in a new folder (F4b)
+/// and the user's switch after that: the test turns it on the way a person does.
 #[test]
 fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_block_is_not_doubled() {
     let r = proof_rig("real-broke");
@@ -44,8 +45,12 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         "{ok}"
     );
     // turn 3 breaks it
-    let bad = real_turn(&r, 4, "echo nope > proof.html", set_page(&r, "nope"));
+    let bad_run = real_turn_run(&r, 4, "echo nope > proof.html", set_page(&r, "nope"));
+    let bad: Value = serde_json::from_str(&bad_run.out).unwrap_or(Value::Null);
     let why = blocked(&bad).unwrap_or_else(|| panic!("no block: {bad}"));
+    // SN3: the one line for Muse's status label, no line break
+    let flash = "Torpor: check 1 fails (proof page answers) · torpor check 1";
+    assert_eq!(bad_run.err, flash);
     for text in [
         "Promise #1 \"proof page answers\" (turn 3 broke it) failed after this turn.",
         "Fix the app, not the check, and do not special-case test values.",
@@ -68,18 +73,23 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         found.contains("Turn 3 broke it"),
         "the engine agrees: {found}"
     );
-    // the Stop that follows: the real engine's text still has the fail line, so it is blocked once more (SN2); the third goes by
-    let again = stop_of(&r, 4);
+    // the Stop that follows: the real engine's text still has the fail line, so it is blocked once more (SN2) with the same
+    // line (SN3); the third goes by, with none
+    let again_run = stop_run(&r, 4);
+    let again: Value = serde_json::from_str(&again_run.out).unwrap_or(Value::Null);
     assert!(
         blocked(&again).is_some_and(|w| w.contains("Check #1 (proof page answers) still fails"))
             && said(&again).contains("failed after this turn"),
         "{again}"
     );
-    let third = stop_of(&r, 4);
+    assert_eq!(again_run.err, flash);
+    let third_run = stop_run(&r, 4);
+    let third: Value = serde_json::from_str(&third_run.out).unwrap_or(Value::Null);
     assert!(
         blocked(&third).is_none() && said(&third).contains("failed after this turn"),
         "{third}"
     );
+    assert_eq!(third_run.err, "");
 
     // turn 4 fixes it; the engine now stops the AI for this promise by itself
     let fixed = real_turn(
@@ -93,7 +103,7 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
         said(&fixed).contains("it stops the AI from now on"),
         "{fixed}"
     );
-    // the gate is off (F4b): the engine says it did not stop the AI, so the one block of ours is what the AI hears
+    // the gate is off (F4b): the engine says it did not stop the AI, so the block of ours is what the AI hears
     let state = gate_state(&r);
     assert!(state.starts_with("The gate is off"), "{state}");
     let off = real_turn(&r, 6, "echo nope > proof.html", set_page(&r, "nope"));
@@ -117,18 +127,23 @@ fn real_engine_a_broken_check_is_named_with_its_turn_once_and_the_gates_own_bloc
     );
     assert!(blocked(&fixed).is_none(), "{fixed}");
     assert_eq!(engine_cli(&r, &["gate", "on"]).0, 0); // the user's own word
-    let gated = real_turn(&r, 8, "echo nope > proof.html", set_page(&r, "nope"));
+    let gated_run = real_turn_run(&r, 8, "echo nope > proof.html", set_page(&r, "nope"));
+    let gated: Value = serde_json::from_str(&gated_run.out).unwrap_or(Value::Null);
     let why = blocked(&gated).unwrap_or_else(|| panic!("no block: {gated}"));
     assert!(
         why.contains("fails now") && !why.contains("Before you finish"),
         "{why}"
     );
-    let after = stop_of(&r, 8);
+    // SN3: the engine's own block goes out as it is, with no line of ours (the label shows Muse's "command denied" for it)
+    assert_eq!(gated_run.err, "");
+    let after_run = stop_run(&r, 8);
+    let after: Value = serde_json::from_str(&after_run.out).unwrap_or(Value::Null);
     assert!(blocked(&after).is_none(), "{after}");
     assert!(
         said(&after).contains("The AI was stopped for it already"),
         "{after}"
     );
+    assert_eq!(after_run.err, "");
 }
 
 /// A check the AI itself added stays advisory; its failure is told in the same way, and the engine's line says it did not

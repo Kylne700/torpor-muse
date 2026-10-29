@@ -99,8 +99,9 @@ impl Session {
         *n <= STOP_CAP
     }
 
-    /// True once per `turn`: the one block of `hook::stop_note::stop_note` may go out. It counts against the same cap
-    /// as the engine's blocks; a turn without an id cannot be told apart from another, so it gets none.
+    /// True once per `turn`: the first block of `hook::stop_note::stop_note` may go out (the second, `again`, takes
+    /// `allow_block` alone). It counts against the same cap as the engine's blocks; a turn without an id cannot be told
+    /// apart from another, so it gets none.
     pub fn allow_note_block(&mut self, turn: &str) -> bool {
         if turn.is_empty() || self.noted == turn || !self.allow_block(turn) {
             return false;
@@ -144,7 +145,9 @@ pub fn safe(id: &str) -> String {
     if s.is_empty() { "unknown".into() } else { s }
 }
 
-/// One line in `problems.log` (kept to about 32 KiB, newest last) and one on stderr.
+/// One line in `problems.log` (kept to about 32 KiB, newest last) and one on stderr, except at a Stop: Muse draws the stderr
+/// of a blocking Stop in its status label (SN3), where only the one line of `hook::run` belongs, so a Stop's problems go to the
+/// log alone (the doctor reads the log).
 pub fn problem(dir: &Path, event: &str, sid: &str, msg: &str) {
     let flat = |s: &str| -> String {
         s.chars()
@@ -153,7 +156,9 @@ pub fn problem(dir: &Path, event: &str, sid: &str, msg: &str) {
             .collect()
     };
     let (event, msg) = (flat(event), flat(msg));
-    eprintln!("torpor-muse: {event}: {msg}");
+    if event != "Stop" {
+        eprintln!("torpor-muse: {event}: {msg}");
+    }
     let path = dir.join("problems.log");
     let sid: String = safe(sid).chars().take(8).collect();
     append(

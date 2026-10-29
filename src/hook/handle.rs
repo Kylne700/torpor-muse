@@ -9,6 +9,7 @@ use super::writer_note::{gap_line, will_send, writer_note};
 use super::{Done, busy, compact_note, done, normalise, outside, state};
 use crate::{engine, liveness, schema, suggest, transcript};
 use serde_json::Value;
+use std::cell::Cell;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -103,8 +104,11 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
                     bin: &out.bin,
                     left,
                     said: &said,
+                    flash: Cell::default(),
                 };
-                stop_note(&end, &out.stdout, done.stdout.take())
+                let body = stop_note(&end, &out.stdout, done.stdout.take());
+                done.stderr = end.flash.take();
+                body
             } else {
                 db_note(dir, event, &sid, &cwd, &out.bin, done.stdout.take())
             };
@@ -130,6 +134,10 @@ pub(super) fn handle(dir: &Path, event: &str, input: &[u8]) -> Done {
     }
     if event == "SessionEnd" {
         state::end_session(dir, &sid);
+    }
+    // the line goes with a block that goes out: a later step (`lead.join`) must not leave it with a Stop that blocks nothing
+    if done.stderr.is_some() && turn_ended(event, done.stdout.as_deref()) {
+        done.stderr = None;
     }
     done
 }

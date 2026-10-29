@@ -7,9 +7,10 @@
 //! - At a Stop, `verdict` reads the AI's last message for an explicit claim (`claim`) and compares it with the record.
 //!   A claim is false when, for its kind: (a) nothing of that kind ran in this session, (b) the last run exited non-zero
 //!   and no passing run came after it, (c) the last passing run came before the last edit.
-//! - The answer is ONE sentence for the model, added to the one Stop block of the turn (`stop_note`): in the same reason
+//! - The answer is ONE sentence for the model, added to the first Stop block of the turn (`stop_note`): in the same reason
 //!   as the Stop's other items, or as the block on its own. Nothing reaches the model on any other Stop, and nothing when
-//!   the engine blocked the Stop, after `torpor off`, or at the Stop that follows a block.
+//!   the engine blocked the Stop, after `torpor off`, or at the Stop that follows a block (the second block of a turn, SN2,
+//!   is about a check that still fails and says nothing of the claim).
 //!
 //! Precision before recall: what cannot be read for sure stays silent. Known blind spots, each with its upgrade (the
 //! engine's tool_events after Nov 4: 71c M5 `stop_line`, M6 `exit_code_of` / `post_tool` give the turn's own commands

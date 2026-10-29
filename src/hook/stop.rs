@@ -1,6 +1,7 @@
-//! F4 items 2 and 3 and SN2: the words of the Stop blocks that `hook::stop_note::stop_note` gives when the turn that just
-//! ended broke a saved check or did something risky: the first block (`reason`), and a second one (`again`) when the check
-//! still fails at the next Stop of the turn. This file reads the engine's own text and writes ours; it starts nothing.
+//! F4 items 2 and 3, SN2 and SN3: the words of the Stop blocks that `hook::stop_note::stop_note` gives when the turn that just
+//! ended broke a saved check or did something risky: the first block (`reason`), a second one (`again`) when the check
+//! still fails at the next Stop of the turn, and the one line each block also writes to stderr (`flash`). This file reads the
+//! engine's own text and writes ours; it starts nothing.
 
 use super::busy::is_db_name;
 use crate::suggest::scrub;
@@ -226,8 +227,8 @@ fn list(names: &[String]) -> String {
 /// The first line of the reason (`reason`, and `done::join` when the false-Done sentence is the only item).
 pub(super) const HEAD: &str = "[Torpor] Before you finish:";
 
-/// The reason Muse gives the model with the one Stop block (`cmd` = how the model writes `torpor`, see `engine_cmd`;
-/// this text does not pass `schema::sanitise`). None = nothing to say.
+/// The reason Muse gives the model with the first Stop block of a turn (`cmd` = how the model writes `torpor`, see
+/// `engine_cmd`; this text does not pass `schema::sanitise`). None = nothing to say.
 pub fn reason(cmd: &str, broke: &[Broke], risk: &Risk) -> Option<String> {
     let mut parts = Vec::new();
     if !broke.is_empty() {
@@ -341,6 +342,89 @@ pub fn again(cmd: &str, fails: &[Fail]) -> Option<String> {
         "{HEAD}\n- {list} still {still}, and only your reply reaches the user. Start your next reply with this sentence, \
          even if the user asked for a specific reply: \"{list} {is} failing; run `{cmd} check {id}` to see why{ids}.\""
     ))
+}
+
+/// The most characters of the line a Stop block also writes to stderr.
+const FLASH: usize = 60;
+
+/// The one line a Stop block also writes to stderr (SN3; `hook::run` prints it, exit 0). Muse Code 1.4.14 draws it in its
+/// status label ("Hook blocked · Stop · <line>") for about 5 s and draws nothing else of Torpor's own, so it is what the user
+/// sees without the AI. At most `FLASH` characters, the most important words first, no path and no command output: the failing
+/// check by number and words and the command that shows it, else what the turn deleted, else that a false Done was told.
+/// `checks` = (id, words) of the failing checks, `gone` = (turn, files deleted), `claim` = a false Done; they win in that
+/// order. None = nothing to say.
+/// shortcut: the cap counts characters, not terminal columns (a wide character takes two); upgrade when a real name needs it.
+pub fn flash(checks: &[(u32, &str)], gone: Option<(u64, usize)>, claim: bool) -> Option<String> {
+    let line = match (checks, gone) {
+        ([(id, words)], _) => {
+            let head = format!("Torpor: check {id} fails");
+            let tail = format!(" · torpor check {id}");
+            // the 3 characters are " (" and ")" around the words
+            let room = FLASH.saturating_sub(head.chars().count() + tail.chars().count() + 3);
+            match fit(words, room) {
+                Some(w) => format!("{head} ({w}){tail}"),
+                None => format!("{head}{tail}"),
+            }
+        }
+        ([], Some((turn, k))) => format!(
+            "Torpor: turn {turn} deleted {k} file{} · torpor show {turn}",
+            if k == 1 { "" } else { "s" }
+        ),
+        ([], None) if claim => "Torpor: the AI says it works, but the record disagrees".into(),
+        ([], None) => return None,
+        (many, _) => {
+            // up to LIST ids, fewer when the numbers are long: the command at the end matters more than the third id
+            let with = |k: usize| {
+                let ids: Vec<String> = many.iter().take(k).map(|c| c.0.to_string()).collect();
+                match (k, many.len() - k) {
+                    (0, n) => format!("Torpor: {n} checks fail · torpor check --all"),
+                    (_, 0) => format!(
+                        "Torpor: checks {} fail · torpor check --all",
+                        ids.join(", ")
+                    ),
+                    (_, n) => format!(
+                        "Torpor: checks {} and {n} more fail · torpor check --all",
+                        ids.join(", ")
+                    ),
+                }
+            };
+            (0..=LIST.min(many.len()))
+                .rev()
+                .map(with)
+                .find(|l| l.chars().count() <= FLASH)
+                .unwrap_or_default()
+        }
+    };
+    // the forms above fit; this keeps the cap whatever the numbers are
+    Some(line.chars().take(FLASH).collect())
+}
+
+/// A check's words for the line: `name`, without any word that holds a path, at most `room` characters. A longer text is cut
+/// after the last whole word that fits, then `...` (mid-word only when its first word is already too long). None = no
+/// words, or no room for any.
+fn fit(words: &str, room: usize) -> Option<String> {
+    let words = name(words);
+    let words = words
+        .split_whitespace()
+        .filter(|w| !w.contains(['/', '\\']))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if words.is_empty() {
+        return None;
+    }
+    if words.chars().count() <= room {
+        return Some(words);
+    }
+    let keep = room.saturating_sub(3);
+    let cut: String = words.chars().take(keep).collect();
+    // the cut may end exactly between two words, then nothing is dropped
+    let cut = if words.chars().nth(keep) == Some(' ') {
+        cut.as_str()
+    } else {
+        cut.rsplit_once(' ')
+            .map_or(cut.as_str(), |(whole, _)| whole)
+    };
+    (!cut.is_empty()).then(|| format!("{cut}..."))
 }
 
 #[cfg(test)]
