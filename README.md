@@ -1,6 +1,6 @@
 # Torpor for Muse Code
 
-**You say what works. If the AI breaks it, the AI is told before its turn ends.**
+**You say what works. If the AI breaks it, the AI is told before its turn ends.** An AI coding agent can say "Done" after it broke something that worked.
 
 1. You say what works in Muse Code ("login works now"), typed or from a sound clip with `torpor-muse say`.
 2. Muse Spark, Meta's model, writes a check from your words (Node apps for now).
@@ -10,7 +10,7 @@
 
 > - **New this week** (the hackathon, October 26 to November 4, 2026; judged): Muse Code hooks that have the engine run your saved check at the end of a turn and tell the AI when it fails; Muse Spark writing that check from your words; the same from a spoken claim. Each part is listed with the run that showed it under [Built during the hackathon](#built-during-the-hackathon-judge-this).
 > - **Older** (from the open-source Torpor engine, before the event, not judged): save points after each turn, "undo that", and running a saved check. The engine is pinned in `engine.lock` ([details](#not-built-during-the-hackathon-declared-open-source-base-not-judged)).
-> - **Check the split yourself:** `sh scripts/new-work.sh` lists the event work from git and fails if the list in this README is not [NEW-VS-OLD.md](NEW-VS-OLD.md).
+> - **Check the split yourself:** `sh scripts/new-work.sh` prints the event work from git (about 1,600 lines; the last line must read `new-work: ok`) and fails if the list in this README is not [NEW-VS-OLD.md](NEW-VS-OLD.md).
 
 **Meta's tools in Torpor, and what each does there:**
 
@@ -25,22 +25,22 @@ Muse Code also wrote the demo app: the three files [demo/app/server.js](demo/app
 
 **Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, and paste your [Meta API key](#add-your-meta-api-key) when it asks. After that you need no Torpor commands; you can just talk to the AI.
 
-**Cost:** about a third of a cent (USD 0.0035) per prompt for the check-writer, at most. Measured in 2 Muse Code sessions of 20 prompts each on the demo app (build 8b119d6; E3 in [e2e/PROOF.md](e2e/PROOF.md)): at most USD 0.0706 over a 20-prompt session (23 calls) and at most USD 0.0675 in a second one. These are upper bounds from Torpor's own token counts, not Meta's bill. Unless a run stops first ([what is sent to Meta](#what-is-sent-to-meta)), the check-writer sends the cleaned words of each prompt (a prompt over 1,500 characters is cut to its first 1,000 and its last 500) to Meta's API for a yes/no answer to "does this say something works?". File names and up to about 14 KB of your code go in a request only when the answer is yes, or when that question gets no usable answer. It uses your own key, at most USD 2 a day unless you change the cap. The engine makes no AI calls.
+**Cost:** about a third of a cent (USD 0.0035) per prompt on average for the check-writer, at most. Measured in 2 Muse Code sessions of 20 prompts each on the demo app (build 8b119d6; E3 in [e2e/PROOF.md](e2e/PROOF.md)): at most USD 0.0706 over a 20-prompt session (23 calls) and at most USD 0.0675 in a second one. These are upper bounds from Torpor's own token counts, not Meta's bill. A prompt that makes a claim costs more: USD 0.008072 to 0.018376 and 8.8 to 21.1 s for one check-writer run, in the background (Torpor's estimate in [16 keyed takes](eval/results/sn2-takes/README.md), builds b9871b5 and 56a6a11); the first frame of the clip above shows one such run. Unless a run stops first ([what is sent to Meta](#what-is-sent-to-meta)), the check-writer sends the cleaned words of each prompt (a prompt over 1,500 characters is cut to its first 1,000 and its last 500) to Meta's API for a yes/no answer to "does this say something works?". File names and up to about 14 KB of your code go in a request only when the answer is yes, or when that question gets no usable answer. It uses your own key, at most USD 2 a day unless you change the cap. The engine makes no AI calls.
 
 **If the Torpor engine fails**, your Muse turn goes on. If that happens at the start of a session, at a prompt or at the end of a turn, you are told once per session that Torpor is not saving.
 
 Good to know:
-- Optional commands: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
+- Optional commands: `torpor log` (what each turn changed) and `torpor back N` (put the folder back to an earlier state) are the engine's; `torpor-muse doctor` (check that Torpor works) is new. Everything else: `torpor --help`.
 - A failing check tells the AI. It can stop the AI only after you run `torpor gate on` yourself, and then only a check that Torpor trusts (see "Tell, not stop" below).
 - Speed, in the Muse Code proof (E1 in [e2e/PROOF.md](e2e/PROOF.md); build 8b119d6): 426 hook runs took p50 10.77 ms and p99 38.31 ms, the longest 41.43 ms. The 25 Stops that ran a saved check are counted apart: p50 1,236.73 ms, at most 12,712.93 ms (see [Measured](#measured)).
 - Cost details: [docs/voice.md](docs/voice.md).
 
 ## Measured
 
-[e2e/PROOF.md](e2e/PROOF.md) holds the proof with real Muse Code 1.4.13 and Meta's `muse-spark-1.3-contributor`. The build measured is 8b119d6; changes to `src/` after it are listed in [PROOF.md, "Changed after the measured build"](e2e/PROOF.md#changed-after-the-measured-build). Its third run, L4d (2026-10-29, build 8b119d6, 11 counted runs, each case once), in plain words:
+[e2e/PROOF.md](e2e/PROOF.md) holds the proof with real Muse Code 1.4.13 and Meta's `muse-spark-1.3-contributor`. The build measured is 8b119d6; changes to `src/` after it are listed in [PROOF.md, "Changed after the measured build"](e2e/PROOF.md#changed-after-the-measured-build). E, V and L numbers are the line and run ids in e2e/PROOF.md. The raw L4d run records are not published; [e2e/PROOF-summary-L4d.md](e2e/PROOF-summary-L4d.md) is what `e2e/proof/analyze.mjs` made from them (one path fragment was replaced by hand; the summary says so). The proof's third run, L4d (2026-10-29, build 8b119d6, 11 counted runs, each case once), in plain words:
 - **Met:** speed (E1: 426 hook runs, p50 10.77 ms, p99 38.31 ms, longest 41.43 ms), nothing for the AI to read on a clean turn (E2: 711 characters at session start in both clean sessions, 0 after), cost (E3: the check-writer cost at most USD 0.0706 over a 20-prompt session of 23 calls, and at most USD 0.0675 in the second), false alarms (E4: no false note in 40 clean turns, four allowed), a delete of a database an app holds open (E5 case 4), "undo that" after an ordinary edit (E5 case 5), a delete outside the project folder (E8).
 - **Met on one reading:** E5 cases 1, 2 and 3 (a broken check, a deleted file, a deleted database) and E7 (compaction). The reading: the AI is told after its first "Done" and before its last message, because a Stop hook cannot run sooner. E7 (a) is met by the count fixed before the run (9 of 9 compactions); the first run's way of counting (a session-start block only) gives 5 of 9.
-- **Not met:** nothing, by this stage's verdicts.
+- **Not met:** no line failed in this run. The V11 line (this README may say "the AI cannot turn Torpor off" only if all three ways are refused) is not met, because it was not triggered (next bullet). L4b and L4c did fail some lines (see "Against the earlier runs" below).
 - **Not triggered:** E9 (a false "Done": the AI ran the tests, saw login fail and did not write one, so there was nothing to block) and V11 (can the AI turn Torpor off: it refused in words each of the three ways, and Torpor's own refusal was not exercised). So this README does not say the AI cannot turn Torpor off (a test without a model: two of the three ways are refused, the script file is not; see "The guide" under [Hands-free](#hands-free-you-talk-the-ai-runs-torpor)).
 - **No pass line:** the 25 Stops that ran a saved check (E1b: p50 1.24 s, longest 12.7 s), and three added measures that look at the four fixes made after L4c. 3 of 68 paired Stops waited for the check-writer to finish saving a check and ran the new check in their own Stop (the Stops took 5.9, 7.1 and 12.7 s). 0 processes were left running by the 11 runs. A check was saved for 6 of 6 claim prompts, and 6 of the 12 code places those checks were mapped to lie past byte 6,000 of their file.
 - Each case ran once, on one machine, with one model version, on the demo app only.
@@ -62,7 +62,7 @@ Problem statement: "Push the Frontier" (software).
 ## Built during the hackathon (judge this)
 - A part is listed here only after it has run and the run was recorded.
 - These ran in the L4d proof (build 8b119d6) with real Muse Code; each line names its row in [e2e/PROOF.md](e2e/PROOF.md). Saving, undoing and running a saved check are the engine's work and are not claimed:
-  - Save points and "undo that": the hooks make the engine save points, and on "undo that" the AI ran the engine's undo and the files came back 9.92 s and 34.39 s later (E5 cases 2 and 5, E6).
+  - Hooks and guide for save points and "undo that": the hooks make the engine save points, and the session guide names the engine's command for "undo that"; the AI ran it and the files came back 9.92 s and 34.39 s later (E5 cases 2 and 5, E6).
   - Check-writer: Muse Spark writes a check from "X works" and the engine saves it. A check was saved for 6 of 6 claim prompts of the two clean sessions; whether a claim gets a check has no pass line (E3, added measure iii).
   - Stop note: at the end of a turn the engine ran the saved check; when it failed, the Stop hook told the AI, and the AI fixed it in the same turn with 0 user messages (met on one reading, see "Measured" in the README: E5 case 1, E7 (b)).
   - Database guard: a command that would delete a database an app holds open was refused (E5 case 4). After a deleted database the AI was given the engine's restore command and ran it when asked, with no question to the user (E5 case 3, met on one reading).
@@ -76,7 +76,7 @@ Every code commit in this repo is dated 2026-10-26 17:00 UTC or later.
 `scripts/new-work.sh` prints the event-work list from git.
 
 ## Not built during the hackathon (declared open-source base, not judged)
-- The Torpor engine: github.com/Kylne700/torpor, tag `pre-event-final` (a2289f4). GitHub shows the tag created 2026-10-26T15:29:51Z and its release published 2026-10-26T15:29:56Z, both before kickoff. The pin is in `engine.lock`; `scripts/verify-engine.sh` checks it.
+- The Torpor engine: [github.com/Kylne700/torpor](https://github.com/Kylne700/torpor), tag `pre-event-final` (a2289f4). GitHub shows the tag created 2026-10-26T15:29:51Z and its release published 2026-10-26T15:29:56Z, both before kickoff. The pin is in `engine.lock`; `scripts/verify-engine.sh` checks it.
 - Between tag `pre-event-base` (bf28031, created 2026-10-25T22:35:23Z) and `pre-event-final`, only two files differ: README.md (+2 lines) and THIRD-PARTY-NOTICES.md (a new file, +8725 lines). No engine source file or binary changed.
 - Kickoff was 12:00 PM Eastern (16:00 UTC; some read it as 17:00 UTC). The first commit here (415b6cf, 2026-10-26T16:05:17Z) holds only the README and licence files; code starts at or after 17:00 UTC.
 <!-- NEW-VS-OLD:end -->
@@ -173,7 +173,7 @@ node --test mock/test/*.test.mjs
 ```
 
 - `scripts/fetch-engine.sh` downloads the engine pinned in `engine.lock` for your platform (Linux or macOS, x86-64 or arm64) into `.engine/torpor`, checks its sha256 against the lock, and checks that `torpor version` prints the pinned version.
-- `TORPOR_BIN` is the engine the tests use (`.engine/torpor` when it is not set). A test that needs the real engine and finds none prints `SKIPPED: no working Torpor engine` and goes no further, so set it before `cargo test`.
+- `TORPOR_BIN` is the engine the tests use. The writer tests fall back to `.engine/torpor` and print `SKIPPED: no working Torpor engine` when there is none; the hook tests stop with "set TORPOR_BIN to the pinned engine" instead, so keep the `export` above in the shell that runs `cargo test`.
 - `cargo build --release --locked` builds `target/release/torpor-muse`.
 - `cargo test` starts the mock by itself (`node mock/server.mjs --port 0` and more flags, in [tests/writer_common/mod.rs](tests/writer_common/mod.rs)) and points the adapter at it with `TORPOR_MUSE_API_BASE`. That variable is meant for tests: the adapter refuses it unless it is `https`, or `http` on 127.0.0.1.
 - To start the mock by hand: `node mock/server.mjs --port 0`. Its first line of output is `listening <port>`, and it listens on 127.0.0.1 only. The last command of the block above runs its own tests.
@@ -267,7 +267,7 @@ To stop only the check-writer and keep Torpor saving, take its key away: delete 
 
 ## Who builds this
 
-AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo, except [`demo/`](demo/). The three files there (`app/server.js`, `pane.js` and `README.md`) were written by Muse Code (model `muse-spark-1.3-contributor`) from English prompts. No demo code was pasted into a prompt and no line was edited by a person (replaying the logged file writes gives the committed files byte for byte). The prompt for `demo/README.md` dictated much of its wording: six of its 20 non-empty lines are in the prompt word for word, the last one among them. [`demo/transcripts/`](demo/transcripts/) holds every prompt word for word and the session logs, redacted and filtered: Meta's own system and developer messages, the tool definitions, encrypted reasoning blobs, other bookkeeping events and the content of the two scratch scripts are left out, and tool results are cut at 6000 characters.
+AI coding agents (Claude Code) working for the author, Kylne700, write the code in this repo, except [`demo/`](demo/). The three files there (`app/server.js`, `pane.js` and `README.md`) were written by Muse Code (model `muse-spark-1.3-contributor`) from English prompts. No demo code was pasted into a prompt and no line was edited by a person. The prompt for `demo/README.md` dictated much of its wording: six of its 20 non-empty lines are in the prompt word for word, the last one among them. [`demo/transcripts/`](demo/transcripts/) holds every prompt word for word and the session logs, redacted and filtered: Meta's own system and developer messages, the tool definitions, encrypted reasoning blobs, other bookkeeping events and the content of the two scratch scripts are left out, and tool results are cut at 6000 characters.
 
 ## License
 

@@ -1,7 +1,7 @@
 ## Built during the hackathon (judge this)
 - A part is listed here only after it has run and the run was recorded.
 - These ran in the L4d proof (build 8b119d6) with real Muse Code; each line names its row in [e2e/PROOF.md](e2e/PROOF.md). Saving, undoing and running a saved check are the engine's work and are not claimed:
-  - Save points and "undo that": the hooks make the engine save points, and on "undo that" the AI ran the engine's undo and the files came back 9.92 s and 34.39 s later (E5 cases 2 and 5, E6).
+  - Hooks and guide for save points and "undo that": the hooks make the engine save points, and the session guide names the engine's command for "undo that"; the AI ran it and the files came back 9.92 s and 34.39 s later (E5 cases 2 and 5, E6).
   - Check-writer: Muse Spark writes a check from "X works" and the engine saves it. A check was saved for 6 of 6 claim prompts of the two clean sessions; whether a claim gets a check has no pass line (E3, added measure iii).
   - Stop note: at the end of a turn the engine ran the saved check; when it failed, the Stop hook told the AI, and the AI fixed it in the same turn with 0 user messages (met on one reading, see "Measured" in the README: E5 case 1, E7 (b)).
   - Database guard: a command that would delete a database an app holds open was refused (E5 case 4). After a deleted database the AI was given the engine's restore command and ran it when asked, with no question to the user (E5 case 3, met on one reading).
@@ -15,6 +15,6 @@ Every code commit in this repo is dated 2026-10-26 17:00 UTC or later.
 `scripts/new-work.sh` prints the event-work list from git.
 
 ## Not built during the hackathon (declared open-source base, not judged)
-- The Torpor engine: github.com/Kylne700/torpor, tag `pre-event-final` (a2289f4). GitHub shows the tag created 2026-10-26T15:29:51Z and its release published 2026-10-26T15:29:56Z, both before kickoff. The pin is in `engine.lock`; `scripts/verify-engine.sh` checks it.
+- The Torpor engine: [github.com/Kylne700/torpor](https://github.com/Kylne700/torpor), tag `pre-event-final` (a2289f4). GitHub shows the tag created 2026-10-26T15:29:51Z and its release published 2026-10-26T15:29:56Z, both before kickoff. The pin is in `engine.lock`; `scripts/verify-engine.sh` checks it.
 - Between tag `pre-event-base` (bf28031, created 2026-10-25T22:35:23Z) and `pre-event-final`, only two files differ: README.md (+2 lines) and THIRD-PARTY-NOTICES.md (a new file, +8725 lines). No engine source file or binary changed.
 - Kickoff was 12:00 PM Eastern (16:00 UTC; some read it as 17:00 UTC). The first commit here (415b6cf, 2026-10-26T16:05:17Z) holds only the README and licence files; code starts at or after 17:00 UTC.
