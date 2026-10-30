@@ -118,7 +118,7 @@ A clip and arm that already has a row in `VOICE_ROWS` is skipped, so a run that 
     heard: "login works now for Alice and Bob."
     proven: Promise #1 "Login works for Alice and Bob" saved. Proof: passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the start of turn 1. In shadow for now: Torpor will say when it would have stopped the AI, but does not stop it yet. It starts to stop it after one real catch or three clean days, or when you run: torpor promise block 1
 
-The transcription cost USD 0.00015 (audio 2640 ms, 5 keywords), the check-writer USD 0.005265. This was the first and only live run of it.
+In this one run (an earlier build than 8b119d6) the transcription cost USD 0.00015 (audio 2640 ms, 5 keywords) and the check-writer USD 0.005265. That is one claim prompt, which sends the project's code, not the average per prompt (the average is under Cost in the README). This was the first and only live run of it.
 
 That run was recorded before Torpor started to switch the gate off at the first Muse Code session (README, Hands-free), and the test is not a Muse Code session. With the gate off, the check-writer's line stops after "failed 2 of 2 on the start of turn 1." and then reads: A broken check is told to the AI before its turn ends; it does not stop the AI. To let checks stop it, run `torpor gate on` in your own terminal.
 
