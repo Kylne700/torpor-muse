@@ -1,0 +1,398 @@
+{
+ "schema": 1,
+ "run_id": "main-1",
+ "task": "todo-persist",
+ "app": "todo",
+ "kind": "injected",
+ "torpor_should_help": "yes",
+ "arm": "D",
+ "rep": 2,
+ "attempt": 1,
+ "seed": 20261027,
+ "order_index": 155,
+ "model": "muse-spark-1.3-contributor",
+ "muse_version": "Muse Code 1.4.13 (1.4.13-R6996.1)",
+ "engine_version": "torpor 2.3.1",
+ "adapter_commit": "0e8b0da",
+ "started_utc": "2026-10-27T08:01:32Z",
+ "ended_utc": "2026-10-27T08:05:17Z",
+ "minutes": 3.743,
+ "turns_run": 6,
+ "steps_total": 40,
+ "timeout": false,
+ "usd_lo": 0.018296,
+ "usd_hi": 0.172899,
+ "calls": 40,
+ "writer_usd_hi": 0.116534,
+ "writer_calls": 9,
+ "rate_limited": 0,
+ "hook_failures": 0,
+ "gate_blocks": 0,
+ "oracle": {
+  "exit": 0,
+  "line": "{\"task\":\"todo-persist\",\"app\":\"todo\",\"kind\":\"injected\",\"ok\":true,\"groups\":{\"kept\":{\"pass\":11,\"fail\":0},\"requested\":{\"pass\":1,\"fail\":0},\"later\":{\"pass\":3,\"fail\":0}},\"failed\":[],\"checks\":[{\"id\":\"b-root\",\"turn\":0,\"ok\":true},{\"id\":\"b-signup\",\"turn\":0,\"ok\":true},{\"id\":\"b-signup-dup\",\"turn\":0,\"ok\":true},{\"id\":\"b-token\",\"turn\":0,\"ok\":true},{\"id\":\"b-anon\",\"turn\":0,\"ok\":true},{\"id\":\"b-list-legacy\",\"turn\":0,\"ok\":true},{\"id\":\"b-todos-crud\",\"turn\":0,\"ok\":true},{\"id\":\"b-todos-private\",\"turn\":0,\"ok\":true},{\"id\":\"b-persist-create\",\"turn\":0,\"ok\":true},{\"id\":\"b-delete\",\"turn\":0,\"ok\":true},{\"id\":\"p-mark-done\",\"turn\":1,\"ok\":true},{\"id\":\"n-search\",\"turn\":3,\"ok\":true},{\"id\":\"l4-health\",\"turn\":4,\"ok\":true},{\"id\":\"l5-stats\",\"turn\":5,\"ok\":true},{\"id\":\"l6-clear-done\",\"turn\":6,\"ok\":true}]}"
+ },
+ "final_pass": true,
+ "later_kept": true,
+ "break_found": false,
+ "valid": true,
+ "invalid_reason": null,
+ "retryable": false,
+ "manifest": {
+  "arm": "D",
+  "install": "`torpor-muse init` run in the episode HOME",
+  "adapter_sha256": "63b89eed6aa944fd03bd810224735b510b8f5bd48b9f3a32b92ffeec39366d53",
+  "adapter_version": "torpor-muse 0.1.0",
+  "settings_sha256": "f967576c98d9a3bb1a1cfc7e219bcbe01a6e3133b60cb6680cb1c602c1e9ddcf",
+  "hook_groups": 13,
+  "writer": "on",
+  "settings": {
+   "hooks": {
+    "PostCompact": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostCompact",
+        "timeout": 3,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PostToolBatch": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolBatch",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PostToolUse": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolUse",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "PostToolUseFailure": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolUseFailure",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "PreCompact": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PreCompact",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PreToolUse": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PreToolUse",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "SessionEnd": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SessionEnd",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SessionStart": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SessionStart",
+        "timeout": 10,
+        "type": "command"
+       }
+      ],
+      "matcher": "startup|resume|clear|compact|fork"
+     }
+    ],
+    "Stop": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook Stop",
+        "timeout": 35,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "StopFailure": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook StopFailure",
+        "timeout": 10,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SubagentStart": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SubagentStart",
+        "timeout": 3,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SubagentStop": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SubagentStop",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "UserPromptSubmit": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook UserPromptSubmit",
+        "timeout": 10,
+        "type": "command"
+       }
+      ]
+     }
+    ]
+   },
+   "schema_version": 1
+  },
+  "writer_day_cap_usd": 0.35,
+  "writer_model": "adapter default",
+  "writer_drain_s": 60,
+  "flags": [
+   "exec",
+   "--provider",
+   "meta",
+   "--model",
+   "muse-spark-1.3-contributor",
+   "--reasoning-effort",
+   "medium",
+   "--contributor-mode",
+   "off",
+   "--approval-judge",
+   "off",
+   "--disable-web-tools",
+   "--disable-reminders",
+   "--trust-workspace",
+   "--disable-approval",
+   "--max-model-steps",
+   "40"
+  ],
+  "sandbox": {
+   "backend": "v3",
+   "script": "scripts/sandbox/muse-sandbox.sh",
+   "commit": "a172c0c",
+   "dirty": false,
+   "script_sha256": "17cbf5e7a49e7496eba1e282f93aa49cea2f0270e0b480d35701403b0c60237a",
+   "netproxy_sha256": "c34b11cc167fe139d20c6125925aa283f6b26ac9834c24228cf182152354ad4b",
+   "bwrap": "bubblewrap 0.12.0",
+   "net_keyed": "api.meta.ai:443 only, through the logging proxy"
+  },
+  "mode": "keyed",
+  "model": "muse-spark-1.3-contributor",
+  "max_steps": 40,
+  "turn_timeout_s": 420,
+  "episode_cap_s": 900,
+  "muse_version": "Muse Code 1.4.13 (1.4.13-R6996.1)",
+  "engine_version": "torpor 2.3.1",
+  "engine_sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+  "engine_lock_match": true,
+  "fidelity_note": "one muse exec per turn on one session id: SessionEnd and SessionStart(resume) fire at every turn boundary"
+ },
+ "hooks_ok": 106,
+ "hooks_total": 106,
+ "hook_events": {
+  "SessionStart": 6,
+  "UserPromptSubmit": 6,
+  "PreToolUse": 27,
+  "PostToolUse": 25,
+  "PostToolBatch": 34,
+  "PostToolUseFailure": 2,
+  "Stop": 6
+ },
+ "sessions": 1,
+ "engine_state_files": 20,
+ "turn_log": [
+  {
+   "n": 1,
+   "exit": 0,
+   "ms": 57075,
+   "kind": "ok",
+   "steps": 12,
+   "usd_hi": 0.04094,
+   "writer_usd": 0.0368,
+   "cum_steps": 12,
+   "drain_ms": 4,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 2,
+   "exit": 0,
+   "ms": 11183,
+   "kind": "ok",
+   "steps": 1,
+   "usd_hi": 0.003738,
+   "writer_usd": 0.009024,
+   "cum_steps": 13,
+   "drain_ms": 5412,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 3,
+   "exit": 0,
+   "ms": 31810,
+   "kind": "ok",
+   "steps": 6,
+   "usd_hi": 0.024742,
+   "writer_usd": 0.007254,
+   "cum_steps": 19,
+   "drain_ms": 12,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 4,
+   "exit": 0,
+   "ms": 48265,
+   "kind": "ok",
+   "steps": 10,
+   "usd_hi": 0.046169,
+   "writer_usd": 0.018137,
+   "cum_steps": 29,
+   "drain_ms": 0,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 5,
+   "exit": 0,
+   "ms": 24227,
+   "kind": "ok",
+   "steps": 6,
+   "usd_hi": 0.030265,
+   "writer_usd": 0.009952,
+   "cum_steps": 35,
+   "drain_ms": 0,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 6,
+   "exit": 0,
+   "ms": 49815,
+   "kind": "ok",
+   "steps": 5,
+   "usd_hi": 0.027045,
+   "writer_usd": 0.035367,
+   "cum_steps": 40,
+   "drain_ms": 23779,
+   "drain_cut_off": 0
+  }
+ ],
+ "inject_applied": true,
+ "bit": true,
+ "bit_failed": [
+  "b-persist-create",
+  "p-mark-done"
+ ],
+ "leftover_killed": 0,
+ "writer_wait": {
+  "waited_ms": 29207,
+  "still_running": 0
+ },
+ "writer_results": [
+  {
+   "turn": 1,
+   "at": "2026-10-27T08:02:22Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.0368,
+   "note": "cannot check this with HTTP requests (The PATCH claim needs an Authorization Bearer header which this check format cannot send.)"
+  },
+  {
+   "turn": 2,
+   "at": "2026-10-27T08:02:40Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.009024,
+   "note": "cannot check this with HTTP requests (Marking a todo done requires an Authorization bearer header that check steps cannot send, and persistence needs a server r"
+  },
+  {
+   "turn": 3,
+   "at": "2026-10-27T08:02:49Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.007254,
+   "note": "cannot check this with HTTP requests (Cannot send the Authorization bearer header needed to call /todos.)"
+  },
+  {
+   "turn": 4,
+   "at": "2026-10-27T08:03:35Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.018136,
+   "note": "nothing to check: not a statement that something works (The developer words are a request to add an endpoint, not a claim that it already works.)"
+  },
+  {
+   "turn": 5,
+   "at": "2026-10-27T08:04:13Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.009952,
+   "note": "cannot check this with HTTP requests (GET /stats is not present in the provided code and needs a Bearer token header that check steps cannot send.)"
+  },
+  {
+   "turn": 6,
+   "at": "2026-10-27T08:05:15Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.035367,
+   "note": "the engine turned the check down: it fails on the version from the start of turn 6 in 5 of 5 runs (POST /todos answered 401, expected 201)."
+  }
+ ],
+ "egress": {
+  "allowed": 33,
+  "denied": 0,
+  "via_fwd": 9,
+  "other": []
+ }
+}

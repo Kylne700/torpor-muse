@@ -1,0 +1,4729 @@
+{
+  "schema": 1,
+  "analysis": {
+    "script_sha256": "63939820e82c3ce52a4e361adee8d02d4724cdb8a011e0f61dd5589724a5e0ea",
+    "seed": 1,
+    "boot": 10000,
+    "wilson_z": 1.959963984540054,
+    "max_attempts": 3
+  },
+  "source": {
+    "models": [
+      "muse-spark-1.3-contributor"
+    ],
+    "run_ids": [
+      "main-1"
+    ],
+    "rows": 168,
+    "non_row_files_skipped": []
+  },
+  "units": {
+    "total": 168,
+    "valid": 168,
+    "exhausted": 0,
+    "pending": 0
+  },
+  "warnings": [],
+  "by_arm": {
+    "A": {
+      "units": 42,
+      "valid": 42,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 42,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 34,
+        "n": 42,
+        "rate": 0.8095238095238095,
+        "lo": 0.6669922598996131,
+        "hi": 0.9001799171835226
+      },
+      "later_kept": {
+        "k": 42,
+        "n": 42,
+        "rate": 1,
+        "lo": 0.916201209134296,
+        "hi": 0.9999999999999999
+      },
+      "break_found": {
+        "k": 8,
+        "n": 36,
+        "rate": 0.2222222222222222,
+        "lo": 0.11716331975796462,
+        "hi": 0.3808470294611818
+      },
+      "timeouts": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 6,
+        "rate": 0,
+        "lo": 2.7755575615628914e-17,
+        "hi": 0.3903342879021653
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "minutes": {
+        "median": 2.5934999999999997,
+        "total": 108.009
+      },
+      "turns": {
+        "median": 6,
+        "total": 252
+      },
+      "usd_hi": {
+        "median": 0.13987850000000002,
+        "total": 6.113354
+      },
+      "steps": {
+        "median": 34,
+        "total": 1471
+      },
+      "writer": {
+        "usd_hi_total": 0,
+        "calls_total": 0
+      },
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    "B": {
+      "units": 42,
+      "valid": 42,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 42,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 36,
+        "n": 42,
+        "rate": 0.8571428571428571,
+        "lo": 0.7215891052555522,
+        "hi": 0.9328403298403735
+      },
+      "later_kept": {
+        "k": 41,
+        "n": 42,
+        "rate": 0.9761904761904762,
+        "lo": 0.8767879842623334,
+        "hi": 0.9957845958655673
+      },
+      "break_found": {
+        "k": 5,
+        "n": 36,
+        "rate": 0.1388888888888889,
+        "lo": 0.06081815009132838,
+        "hi": 0.286595303893562
+      },
+      "timeouts": {
+        "k": 1,
+        "n": 42,
+        "rate": 0.023809523809523808,
+        "lo": 0.004215404134432499,
+        "hi": 0.12321201573766646
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 6,
+        "rate": 0,
+        "lo": 2.7755575615628914e-17,
+        "hi": 0.3903342879021653
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "minutes": {
+        "median": 2.9185,
+        "total": 129.212
+      },
+      "turns": {
+        "median": 6,
+        "total": 249
+      },
+      "usd_hi": {
+        "median": 0.1612035,
+        "total": 7.105055000000002
+      },
+      "steps": {
+        "median": 38.5,
+        "total": 1642
+      },
+      "writer": {
+        "usd_hi_total": 0,
+        "calls_total": 0
+      },
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    "C": {
+      "units": 42,
+      "valid": 42,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 42,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 32,
+        "n": 42,
+        "rate": 0.7619047619047619,
+        "lo": 0.6147245613168169,
+        "hi": 0.8651903577535287
+      },
+      "later_kept": {
+        "k": 42,
+        "n": 42,
+        "rate": 1,
+        "lo": 0.916201209134296,
+        "hi": 0.9999999999999999
+      },
+      "break_found": {
+        "k": 10,
+        "n": 36,
+        "rate": 0.2777777777777778,
+        "lo": 0.1584833794013461,
+        "hi": 0.43992489997397105
+      },
+      "timeouts": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 6,
+        "rate": 0,
+        "lo": 2.7755575615628914e-17,
+        "hi": 0.3903342879021653
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "minutes": {
+        "median": 2.709,
+        "total": 120.46099999999997
+      },
+      "turns": {
+        "median": 6,
+        "total": 252
+      },
+      "usd_hi": {
+        "median": 0.158996,
+        "total": 6.788163000000002
+      },
+      "steps": {
+        "median": 38,
+        "total": 1603
+      },
+      "writer": {
+        "usd_hi_total": 0,
+        "calls_total": 0
+      },
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    "D": {
+      "units": 42,
+      "valid": 42,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 42,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 34,
+        "n": 42,
+        "rate": 0.8095238095238095,
+        "lo": 0.6669922598996131,
+        "hi": 0.9001799171835226
+      },
+      "later_kept": {
+        "k": 42,
+        "n": 42,
+        "rate": 1,
+        "lo": 0.916201209134296,
+        "hi": 0.9999999999999999
+      },
+      "break_found": {
+        "k": 8,
+        "n": 36,
+        "rate": 0.2222222222222222,
+        "lo": 0.11716331975796462,
+        "hi": 0.3808470294611818
+      },
+      "timeouts": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 42,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08379879086570391
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 6,
+        "rate": 0,
+        "lo": 2.7755575615628914e-17,
+        "hi": 0.3903342879021653
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 42,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.08379879086570391
+        }
+      },
+      "minutes": {
+        "median": 3.2119999999999997,
+        "total": 137.55900000000003
+      },
+      "turns": {
+        "median": 6,
+        "total": 252
+      },
+      "usd_hi": {
+        "median": 0.162585,
+        "total": 6.969541000000001
+      },
+      "steps": {
+        "median": 37.5,
+        "total": 1634
+      },
+      "writer": {
+        "usd_hi_total": 4.5365730000000015,
+        "calls_total": 404
+      },
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    }
+  },
+  "by_kind": {
+    "natural-risk": {
+      "A": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 2.8994999999999997,
+          "total": 50.275000000000006
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.14533400000000002,
+          "total": 2.709503
+        },
+        "steps": {
+          "median": 35,
+          "total": 642
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "B": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 2.7975,
+          "total": 51.061
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.154188,
+          "total": 2.8603680000000007
+        },
+        "steps": {
+          "median": 36,
+          "total": 666
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "C": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 2.9365,
+          "total": 55.31100000000001
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.167779,
+          "total": 3.081441
+        },
+        "steps": {
+          "median": 38.5,
+          "total": 708
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "D": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 3.4080000000000004,
+          "total": 60.376
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.1621705,
+          "total": 3.0502879999999997
+        },
+        "steps": {
+          "median": 37.5,
+          "total": 706
+        },
+        "writer": {
+          "usd_hi_total": 1.9566869999999998,
+          "calls_total": 175
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      }
+    },
+    "injected": {
+      "A": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 10,
+          "n": 18,
+          "rate": 0.5555555555555556,
+          "lo": 0.33716415642042774,
+          "hi": 0.7544048187299437
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 8,
+          "n": 18,
+          "rate": 0.4444444444444444,
+          "lo": 0.24559518127005633,
+          "hi": 0.6628358435795723
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 2.3725,
+          "total": 44.107000000000006
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.13618550000000001,
+          "total": 2.597768
+        },
+        "steps": {
+          "median": 33,
+          "total": 629
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "B": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 12,
+          "n": 18,
+          "rate": 0.6666666666666666,
+          "lo": 0.43749467295945105,
+          "hi": 0.837212252491663
+        },
+        "later_kept": {
+          "k": 17,
+          "n": 18,
+          "rate": 0.9444444444444444,
+          "lo": 0.7424269921812741,
+          "hi": 0.990124809021697
+        },
+        "break_found": {
+          "k": 5,
+          "n": 18,
+          "rate": 0.2777777777777778,
+          "lo": 0.12499753379553993,
+          "hi": 0.5087265656029746
+        },
+        "timeouts": {
+          "k": 1,
+          "n": 18,
+          "rate": 0.05555555555555555,
+          "lo": 0.009875190978303097,
+          "hi": 0.25757300781872594
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 3.1525,
+          "total": 63.67
+        },
+        "turns": {
+          "median": 6,
+          "total": 105
+        },
+        "usd_hi": {
+          "median": 0.17363800000000001,
+          "total": 3.249691
+        },
+        "steps": {
+          "median": 40.5,
+          "total": 745
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "C": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 8,
+          "n": 18,
+          "rate": 0.4444444444444444,
+          "lo": 0.24559518127005633,
+          "hi": 0.6628358435795723
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 10,
+          "n": 18,
+          "rate": 0.5555555555555556,
+          "lo": 0.33716415642042774,
+          "hi": 0.7544048187299437
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 2.7785,
+          "total": 51.285000000000004
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.162881,
+          "total": 2.844337
+        },
+        "steps": {
+          "median": 39,
+          "total": 682
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "D": {
+        "units": 18,
+        "valid": 18,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 18,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 10,
+          "n": 18,
+          "rate": 0.5555555555555556,
+          "lo": 0.33716415642042774,
+          "hi": 0.7544048187299437
+        },
+        "later_kept": {
+          "k": 18,
+          "n": 18,
+          "rate": 1,
+          "lo": 0.8241207763533425,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 8,
+          "n": 18,
+          "rate": 0.4444444444444444,
+          "lo": 0.24559518127005633,
+          "hi": 0.6628358435795723
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 18,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.17587922364665765
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 18,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.17587922364665765
+          }
+        },
+        "minutes": {
+          "median": 3.0715000000000003,
+          "total": 57.105
+        },
+        "turns": {
+          "median": 6,
+          "total": 108
+        },
+        "usd_hi": {
+          "median": 0.162585,
+          "total": 2.9584970000000004
+        },
+        "steps": {
+          "median": 37.5,
+          "total": 699
+        },
+        "writer": {
+          "usd_hi_total": 1.8677180000000002,
+          "calls_total": 169
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      }
+    },
+    "control": {
+      "A": {
+        "units": 6,
+        "valid": 6,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 6,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "minutes": {
+          "median": 2.378,
+          "total": 13.626999999999999
+        },
+        "turns": {
+          "median": 6,
+          "total": 36
+        },
+        "usd_hi": {
+          "median": 0.132767,
+          "total": 0.806083
+        },
+        "steps": {
+          "median": 33,
+          "total": 200
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "B": {
+        "units": 6,
+        "valid": 6,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 6,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "minutes": {
+          "median": 2.3315,
+          "total": 14.481000000000002
+        },
+        "turns": {
+          "median": 6,
+          "total": 36
+        },
+        "usd_hi": {
+          "median": 0.1600335,
+          "total": 0.994996
+        },
+        "steps": {
+          "median": 38,
+          "total": 231
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "C": {
+        "units": 6,
+        "valid": 6,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 6,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "minutes": {
+          "median": 2.2075,
+          "total": 13.865
+        },
+        "turns": {
+          "median": 6,
+          "total": 36
+        },
+        "usd_hi": {
+          "median": 0.14350249999999998,
+          "total": 0.862385
+        },
+        "steps": {
+          "median": 35.5,
+          "total": 213
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      },
+      "D": {
+        "units": 6,
+        "valid": 6,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 6,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 6,
+          "n": 6,
+          "rate": 1,
+          "lo": 0.6096657120978346,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 6,
+          "rate": 0,
+          "lo": 2.7755575615628914e-17,
+          "hi": 0.3903342879021653
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 6,
+            "rate": 0,
+            "lo": 2.7755575615628914e-17,
+            "hi": 0.3903342879021653
+          }
+        },
+        "minutes": {
+          "median": 3.423,
+          "total": 20.078
+        },
+        "turns": {
+          "median": 6,
+          "total": 36
+        },
+        "usd_hi": {
+          "median": 0.163018,
+          "total": 0.960756
+        },
+        "steps": {
+          "median": 37.5,
+          "total": 229
+        },
+        "writer": {
+          "usd_hi_total": 0.712168,
+          "calls_total": 60
+        },
+        "models": [
+          "muse-spark-1.3-contributor"
+        ],
+        "run_ids": [
+          "main-1"
+        ]
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "final_pass",
+      "preregistered": true,
+      "verdict": "inconclusive at this n",
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 34,
+      "ky": 32,
+      "b": 3,
+      "c": 1,
+      "p": 0.625,
+      "note": null,
+      "diff": 0.047619047619047616,
+      "ci": {
+        "point": 0.047619047619047616,
+        "lo": -0.047619047619047616,
+        "hi": 0.14285714285714285,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "later_kept",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 42,
+      "ky": 42,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "no_break",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "all",
+      "pairs": 36,
+      "tasks": 18,
+      "kx": 28,
+      "ky": 26,
+      "b": 3,
+      "c": 1,
+      "p": 0.625,
+      "note": null,
+      "diff": 0.05555555555555555,
+      "ci": {
+        "point": 0.05555555555555555,
+        "lo": -0.05555555555555555,
+        "hi": 0.16666666666666666,
+        "tasks": 18
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "natural-risk",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 18,
+      "ky": 18,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "injected",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 10,
+      "ky": 8,
+      "b": 3,
+      "c": 1,
+      "p": 0.625,
+      "note": null,
+      "diff": 0.1111111111111111,
+      "ci": {
+        "point": 0.1111111111111111,
+        "lo": -0.1111111111111111,
+        "hi": 0.3333333333333333,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 1,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_C",
+      "label": "primary",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "C",
+      "kind": "control",
+      "pairs": 6,
+      "tasks": 3,
+      "kx": 6,
+      "ky": 6,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 3
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": true,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 34,
+      "ky": 34,
+      "b": 2,
+      "c": 2,
+      "p": 1,
+      "note": null,
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": -0.09523809523809523,
+        "hi": 0.14285714285714285,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "later_kept",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 42,
+      "ky": 42,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "no_break",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 36,
+      "tasks": 18,
+      "kx": 28,
+      "ky": 28,
+      "b": 2,
+      "c": 2,
+      "p": 1,
+      "note": null,
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": -0.1111111111111111,
+        "hi": 0.1388888888888889,
+        "tasks": 18
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "natural-risk",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 18,
+      "ky": 18,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "injected",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 10,
+      "ky": 10,
+      "b": 2,
+      "c": 2,
+      "p": 1,
+      "note": null,
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": -0.2222222222222222,
+        "hi": 0.2777777777777778,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "control",
+      "pairs": 6,
+      "tasks": 3,
+      "kx": 6,
+      "ky": 6,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 3
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "final_pass",
+      "preregistered": true,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 36,
+      "ky": 34,
+      "b": 3,
+      "c": 1,
+      "p": 0.625,
+      "note": null,
+      "diff": 0.047619047619047616,
+      "ci": {
+        "point": 0.047619047619047616,
+        "lo": -0.047619047619047616,
+        "hi": 0.19047619047619047,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "later_kept",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "all",
+      "pairs": 42,
+      "tasks": 21,
+      "kx": 41,
+      "ky": 42,
+      "b": 0,
+      "c": 1,
+      "p": 1,
+      "note": null,
+      "diff": -0.023809523809523808,
+      "ci": {
+        "point": -0.023809523809523808,
+        "lo": -0.07142857142857142,
+        "hi": 0,
+        "tasks": 21
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "no_break",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "all",
+      "pairs": 36,
+      "tasks": 18,
+      "kx": 31,
+      "ky": 28,
+      "b": 3,
+      "c": 0,
+      "p": 0.25,
+      "note": null,
+      "diff": 0.08333333333333333,
+      "ci": {
+        "point": 0.08333333333333333,
+        "lo": 0,
+        "hi": 0.2222222222222222,
+        "tasks": 18
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "natural-risk",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 18,
+      "ky": 18,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-cookie",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-hash",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-ratelimit",
+          "kind": "natural-risk",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-customer",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-vat",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-router",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-validate",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "injected",
+      "pairs": 18,
+      "tasks": 9,
+      "kx": 12,
+      "ky": 10,
+      "b": 3,
+      "c": 1,
+      "p": 0.625,
+      "note": null,
+      "diff": 0.1111111111111111,
+      "ci": {
+        "point": 0.1111111111111111,
+        "lo": -0.1111111111111111,
+        "hi": 0.3888888888888889,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 0,
+          "b": 2,
+          "c": 0
+        },
+        {
+          "task": "shop-remove",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-delete",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 2,
+          "kx": 1,
+          "ky": 2,
+          "b": 0,
+          "c": 1
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    },
+    {
+      "id": "B_vs_A",
+      "label": "notes file vs vanilla",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "B",
+      "y": "A",
+      "kind": "control",
+      "pairs": 6,
+      "tasks": 3,
+      "kx": 6,
+      "ky": 6,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 3
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 2,
+          "kx": 2,
+          "ky": 2,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3-contributor"
+      ],
+      "run_ids": [
+        "main-1"
+      ]
+    }
+  ]
+}

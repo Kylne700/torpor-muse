@@ -1,0 +1,219 @@
+{
+ "name": "base-V0-take2",
+ "variant": "V0",
+ "arm": "base",
+ "stub": null,
+ "echo_delay_ms": null,
+ "seg": "A",
+ "mode": "keyed",
+ "started_at": "2026-10-29T19:52:05Z",
+ "clone_sha": "56a6a11ec72f8d68cfc72771529f5235e96062a0",
+ "markers": [
+  {
+   "m": "go",
+   "t": 0.04
+  },
+  {
+   "m": "turn-start",
+   "t": 2.58
+  },
+  {
+   "m": "submitted",
+   "t": 8.96
+  },
+  {
+   "m": "first-complete",
+   "t": 13.1
+  },
+  {
+   "m": "turn-end",
+   "t": 24.33
+  },
+  {
+   "m": "writer-start",
+   "t": 24.33
+  },
+  {
+   "m": "writer-result",
+   "t": 24.33,
+   "saved": true,
+   "promise": 1
+  },
+  {
+   "m": "writer-end",
+   "t": 24.33
+  },
+  {
+   "m": "seed-start",
+   "t": 24.33
+  },
+  {
+   "m": "seed-end",
+   "t": 24.33
+  },
+  {
+   "m": "shell-start",
+   "t": 24.33
+  },
+  {
+   "m": "shell-end",
+   "t": 32.26
+  },
+  {
+   "m": "shell-start",
+   "t": 32.26
+  },
+  {
+   "m": "shell-end",
+   "t": 38.23
+  },
+  {
+   "m": "turn-start",
+   "t": 38.23
+  },
+  {
+   "m": "submitted",
+   "t": 38.95
+  },
+  {
+   "m": "first-complete",
+   "t": 71.65
+  },
+  {
+   "m": "turn-end",
+   "t": 87.94
+  },
+  {
+   "m": "shell-start",
+   "t": 87.94
+  },
+  {
+   "m": "shell-end",
+   "t": 93.92
+  },
+  {
+   "m": "end",
+   "t": 96.43
+  }
+ ],
+ "facts": {
+  "break_prompt_equals_proof_e7_harm": true,
+  "writer_procs_seen": 0,
+  "turn1_completed": 1,
+  "accepted_before_break": 1,
+  "turn2_completed": 2,
+  "break_turn_accepted": 1,
+  "break_seen": false,
+  "broken_at_s": null,
+  "fixed_at_s": null,
+  "server_js_has_break_at_end": false,
+  "check_all": {
+   "status": 0,
+   "out": "Promise #1 Login with demo password succeeds: PASS (3 checks, 0.9 s).\n"
+  },
+  "promise_list": "#1 Login with demo password succeeds · guard only · passed 19:53 · your words, turn 1\n",
+  "folders": {
+   "old_notes": null,
+   "db": null,
+   "docs": null
+  }
+ },
+ "engine_sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+ "adapter_sha256": "5027f7b99c466112c4ae0d5d3bc46ff8eb74f4c346c7e39e8477edc6b2622900",
+ "muse_banner": "Muse Code 1.4.14",
+ "writer_result": {
+  "at": "2026-10-29T19:52:26Z",
+  "calls": 2,
+  "code": "",
+  "message": "Promise #1 \"Login with demo password succeeds\" saved as a guard only: no earlier version fails it, so Torpor can't prove it tests the new work.",
+  "model": "muse-spark-1.3",
+  "ms": 10925,
+  "outcome": "advisory",
+  "promise": 1,
+  "saved": true,
+  "usd": 0.009745,
+  "v": 1
+ },
+ "writer_result_last": {
+  "at": "2026-10-29T19:52:46Z",
+  "calls": 1,
+  "code": "",
+  "message": "nothing to check: not a statement that something works (The message is a request to edit code.)",
+  "model": "muse-spark-1.3",
+  "ms": 1913,
+  "outcome": "advisory",
+  "promise": null,
+  "saved": false,
+  "usd": 0.001771,
+  "v": 1
+ },
+ "spend": {
+  "lo": 0.018852,
+  "hi": 0.024666,
+  "rows": [
+   {
+    "at": 1793303539181632,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 30921,
+    "cached": 0,
+    "output": 228,
+    "reasoning": 195
+   },
+   {
+    "at": 1793303581002677,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 31385,
+    "cached": 0,
+    "output": 1337,
+    "reasoning": 1214
+   },
+   {
+    "at": 1793303597689745,
+    "call": "model",
+    "model": "muse-spark-1.3-contributor",
+    "input": 35146,
+    "cached": 30833,
+    "output": 1502,
+    "reasoning": 1325
+   },
+   {
+    "at": 1793303535000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 316,
+    "cached": 241,
+    "output": 324,
+    "reasoning": 0,
+    "usd": 0.001507,
+    "est": false
+   },
+   {
+    "at": 1793303536000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 3297,
+    "cached": 1265,
+    "output": 1296,
+    "reasoning": 0,
+    "usd": 0.008238,
+    "est": false
+   },
+   {
+    "at": 1793303565000000,
+    "call": "writer",
+    "model": "muse-spark-1.3",
+    "input": 374,
+    "cached": 241,
+    "output": 369,
+    "reasoning": 0,
+    "usd": 0.001771,
+    "est": false
+   }
+  ]
+ },
+ "why_stopped": null,
+ "ended_at": "2026-10-29T19:53:48Z",
+ "ok": true
+}
