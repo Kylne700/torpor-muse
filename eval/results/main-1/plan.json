@@ -1,0 +1,1046 @@
+{
+ "run_id": "main-1",
+ "seed": 20261027,
+ "tasks": [
+  "notes-cookie",
+  "notes-ctrl",
+  "notes-dup",
+  "notes-hash",
+  "notes-logout",
+  "notes-persist",
+  "notes-ratelimit",
+  "shop-clear",
+  "shop-coupon",
+  "shop-ctrl",
+  "shop-customer",
+  "shop-merge",
+  "shop-remove",
+  "shop-vat",
+  "todo-ctrl",
+  "todo-delete",
+  "todo-logout",
+  "todo-persist",
+  "todo-router",
+  "todo-tags",
+  "todo-validate"
+ ],
+ "arms": [
+  "A",
+  "B",
+  "C",
+  "D"
+ ],
+ "reps": 2,
+ "model": "muse-spark-1.3-contributor",
+ "mode": "keyed",
+ "jobs": [
+  {
+   "task": "notes-cookie",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 0
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 1
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 2
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 3
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 4
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 5
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 6
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 7
+  },
+  {
+   "task": "notes-dup",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 8
+  },
+  {
+   "task": "notes-dup",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 9
+  },
+  {
+   "task": "notes-dup",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 10
+  },
+  {
+   "task": "notes-dup",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 11
+  },
+  {
+   "task": "notes-hash",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 12
+  },
+  {
+   "task": "notes-hash",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 13
+  },
+  {
+   "task": "notes-hash",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 14
+  },
+  {
+   "task": "notes-hash",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 15
+  },
+  {
+   "task": "notes-logout",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 16
+  },
+  {
+   "task": "notes-logout",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 17
+  },
+  {
+   "task": "notes-logout",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 18
+  },
+  {
+   "task": "notes-logout",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 19
+  },
+  {
+   "task": "notes-persist",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 20
+  },
+  {
+   "task": "notes-persist",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 21
+  },
+  {
+   "task": "notes-persist",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 22
+  },
+  {
+   "task": "notes-persist",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 23
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 24
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 25
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 26
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 27
+  },
+  {
+   "task": "shop-clear",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 28
+  },
+  {
+   "task": "shop-clear",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 29
+  },
+  {
+   "task": "shop-clear",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 30
+  },
+  {
+   "task": "shop-clear",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 31
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 32
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 33
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 34
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 35
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 36
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 37
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 38
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 39
+  },
+  {
+   "task": "shop-customer",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 40
+  },
+  {
+   "task": "shop-customer",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 41
+  },
+  {
+   "task": "shop-customer",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 42
+  },
+  {
+   "task": "shop-customer",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 43
+  },
+  {
+   "task": "shop-merge",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 44
+  },
+  {
+   "task": "shop-merge",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 45
+  },
+  {
+   "task": "shop-merge",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 46
+  },
+  {
+   "task": "shop-merge",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 47
+  },
+  {
+   "task": "shop-remove",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 48
+  },
+  {
+   "task": "shop-remove",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 49
+  },
+  {
+   "task": "shop-remove",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 50
+  },
+  {
+   "task": "shop-remove",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 51
+  },
+  {
+   "task": "shop-vat",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 52
+  },
+  {
+   "task": "shop-vat",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 53
+  },
+  {
+   "task": "shop-vat",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 54
+  },
+  {
+   "task": "shop-vat",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 55
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 56
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 57
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 58
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 59
+  },
+  {
+   "task": "todo-delete",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 60
+  },
+  {
+   "task": "todo-delete",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 61
+  },
+  {
+   "task": "todo-delete",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 62
+  },
+  {
+   "task": "todo-delete",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 63
+  },
+  {
+   "task": "todo-logout",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 64
+  },
+  {
+   "task": "todo-logout",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 65
+  },
+  {
+   "task": "todo-logout",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 66
+  },
+  {
+   "task": "todo-logout",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 67
+  },
+  {
+   "task": "todo-persist",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 68
+  },
+  {
+   "task": "todo-persist",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 69
+  },
+  {
+   "task": "todo-persist",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 70
+  },
+  {
+   "task": "todo-persist",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 71
+  },
+  {
+   "task": "todo-router",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 72
+  },
+  {
+   "task": "todo-router",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 73
+  },
+  {
+   "task": "todo-router",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 74
+  },
+  {
+   "task": "todo-router",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 75
+  },
+  {
+   "task": "todo-tags",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 76
+  },
+  {
+   "task": "todo-tags",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 77
+  },
+  {
+   "task": "todo-tags",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 78
+  },
+  {
+   "task": "todo-tags",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 79
+  },
+  {
+   "task": "todo-validate",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 80
+  },
+  {
+   "task": "todo-validate",
+   "arm": "B",
+   "rep": 1,
+   "order_index": 81
+  },
+  {
+   "task": "todo-validate",
+   "arm": "C",
+   "rep": 1,
+   "order_index": 82
+  },
+  {
+   "task": "todo-validate",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 83
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 84
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 85
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 86
+  },
+  {
+   "task": "notes-cookie",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 87
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 88
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 89
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 90
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 91
+  },
+  {
+   "task": "notes-dup",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 92
+  },
+  {
+   "task": "notes-dup",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 93
+  },
+  {
+   "task": "notes-dup",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 94
+  },
+  {
+   "task": "notes-dup",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 95
+  },
+  {
+   "task": "notes-hash",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 96
+  },
+  {
+   "task": "notes-hash",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 97
+  },
+  {
+   "task": "notes-hash",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 98
+  },
+  {
+   "task": "notes-hash",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 99
+  },
+  {
+   "task": "notes-logout",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 100
+  },
+  {
+   "task": "notes-logout",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 101
+  },
+  {
+   "task": "notes-logout",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 102
+  },
+  {
+   "task": "notes-logout",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 103
+  },
+  {
+   "task": "notes-persist",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 104
+  },
+  {
+   "task": "notes-persist",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 105
+  },
+  {
+   "task": "notes-persist",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 106
+  },
+  {
+   "task": "notes-persist",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 107
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 108
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 109
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 110
+  },
+  {
+   "task": "notes-ratelimit",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 111
+  },
+  {
+   "task": "shop-clear",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 112
+  },
+  {
+   "task": "shop-clear",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 113
+  },
+  {
+   "task": "shop-clear",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 114
+  },
+  {
+   "task": "shop-clear",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 115
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 116
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 117
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 118
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 119
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 120
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 121
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 122
+  },
+  {
+   "task": "shop-ctrl",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 123
+  },
+  {
+   "task": "shop-customer",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 124
+  },
+  {
+   "task": "shop-customer",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 125
+  },
+  {
+   "task": "shop-customer",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 126
+  },
+  {
+   "task": "shop-customer",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 127
+  },
+  {
+   "task": "shop-merge",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 128
+  },
+  {
+   "task": "shop-merge",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 129
+  },
+  {
+   "task": "shop-merge",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 130
+  },
+  {
+   "task": "shop-merge",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 131
+  },
+  {
+   "task": "shop-remove",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 132
+  },
+  {
+   "task": "shop-remove",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 133
+  },
+  {
+   "task": "shop-remove",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 134
+  },
+  {
+   "task": "shop-remove",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 135
+  },
+  {
+   "task": "shop-vat",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 136
+  },
+  {
+   "task": "shop-vat",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 137
+  },
+  {
+   "task": "shop-vat",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 138
+  },
+  {
+   "task": "shop-vat",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 139
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 140
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 141
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 142
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 143
+  },
+  {
+   "task": "todo-delete",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 144
+  },
+  {
+   "task": "todo-delete",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 145
+  },
+  {
+   "task": "todo-delete",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 146
+  },
+  {
+   "task": "todo-delete",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 147
+  },
+  {
+   "task": "todo-logout",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 148
+  },
+  {
+   "task": "todo-logout",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 149
+  },
+  {
+   "task": "todo-logout",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 150
+  },
+  {
+   "task": "todo-logout",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 151
+  },
+  {
+   "task": "todo-persist",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 152
+  },
+  {
+   "task": "todo-persist",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 153
+  },
+  {
+   "task": "todo-persist",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 154
+  },
+  {
+   "task": "todo-persist",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 155
+  },
+  {
+   "task": "todo-router",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 156
+  },
+  {
+   "task": "todo-router",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 157
+  },
+  {
+   "task": "todo-router",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 158
+  },
+  {
+   "task": "todo-router",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 159
+  },
+  {
+   "task": "todo-tags",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 160
+  },
+  {
+   "task": "todo-tags",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 161
+  },
+  {
+   "task": "todo-tags",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 162
+  },
+  {
+   "task": "todo-tags",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 163
+  },
+  {
+   "task": "todo-validate",
+   "arm": "B",
+   "rep": 2,
+   "order_index": 164
+  },
+  {
+   "task": "todo-validate",
+   "arm": "D",
+   "rep": 2,
+   "order_index": 165
+  },
+  {
+   "task": "todo-validate",
+   "arm": "A",
+   "rep": 2,
+   "order_index": 166
+  },
+  {
+   "task": "todo-validate",
+   "arm": "C",
+   "rep": 2,
+   "order_index": 167
+  }
+ ]
+}

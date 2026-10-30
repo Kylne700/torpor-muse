@@ -1,0 +1,11 @@
+{
+ "run_id": "main-1",
+ "rows": 168,
+ "valid_rows": 168,
+ "invalid_rows": 0,
+ "groups_planned": 42,
+ "groups_complete": 42,
+ "usd_hi": 31.512686,
+ "spend_total_usd_hi": 31.512689,
+ "stopped_early": false
+}

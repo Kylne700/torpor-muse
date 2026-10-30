@@ -1,0 +1,397 @@
+{
+ "schema": 1,
+ "run_id": "main-1",
+ "task": "shop-clear",
+ "app": "shop",
+ "kind": "injected",
+ "torpor_should_help": "yes",
+ "arm": "D",
+ "rep": 1,
+ "attempt": 1,
+ "seed": 20261027,
+ "order_index": 31,
+ "model": "muse-spark-1.3-contributor",
+ "muse_version": "Muse Code 1.4.13 (1.4.13-R6996.1)",
+ "engine_version": "torpor 2.3.1",
+ "adapter_commit": "0e8b0da",
+ "started_utc": "2026-10-27T05:15:49Z",
+ "ended_utc": "2026-10-27T05:18:25Z",
+ "minutes": 2.595,
+ "turns_run": 6,
+ "steps_total": 43,
+ "timeout": false,
+ "usd_lo": 0.015798,
+ "usd_hi": 0.169981,
+ "calls": 43,
+ "writer_usd_hi": 0.118302,
+ "writer_calls": 11,
+ "rate_limited": 0,
+ "hook_failures": 0,
+ "gate_blocks": 0,
+ "oracle": {
+  "exit": 0,
+  "line": "{\"task\":\"shop-clear\",\"app\":\"shop\",\"kind\":\"injected\",\"ok\":true,\"groups\":{\"kept\":{\"pass\":11,\"fail\":0},\"requested\":{\"pass\":1,\"fail\":0},\"later\":{\"pass\":3,\"fail\":0}},\"failed\":[],\"checks\":[{\"id\":\"b-root\",\"turn\":0,\"ok\":true},{\"id\":\"b-products-public\",\"turn\":0,\"ok\":true},{\"id\":\"b-cart-add\",\"turn\":0,\"ok\":true},{\"id\":\"b-cart-total\",\"turn\":0,\"ok\":true},{\"id\":\"b-cart-validation\",\"turn\":0,\"ok\":true},{\"id\":\"b-remove-item\",\"turn\":0,\"ok\":true},{\"id\":\"b-cart-isolated\",\"turn\":0,\"ok\":true},{\"id\":\"b-checkout\",\"turn\":0,\"ok\":true},{\"id\":\"b-orders-legacy\",\"turn\":0,\"ok\":true},{\"id\":\"b-orders-persist\",\"turn\":0,\"ok\":true},{\"id\":\"p-checkout-clears-cart\",\"turn\":1,\"ok\":true},{\"id\":\"n-order\",\"turn\":3,\"ok\":true},{\"id\":\"l4-health\",\"turn\":4,\"ok\":true},{\"id\":\"l5-cart-count\",\"turn\":5,\"ok\":true},{\"id\":\"l6-categories\",\"turn\":6,\"ok\":true}]}"
+ },
+ "final_pass": true,
+ "later_kept": true,
+ "break_found": false,
+ "valid": true,
+ "invalid_reason": null,
+ "retryable": false,
+ "manifest": {
+  "arm": "D",
+  "install": "`torpor-muse init` run in the episode HOME",
+  "adapter_sha256": "63b89eed6aa944fd03bd810224735b510b8f5bd48b9f3a32b92ffeec39366d53",
+  "adapter_version": "torpor-muse 0.1.0",
+  "settings_sha256": "c9e35edd1a9c52c14360eba9ea5431f6c46f80f9e3cfdd24096ae7a23e92c66f",
+  "hook_groups": 13,
+  "writer": "on",
+  "settings": {
+   "hooks": {
+    "PostCompact": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostCompact",
+        "timeout": 3,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PostToolBatch": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolBatch",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PostToolUse": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolUse",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "PostToolUseFailure": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PostToolUseFailure",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "PreCompact": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PreCompact",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "PreToolUse": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook PreToolUse",
+        "timeout": 6,
+        "type": "command"
+       }
+      ],
+      "matcher": "bash|edit_file|write_file"
+     }
+    ],
+    "SessionEnd": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SessionEnd",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SessionStart": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SessionStart",
+        "timeout": 10,
+        "type": "command"
+       }
+      ],
+      "matcher": "startup|resume|clear|compact|fork"
+     }
+    ],
+    "Stop": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook Stop",
+        "timeout": 35,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "StopFailure": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook StopFailure",
+        "timeout": 10,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SubagentStart": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SubagentStart",
+        "timeout": 3,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "SubagentStop": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook SubagentStop",
+        "timeout": 5,
+        "type": "command"
+       }
+      ]
+     }
+    ],
+    "UserPromptSubmit": [
+     {
+      "hooks": [
+       {
+        "command": "env TORPOR_HOME=<episode>/torpor-home TORPOR_BIN=<engine> <adapter> hook UserPromptSubmit",
+        "timeout": 10,
+        "type": "command"
+       }
+      ]
+     }
+    ]
+   },
+   "schema_version": 1
+  },
+  "writer_day_cap_usd": 0.35,
+  "writer_model": "adapter default",
+  "writer_drain_s": 60,
+  "flags": [
+   "exec",
+   "--provider",
+   "meta",
+   "--model",
+   "muse-spark-1.3-contributor",
+   "--reasoning-effort",
+   "medium",
+   "--contributor-mode",
+   "off",
+   "--approval-judge",
+   "off",
+   "--disable-web-tools",
+   "--disable-reminders",
+   "--trust-workspace",
+   "--disable-approval",
+   "--max-model-steps",
+   "40"
+  ],
+  "sandbox": {
+   "backend": "v3",
+   "script": "scripts/sandbox/muse-sandbox.sh",
+   "commit": "a172c0c",
+   "dirty": false,
+   "script_sha256": "17cbf5e7a49e7496eba1e282f93aa49cea2f0270e0b480d35701403b0c60237a",
+   "netproxy_sha256": "c34b11cc167fe139d20c6125925aa283f6b26ac9834c24228cf182152354ad4b",
+   "bwrap": "bubblewrap 0.12.0",
+   "net_keyed": "api.meta.ai:443 only, through the logging proxy"
+  },
+  "mode": "keyed",
+  "model": "muse-spark-1.3-contributor",
+  "max_steps": 40,
+  "turn_timeout_s": 420,
+  "episode_cap_s": 900,
+  "muse_version": "Muse Code 1.4.13 (1.4.13-R6996.1)",
+  "engine_version": "torpor 2.3.1",
+  "engine_sha256": "0048fc3b7ee63f3d77c9f3cb63941176b30ddd427f7f6dd8dae929241c7f2e3f",
+  "engine_lock_match": true,
+  "fidelity_note": "one muse exec per turn on one session id: SessionEnd and SessionStart(resume) fire at every turn boundary"
+ },
+ "hooks_ok": 111,
+ "hooks_total": 111,
+ "hook_events": {
+  "SessionStart": 6,
+  "UserPromptSubmit": 6,
+  "PreToolUse": 28,
+  "PostToolUse": 27,
+  "PostToolBatch": 37,
+  "PostToolUseFailure": 1,
+  "Stop": 6
+ },
+ "sessions": 1,
+ "engine_state_files": 22,
+ "turn_log": [
+  {
+   "n": 1,
+   "exit": 0,
+   "ms": 27558,
+   "kind": "ok",
+   "steps": 11,
+   "usd_hi": 0.035008,
+   "writer_usd": 0.026984,
+   "cum_steps": 11,
+   "drain_ms": 1501,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 2,
+   "exit": 0,
+   "ms": 14090,
+   "kind": "ok",
+   "steps": 1,
+   "usd_hi": 0.003355,
+   "writer_usd": 0.008408,
+   "cum_steps": 12,
+   "drain_ms": 8572,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 3,
+   "exit": 0,
+   "ms": 32875,
+   "kind": "ok",
+   "steps": 8,
+   "usd_hi": 0.029847,
+   "writer_usd": 0.033705,
+   "cum_steps": 20,
+   "drain_ms": 9337,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 4,
+   "exit": 0,
+   "ms": 34176,
+   "kind": "ok",
+   "steps": 10,
+   "usd_hi": 0.041274,
+   "writer_usd": 0.013712,
+   "cum_steps": 30,
+   "drain_ms": 113,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 5,
+   "exit": 0,
+   "ms": 21334,
+   "kind": "ok",
+   "steps": 6,
+   "usd_hi": 0.026873,
+   "writer_usd": 0.018799,
+   "cum_steps": 36,
+   "drain_ms": 39,
+   "drain_cut_off": 0
+  },
+  {
+   "n": 6,
+   "exit": 0,
+   "ms": 24118,
+   "kind": "ok",
+   "steps": 7,
+   "usd_hi": 0.033623,
+   "writer_usd": 0.016694,
+   "cum_steps": 43,
+   "drain_ms": 70,
+   "drain_cut_off": 0
+  }
+ ],
+ "inject_applied": true,
+ "bit": true,
+ "bit_failed": [
+  "p-checkout-clears-cart"
+ ],
+ "leftover_killed": 0,
+ "writer_wait": {
+  "waited_ms": 19632,
+  "still_running": 0
+ },
+ "writer_results": [
+  {
+   "turn": 1,
+   "at": "2026-10-27T05:16:16Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.026984,
+   "note": "nothing to check: not a statement that something works (The developer reports a bug and requests a fix rather than stating that something works now.)"
+  },
+  {
+   "turn": 2,
+   "at": "2026-10-27T05:16:30Z",
+   "outcome": "advisory",
+   "saved": true,
+   "usd": 0.008408,
+   "note": "Promise #2 \"Checkout empties cart prevents double order\" saved. Proof: passed 5 of 5 on the version from the start of turn 2 and failed 2 of 2 on the start of t"
+  },
+  {
+   "turn": 3,
+   "at": "2026-10-27T05:17:03Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.033705,
+   "note": "cannot check this with HTTP requests (No GET /orders/:id route appears in the repo files and steps cannot send the X-Customer header to test ownership.)"
+  },
+  {
+   "turn": 4,
+   "at": "2026-10-27T05:17:18Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.013712,
+   "note": "nothing to check: not a statement that something works (The developer words are a request to add an endpoint, not a statement that something works now.)"
+  },
+  {
+   "turn": 5,
+   "at": "2026-10-27T05:17:58Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.018799,
+   "note": "cannot check this with HTTP requests (The repo files show no GET /cart/count route to test.)"
+  },
+  {
+   "turn": 6,
+   "at": "2026-10-27T05:18:16Z",
+   "outcome": "advisory",
+   "saved": false,
+   "usd": 0.016695,
+   "note": "cannot check this with HTTP requests (The requested /categories route does not appear in the provided repo files.)"
+  }
+ ],
+ "egress": {
+  "allowed": 35,
+  "denied": 0,
+  "via_fwd": 11,
+  "other": []
+ }
+}
