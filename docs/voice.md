@@ -28,7 +28,7 @@ Only the header is checked. A file with a good header that holds no speech is se
 ## Cost and errors
 
 - USD 0.18 per hour of audio, counted in whole seconds by the audio length the server reports. The call goes through the same ledger and day cap as the check-writer (default USD 2 a day, `TORPOR_MUSE_DAY_CAP_USD`): the cap is checked before the call, a row is written after it. A network error or a 5xx is charged at the worst case, any other error costs nothing.
-- The key is found the same way as for `suggest` (`META_API_KEY`, or `key_file` in `~/.config/torpor-muse/config`). It is never printed or logged.
+- The key is found the same way as for `suggest` (`META_API_KEY`, or `key_file` in `~/.config/torpor-muse/config`). Torpor does not print or log it, as far as the tests can show: in 3 of the 13 tests of `tests/voice_mock.rs` (a spoken claim, every voice fault, the keyword list), `no_key` asserts that a made-up key is in no stdout, no stderr, no mock-server log and no private file the run left. The mock replaces the value of the Authorization header in its log, so that header is not covered by the check. A real key and Meta's real API are not part of those tests.
 - Status 400, 401, 403, 406, 413, 429, 5xx and network errors each give one line, exit 1, and nothing is saved.
 
 ## Keywords
@@ -53,7 +53,7 @@ Result: 11 hits with keywords against 6 without, 2 artifacts against 6. The rule
 | shop | 3 | 3 | 1 | 0 |
 | todo | 3 | 5 | 2 | 2 |
 
-How far to trust it: synthetic voices (flite), one run each, 18 clips, and the service does not always give the same words for the same clip (seen in trials before this run). In the todo app the keyword list does not contain the project words of the claims (todo, done, filter), yet its hits went from 3 to 5. So part of the difference is noise, and nothing here says how real human speech behaves. Only the notes app, whose list holds `login` and `logout`, shows a clear gain.
+How far to trust it: synthetic voices (flite), one run each, 18 clips and 36 calls made before commit cffc442 (2026-10-27), so on an earlier build than 8b119d6, and in some trials before this run the service gave different words for the same clip. In the todo app the keyword list does not contain the project words of the claims (todo, done, filter), yet its hits went from 3 to 5. So part of the difference is noise, and nothing here says how real human speech behaves. Only the notes app, whose list holds `login` and `logout`, shows a clear gain.
 
 Every transcript (synthetic voices (flite), one run each). The rows are in `docs/voice-rows.jsonl`; `node scripts/voice-measure.mjs table docs/voice-rows.jsonl` makes this table again.
 
@@ -102,7 +102,7 @@ Result: keywords are ON by default.
 
 ### Run it again
 
-It costs about USD 0.01. Never run the tests with a bare `-- --ignored`: `tests/writer_live.rs` and `tests/writer_bank.rs` make paid calls to the check-writer.
+It costs about USD 0.01. Do not run the tests with a bare `-- --ignored`: `tests/writer_live.rs` and `tests/writer_bank.rs` make paid calls to the check-writer.
 
     node scripts/voice-measure.mjs gen <dir>        # the 18 clips and manifest.json (ffmpeg with the flite filter)
     META_API_KEY=... TORPOR_MUSE_STATE=<state dir> VOICE_MANIFEST=<dir>/manifest.json VOICE_ROWS=<dir>/rows.jsonl \
