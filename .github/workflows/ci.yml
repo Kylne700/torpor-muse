@@ -48,6 +48,8 @@ jobs:
         run: node --test mock/test/*.test.mjs
       - name: Eval task bank self-test
         run: node eval/selftest.mjs
+      - name: Demo files are Muse Code's logged writes
+        run: node scripts/replay-demo.mjs
       - name: Drill self-tests (builders, oracles, harness)
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
