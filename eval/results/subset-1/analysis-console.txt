@@ -1,0 +1,4 @@
+analyze: warning: D vs C (primary) is not computed: the folder has no rows for arm C
+analyze: model muse-spark-1.3; runs subset-1; seed 1; 10000 resamples
+D vs A (engine + new work): secondary, no verdict word. Effect +0.22, 95 % CI [0.00, +0.56], p = 0.500 (b = 2, c = 0), 9 pairs over 9 tasks.
+analyze: wrote <results folder>/analysis.md and <results folder>/analysis.json

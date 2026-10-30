@@ -1,0 +1,1409 @@
+{
+  "schema": 1,
+  "analysis": {
+    "script_sha256": "63939820e82c3ce52a4e361adee8d02d4724cdb8a011e0f61dd5589724a5e0ea",
+    "seed": 1,
+    "boot": 10000,
+    "wilson_z": 1.959963984540054,
+    "max_attempts": 3
+  },
+  "source": {
+    "models": [
+      "muse-spark-1.3"
+    ],
+    "run_ids": [
+      "subset-1"
+    ],
+    "rows": 18,
+    "non_row_files_skipped": []
+  },
+  "units": {
+    "total": 18,
+    "valid": 18,
+    "exhausted": 0,
+    "pending": 0
+  },
+  "warnings": [
+    "D vs C (primary) is not computed: the folder has no rows for arm C"
+  ],
+  "by_arm": {
+    "A": {
+      "units": 9,
+      "valid": 9,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 9,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 6,
+        "n": 9,
+        "rate": 0.6666666666666666,
+        "lo": 0.3542021355803963,
+        "hi": 0.879416181613089
+      },
+      "later_kept": {
+        "k": 9,
+        "n": 9,
+        "rate": 1,
+        "lo": 0.7008549515804559,
+        "hi": 1
+      },
+      "break_found": {
+        "k": 3,
+        "n": 7,
+        "rate": 0.42857142857142855,
+        "lo": 0.15821985525146975,
+        "hi": 0.7495416354723428
+      },
+      "timeouts": {
+        "k": 0,
+        "n": 9,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.2991450484195441
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 9,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.2991450484195441
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 2,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.6576197724933469
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 9,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.2991450484195441
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 9,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.2991450484195441
+        }
+      },
+      "minutes": {
+        "median": 1.971,
+        "total": 18.649
+      },
+      "turns": {
+        "median": 6,
+        "total": 54
+      },
+      "usd_hi": {
+        "median": 1.871677,
+        "total": 18.700567
+      },
+      "steps": {
+        "median": 33,
+        "total": 332
+      },
+      "writer": {
+        "usd_hi_total": 0,
+        "calls_total": 0
+      },
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    "D": {
+      "units": 9,
+      "valid": 9,
+      "exhausted": 0,
+      "pending": 0,
+      "attempts": 9,
+      "invalid_attempts": 0,
+      "invalid_attempt_reasons": {},
+      "excluded_unit_reasons": {},
+      "egress_other_lines": {},
+      "final_pass": {
+        "k": 8,
+        "n": 9,
+        "rate": 0.8888888888888888,
+        "lo": 0.5650002944233439,
+        "hi": 0.9801091123614551
+      },
+      "later_kept": {
+        "k": 9,
+        "n": 9,
+        "rate": 1,
+        "lo": 0.7008549515804559,
+        "hi": 1
+      },
+      "break_found": {
+        "k": 1,
+        "n": 7,
+        "rate": 0.14285714285714285,
+        "lo": 0.02567962434474355,
+        "hi": 0.5131278292743189
+      },
+      "timeouts": {
+        "k": 0,
+        "n": 9,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.2991450484195441
+      },
+      "gate_block_episodes": {
+        "k": 0,
+        "n": 9,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.2991450484195441
+      },
+      "false_alarms": {
+        "k": 0,
+        "n": 2,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.6576197724933469
+      },
+      "gate_blocks": {
+        "total": 0,
+        "per_episode": 0
+      },
+      "rate_limited": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 9,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.2991450484195441
+        }
+      },
+      "hook_failures": {
+        "total": 0,
+        "episodes": {
+          "k": 0,
+          "n": 9,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.2991450484195441
+        }
+      },
+      "minutes": {
+        "median": 2.796,
+        "total": 25.46
+      },
+      "turns": {
+        "median": 6,
+        "total": 54
+      },
+      "usd_hi": {
+        "median": 2.152371,
+        "total": 19.500594
+      },
+      "steps": {
+        "median": 37,
+        "total": 340
+      },
+      "writer": {
+        "usd_hi_total": 0.9517520000000002,
+        "calls_total": 86
+      },
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    }
+  },
+  "by_kind": {
+    "natural-risk": {
+      "A": {
+        "units": 2,
+        "valid": 2,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 2,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "minutes": {
+          "median": 2.109,
+          "total": 4.218
+        },
+        "turns": {
+          "median": 6,
+          "total": 12
+        },
+        "usd_hi": {
+          "median": 2.1995905,
+          "total": 4.399181
+        },
+        "steps": {
+          "median": 38,
+          "total": 76
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      },
+      "D": {
+        "units": 2,
+        "valid": 2,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 2,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "minutes": {
+          "median": 2.876,
+          "total": 5.752
+        },
+        "turns": {
+          "median": 6,
+          "total": 12
+        },
+        "usd_hi": {
+          "median": 2.2292495,
+          "total": 4.458499
+        },
+        "steps": {
+          "median": 39,
+          "total": 78
+        },
+        "writer": {
+          "usd_hi_total": 0.221169,
+          "calls_total": 20
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      }
+    },
+    "injected": {
+      "A": {
+        "units": 5,
+        "valid": 5,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 5,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 2,
+          "n": 5,
+          "rate": 0.4,
+          "lo": 0.11762077423264783,
+          "hi": 0.769275718723987
+        },
+        "later_kept": {
+          "k": 5,
+          "n": 5,
+          "rate": 1,
+          "lo": 0.5655175352168251,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 3,
+          "n": 5,
+          "rate": 0.6,
+          "lo": 0.2307242812760128,
+          "hi": 0.882379225767352
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 5,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.43448246478317476
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 5,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.43448246478317476
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 5,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.43448246478317476
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 5,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.43448246478317476
+          }
+        },
+        "minutes": {
+          "median": 1.943,
+          "total": 10.606
+        },
+        "turns": {
+          "median": 6,
+          "total": 30
+        },
+        "usd_hi": {
+          "median": 1.871677,
+          "total": 10.675292
+        },
+        "steps": {
+          "median": 35,
+          "total": 191
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      },
+      "D": {
+        "units": 5,
+        "valid": 5,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 5,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 4,
+          "n": 5,
+          "rate": 0.8,
+          "lo": 0.37553462976252533,
+          "hi": 0.9637758913675698
+        },
+        "later_kept": {
+          "k": 5,
+          "n": 5,
+          "rate": 1,
+          "lo": 0.5655175352168251,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 1,
+          "n": 5,
+          "rate": 0.2,
+          "lo": 0.03622410863243014,
+          "hi": 0.6244653702374747
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 5,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.43448246478317476
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 5,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.43448246478317476
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 5,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.43448246478317476
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 5,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.43448246478317476
+          }
+        },
+        "minutes": {
+          "median": 2.955,
+          "total": 14.74
+        },
+        "turns": {
+          "median": 6,
+          "total": 30
+        },
+        "usd_hi": {
+          "median": 2.152371,
+          "total": 11.006597999999999
+        },
+        "steps": {
+          "median": 37,
+          "total": 192
+        },
+        "writer": {
+          "usd_hi_total": 0.544018,
+          "calls_total": 48
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      }
+    },
+    "control": {
+      "A": {
+        "units": 2,
+        "valid": 2,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 2,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "minutes": {
+          "median": 1.9125,
+          "total": 3.825
+        },
+        "turns": {
+          "median": 6,
+          "total": 12
+        },
+        "usd_hi": {
+          "median": 1.813047,
+          "total": 3.626094
+        },
+        "steps": {
+          "median": 32.5,
+          "total": 65
+        },
+        "writer": {
+          "usd_hi_total": 0,
+          "calls_total": 0
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      },
+      "D": {
+        "units": 2,
+        "valid": 2,
+        "exhausted": 0,
+        "pending": 0,
+        "attempts": 2,
+        "invalid_attempts": 0,
+        "invalid_attempt_reasons": {},
+        "excluded_unit_reasons": {},
+        "egress_other_lines": {},
+        "final_pass": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "later_kept": {
+          "k": 2,
+          "n": 2,
+          "rate": 1,
+          "lo": 0.34238022750665303,
+          "hi": 1
+        },
+        "break_found": {
+          "k": 0,
+          "n": 0,
+          "rate": null,
+          "lo": null,
+          "hi": null
+        },
+        "timeouts": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_block_episodes": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "false_alarms": {
+          "k": 0,
+          "n": 2,
+          "rate": 0,
+          "lo": 0,
+          "hi": 0.6576197724933469
+        },
+        "gate_blocks": {
+          "total": 0,
+          "per_episode": 0
+        },
+        "rate_limited": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "hook_failures": {
+          "total": 0,
+          "episodes": {
+            "k": 0,
+            "n": 2,
+            "rate": 0,
+            "lo": 0,
+            "hi": 0.6576197724933469
+          }
+        },
+        "minutes": {
+          "median": 2.484,
+          "total": 4.968
+        },
+        "turns": {
+          "median": 6,
+          "total": 12
+        },
+        "usd_hi": {
+          "median": 2.0177484999999997,
+          "total": 4.0354969999999994
+        },
+        "steps": {
+          "median": 35,
+          "total": 70
+        },
+        "writer": {
+          "usd_hi_total": 0.186565,
+          "calls_total": 18
+        },
+        "models": [
+          "muse-spark-1.3"
+        ],
+        "run_ids": [
+          "subset-1"
+        ]
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": true,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 9,
+      "tasks": 9,
+      "kx": 8,
+      "ky": 6,
+      "b": 2,
+      "c": 0,
+      "p": 0.5,
+      "note": null,
+      "diff": 0.2222222222222222,
+      "ci": {
+        "point": 0.2222222222222222,
+        "lo": 0,
+        "hi": 0.5555555555555556,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "later_kept",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 9,
+      "tasks": 9,
+      "kx": 9,
+      "ky": 9,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 9
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "no_break",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "all",
+      "pairs": 7,
+      "tasks": 7,
+      "kx": 6,
+      "ky": 4,
+      "b": 2,
+      "c": 0,
+      "p": 0.5,
+      "note": null,
+      "diff": 0.2857142857142857,
+      "ci": {
+        "point": 0.2857142857142857,
+        "lo": 0,
+        "hi": 0.7142857142857143,
+        "tasks": 7
+      },
+      "per_task": [
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "natural-risk",
+      "pairs": 2,
+      "tasks": 2,
+      "kx": 2,
+      "ky": 2,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 2
+      },
+      "per_task": [
+        {
+          "task": "shop-coupon",
+          "kind": "natural-risk",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-tags",
+          "kind": "natural-risk",
+          "helps": "maybe",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "injected",
+      "pairs": 5,
+      "tasks": 5,
+      "kx": 4,
+      "ky": 2,
+      "b": 2,
+      "c": 0,
+      "p": 0.5,
+      "note": null,
+      "diff": 0.4,
+      "ci": {
+        "point": 0.4,
+        "lo": 0,
+        "hi": 0.8,
+        "tasks": 5
+      },
+      "per_task": [
+        {
+          "task": "notes-dup",
+          "kind": "injected",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 0,
+          "ky": 0,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "notes-logout",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-clear",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "shop-merge",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        },
+        {
+          "task": "todo-persist",
+          "kind": "injected",
+          "helps": "yes",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 0,
+          "b": 1,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    },
+    {
+      "id": "D_vs_A",
+      "label": "engine + new work",
+      "outcome": "final_pass",
+      "preregistered": false,
+      "verdict": null,
+      "direction_note": null,
+      "x": "D",
+      "y": "A",
+      "kind": "control",
+      "pairs": 2,
+      "tasks": 2,
+      "kx": 2,
+      "ky": 2,
+      "b": 0,
+      "c": 0,
+      "p": 1,
+      "note": "no discordant pairs",
+      "diff": 0,
+      "ci": {
+        "point": 0,
+        "lo": 0,
+        "hi": 0,
+        "tasks": 2
+      },
+      "per_task": [
+        {
+          "task": "notes-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        },
+        {
+          "task": "todo-ctrl",
+          "kind": "control",
+          "helps": "no",
+          "pairs": 1,
+          "kx": 1,
+          "ky": 1,
+          "b": 0,
+          "c": 0
+        }
+      ],
+      "models": [
+        "muse-spark-1.3"
+      ],
+      "run_ids": [
+        "subset-1"
+      ]
+    }
+  ]
+}
