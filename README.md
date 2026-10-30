@@ -157,7 +157,7 @@ Every claim ends in a saved check (the engine's `Torpor: new promise #N` line) o
 
 You can run all of Torpor's own tests without a Meta key or account. They use a made-up key (a fixed string that is not a key) and a local imitation of the Meta API, [mock/](mock/README.md). The tests that make paid calls are marked `#[ignore]`, so `cargo test` skips them ([tests/writer_live.rs](tests/writer_live.rs), [tests/writer_bank.rs](tests/writer_bank.rs)).
 
-NOT VERIFIED: following this page by hand in a fresh clone. Its commands are the ones that [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on Linux and macOS (the `export` line stands for CI's line that writes `TORPOR_BIN` into `$GITHUB_ENV`), except `git clone` and `cargo build --release --locked` (the line in [drill/harness/README.md](drill/harness/README.md)).
+Run once in a fresh clone of commit 3fe27b7 on Linux x86-64 (2026-10-30; Rust 1.97.1, Node 24): every line below exited 0; `cargo test` 522 passed, 0 failed, 11 ignored; the mock tests 16 of 16. [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same commands on Linux and macOS (the `export` line stands for CI's line that writes `TORPOR_BIN` into `$GITHUB_ENV`), except `git clone` and `cargo build --release --locked` (the line in [drill/harness/README.md](drill/harness/README.md)).
 
 You need git, curl, a stable Rust toolchain and Node 20 or newer (`cargo test` starts the mock with `node`; CI uses Node 22).
 
