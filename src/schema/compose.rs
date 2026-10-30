@@ -44,7 +44,7 @@ pub fn with_note(
 
 /// `with_note` for a note that must get through because it holds the user's data (the database note): when the
 /// engine's output and the note together reach Muse's limit, the end of the ENGINE's `additionalContext` is cut
-/// (marked `[cut]`) and never the note. None = still too long without any context of the engine's, or not valid.
+/// (marked `[cut]`); the note stays whole. None = still too long without any context of the engine's, or not valid.
 pub fn with_note_fit(
     event: &str,
     body: Option<&str>,

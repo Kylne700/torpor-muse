@@ -1,5 +1,5 @@
 //! Finds the released `torpor` CLI (env TORPOR_BIN, then PATH), checks it against engine.lock, runs it with a hard
-//! timeout. Never passes a key on argv: the callers only hand over fixed words (`hook <Event>`, `version`, the read-only
+//! timeout. The callers hand over fixed words only (`hook <Event>`, `version`, the read-only
 //! looks of src/hook/handle.rs, stop_note.rs and gate.rs, and `gate off` once per folder in gate.rs). Owner:
 //! S3a-core.
 
@@ -24,7 +24,7 @@ pub struct Output {
 const LOCK: &str = include_str!("../engine.lock");
 /// After the engine is gone a grandchild may still hold its pipes: wait this long for them, then keep what we have.
 const PIPE_GRACE: Duration = Duration::from_millis(300);
-/// Output we keep per pipe; the rest is read and dropped so the engine never blocks on a full pipe.
+/// Output we keep per pipe; the rest is read and dropped, so a full pipe does not block the engine.
 const KEEP: usize = 8 << 20;
 
 /// The `version` line of engine.lock: the one place the engine version is written down.
@@ -49,7 +49,7 @@ pub fn state_dir() -> PathBuf {
     home_dir().join("muse")
 }
 
-/// Writes `path` (mode 0600, its folder made 0700) through a temp file and a rename, so a reader never sees half a
+/// Writes `path` (mode 0600, its folder made 0700) through a temp file and a rename, so a reader gets a whole
 /// file. Not fsynced: this is for state a hook can lose.
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -114,7 +114,7 @@ pub fn run(args: &[&str], stdin: Option<&[u8]>, timeout: Duration) -> Result<Out
     exec(&bin, args, stdin, None, timeout)
 }
 
-/// One pipe read to the end in the background; the bytes collected so far stay readable even if it never ends.
+/// One pipe read to the end in the background; the bytes collected so far stay readable even if it does not end.
 struct Drain {
     buf: Arc<Mutex<Vec<u8>>>,
     thread: thread::JoinHandle<()>,

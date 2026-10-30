@@ -14,7 +14,7 @@ pub(super) fn contains(hay: &[u8], needle: &[u8]) -> bool {
 }
 
 /// The multipart body (a `request` part and an `audio` part) and its boundary, which is not in the audio. The audio
-/// part always has the same file name, never the user's.
+/// part has a fixed file name, not the user's.
 pub(super) fn multipart(wav: &[u8], keywords: &[String]) -> (String, Vec<u8>) {
     let mut request = json!({"model": ASR_MODEL, "audioEncoding": "WAV", "mode": "PUSH_TO_TALK"});
     if !keywords.is_empty() {

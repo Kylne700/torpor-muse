@@ -51,7 +51,7 @@ fn try_init() -> Result<(), String> {
     };
     check_foreign(&old_doc, &path)?;
     let mut doc = old_doc;
-    prune(&mut doc); // an earlier install of ours is replaced, never doubled
+    prune(&mut doc); // an earlier install of ours is replaced, not doubled
     let before_ours = doc.clone();
     let root = doc.as_object_mut().ok_or("settings is not an object")?;
     let hooks = root
@@ -153,9 +153,9 @@ fn remove_hooks() -> Result<(), String> {
 }
 
 /// What `init` leaves besides the hooks: the engine-ok cache, and the folders made for it and for the settings file
-/// (`<config>/muse`, `<config>`, `<store>/muse`, `<store>`). Rule: a directory goes only if it is empty (`remove_dir`
-/// never takes content); removing an empty one the user already had is harmless. Files in the state folder (spend
-/// ledger, results, logs) are never deleted: while any are left this returns the line that says so.
+/// (`<config>/muse`, `<config>`, `<store>/muse`, `<store>`). This removes the engine-ok cache and calls `remove_dir`
+/// on each of the folders (it fails on one with content, and the failure is ignored). If the state folder still holds
+/// files (spend ledger, results, logs), it returns the line that says so.
 fn tidy(settings: &Path, state: &Path) -> Option<String> {
     if !settings.is_absolute() || !state.is_absolute() {
         return None; // HOME is not set: these would be paths under the current directory

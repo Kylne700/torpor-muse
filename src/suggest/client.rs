@@ -1,5 +1,5 @@
 //! The Meta API side: where the key comes from, which address is allowed, the one HTTP call, and what a response
-//! means. The key is never printed, logged or put on a command line. Owner: S3b-writer.
+//! means. `Key` has no Display, its Debug shows `Key(hidden)`, and `scrub` masks it as [key]. Owner: S3b-writer.
 mod config;
 mod http;
 mod reply;

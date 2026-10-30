@@ -23,7 +23,7 @@ const ROUNDS: usize = 4;
 /// One line of the process table: pid, parent pid, process group.
 type Row = (i32, i32, i32);
 
-/// The one place that signals a group. Never 0 or 1 (`kill(-1, _)` reaches every process we may signal) and never our own.
+/// The one place that signals a group: only a pgid above 1, not our own (`kill(-1, _)` would reach all we may signal).
 fn signal(pgid: i32, sig: i32) {
     // SAFETY: getpgrp(2) only reads.
     if pgid > 1 && pgid != unsafe { libc::getpgrp() } {
@@ -130,7 +130,7 @@ fn groups(rows: &[Row], root: i32, own: i32, session_of: impl Fn(i32) -> i32) ->
 }
 
 /// Kills the engine whose pid and group is `pgid`, and what it started (see the top). None = all of it was found and
-/// killed. Some = the reason that only the groups found so far, at least the engine's own, were killed. Never panics.
+/// killed. Some = the reason that only the groups found so far, at least the engine's own, were killed.
 pub fn kill(pgid: i32) -> Option<String> {
     kill_with(pgid, list)
 }

@@ -376,7 +376,7 @@ fn the_block_for_a_false_done_writes_one_line_and_checks_and_deletions_come_firs
     assert!(blocked(&json_of(&both)).is_some_and(|w| w.contains(NO_RUN)));
     assert_eq!(
         both.err,
-        "Torpor: check 1 fails (proof page answers) · torpor check 1"
+        "Torpor: check 1 fails · torpor check 1 (proof page answers)"
     );
     // a deleted file and no failing check: the deletion
     engine_turn(&r, 6, 40, &[], &[("gone.txt", "edit", "deleted")]);

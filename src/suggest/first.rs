@@ -1,6 +1,6 @@
 //! The first question of a run: do the developer's words say that something works? Only the words go to the model,
-//! never a file name or a line of code. A clear "no" ends the run here; "yes", or any result that cannot be used (a failed
-//! call, a cut or odd answer), goes on to the check-writer's own call, so a claim is never lost to the first question.
+//! with no file name or line of code. A clear "no" ends the run here; "yes", or any result that cannot be used (a failed
+//! call, a cut or odd answer), goes on to the check-writer's own call. Nothing else ends the run here.
 
 use super::types::{Ctx, Outcome, Plan};
 use super::{prompt, work};

@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// shortcut: a session keeps its last 256-512 KiB of beats (a few thousand events), enough for doctor; raise if it is not.
 const BEATS_MAX: u64 = 256 * 1024;
 const ERRORS_MAX: u64 = 64 * 1024;
-/// The session id doctor's own probe uses; reports leave it out so a probe never counts as a live turn.
+/// The session id doctor's own probe uses; reports leave it out so a probe is not counted as a live turn.
 pub const PROBE_SID: &str = "torpor-doctor-probe";
 
 /// The store the engine uses: TORPOR_HOME when it is not empty, else `$HOME/.torpor` (same rule as the engine).
@@ -48,7 +48,7 @@ pub fn now_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
-/// Best effort, never fails: the line goes to `shim-errors.log` (cut when it passes 64 KiB), else to stderr.
+/// Best effort (it returns `()`): the line goes to `shim-errors.log` (cut when it passes 64 KiB), else to stderr.
 pub fn log_error(vault: &Path, what: &str) {
     let dir = shim_dir(vault);
     let put = || -> std::io::Result<()> {
@@ -183,7 +183,7 @@ pub struct Turns {
     pub open: bool,
     /// Turns that ended without a Stop: the next prompt or the SessionEnd came first (interrupted, step limit, lost hook).
     pub no_stop: u32,
-    /// Stops that found no open turn: Muse reruns the turn after a blocking Stop, so these are normal and never flagged.
+    /// Stops that found no open turn: Muse reruns the turn after a blocking Stop, so these are normal and not flagged.
     pub extra_stops: u32,
 }
 

@@ -292,7 +292,7 @@ fn busy_guard(payload: &Value, cwd: &str, left: Duration, body: Option<String>) 
     // A crash leaves `-wal`/`-journal` files that no command could remove, so the deny would never lift. One read makes
     // SQLite finish the job: it rolls a hot `-journal` back, and the last connection to close folds the `-wal` into the
     // file and removes `-wal` and `-shm`; while another program holds the database the files stay and so does the deny.
-    // The text never offers a command that deletes or empties a file of the database.
+    // The commands in the text are reads of the database (a count of `sqlite_master`, with `sqlite3` or `python3`).
     // shortcut: a `-journal` left by a clean close in PERSIST or TRUNCATE mode survives the read (SQLite keeps it on
     // purpose), so the text ends with the user; upgrade when the engine stops calling such a journal busy.
     let why = format!(

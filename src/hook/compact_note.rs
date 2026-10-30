@@ -102,8 +102,8 @@ pub(super) fn lead(
 impl Lead {
     /// `body`, what the hook itself printed, behind the stand-in's note and the guide: the `#n` headers then rise in
     /// reading order, as they would with a real SessionStart before the hook. When the engine's note and the rest do
-    /// not fit Muse's limit, the end of the engine's note is cut (`with_note_fit`), never the guide or the database
-    /// note. None of that can be made: `body` goes out as it is.
+    /// not fit Muse's limit, the end of the engine's note is cut (`with_note_fit`); the guide and database note stay
+    /// whole. None of that can be made: `body` goes out as it is.
     pub(super) fn join(self, event: &str, body: Option<String>) -> Option<String> {
         let (system, context) = parts(event, body.as_deref());
         let behind = [self.guide, context].into_iter().filter(|s| !s.is_empty());

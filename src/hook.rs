@@ -1,9 +1,9 @@
 //! `torpor-muse hook <Event>`: reads the Muse Code hook payload on stdin, normalises it, calls `torpor hook <Event>`,
 //! writes Muse's closed output schema (research/59 D5). Owner: S3a-core.
 //!
-//! Policy: a hook never fails a Muse turn. Whatever goes wrong (bad payload, engine missing or of the wrong version,
-//! timeout, output Muse would reject) is written to `<TORPOR_HOME>/muse/problems.log`, the hook exits 0, and the user
-//! is told once per session that Torpor is not saving. The only way a hook stops a turn is a Stop block in the JSON
+//! What a hook does on an error: a bad payload, an engine that is missing or of the wrong version, a timeout or an
+//! output Muse would reject is written to `<TORPOR_HOME>/muse/problems.log`, the hook exits 0, and the user is told
+//! once per session that Torpor is not saving. The only way a hook stops a turn is a Stop block in the JSON
 //! form with a reason (never exit 2). A Stop block also writes one line to stderr (`Done.stderr`, SN3): Muse Code 1.4.14
 //! draws it in its status label for about 5 s, and nothing else of Torpor's own at a Stop, so it is the one thing the user
 //! sees that does not depend on the AI. Nothing else reaches stderr at a Stop (`state::problem` leaves it out).

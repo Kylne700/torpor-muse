@@ -10,7 +10,7 @@ use std::time::Duration;
 
 const SAVING: &str = "Save points and undo are not affected.";
 
-/// The longest the look at the engine's `status` may take: a prompt is never held up longer for the notice.
+/// The longest the look at the engine's `status` may take: a prompt waits this long at most for the notice.
 const STATUS_WAIT: Duration = Duration::from_secs(2);
 
 /// Told once to the user in a folder where the check-writer will send a prompt: what goes to Meta and how to stop it.
@@ -21,7 +21,7 @@ const SEND_NOTICE: &str = "Torpor's check-writer sends each prompt you type, cle
 
 /// What the check-writer has to tell the user at a prompt: one note at most, each kind once per session, except the
 /// three that are about the folder, `send`, `app` and `no-key`: once per folder, and `no-key` once per reason (a
-/// different reason for the same folder is told once more; a mark that is never swept; where the folder is not known,
+/// different reason for the same folder is told once more; a mark that is not swept; where the folder is not known,
 /// or the mark cannot be written, once per session). In this order: the key it lacks (`no-key`), what it sends to Meta
 /// (`send`; it comes with the prompt whose words the run then sends, since the run starts after the hook has printed;
 /// `sends` says whether this prompt will be, and is asked only while `send` is still to be told), why a run could not
@@ -46,7 +46,7 @@ pub(super) fn writer_note(
     };
     let off = suggest::writer_off(true).map(|why| suggest::scrub(&why, 300));
     // what a per-folder kind is marked with: the folder, and for `no-key` the reason too. A mark made before the reason
-    // was part of it (the folder alone) never matches, so that note is told once more.
+    // was part of it (the folder alone) does not match, so that note is told once more.
     let mark_of = |kind: &str| match kind {
         _ if cwd.is_empty() => None,
         "app" | "send" => Some(cwd.to_owned()),

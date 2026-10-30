@@ -13,7 +13,7 @@ pub fn trigger(session_id: &str, cwd: &str, prompt: &str) -> Option<&'static str
     trigger_with(&exe, session_id, cwd, prompt).err()?.news()
 }
 
-/// Why the trigger did not start a run (it never says more than that, and never fails the hook).
+/// Why the trigger did not start a run: a fixed reason; `trigger` gives a short word or nothing, not an error.
 #[derive(Debug, PartialEq)]
 struct Skip(&'static str);
 

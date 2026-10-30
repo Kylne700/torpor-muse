@@ -58,7 +58,7 @@ pub(super) fn url_paths(text: &str) -> Vec<&str> {
 
 /// Up to 24 words of the project's own vocabulary, for the transcription to favour: the words in the names of its
 /// code files and in the URL paths written in its code. The most repeated first, then alphabetical, so the same
-/// project always gives the same list. Everything read is what the writer reads too (listed, redacted, capped).
+/// project gives the same list. Everything read is what the writer reads too (listed, redacted, capped).
 /// shortcut: no stop-word list (`server` and `index` count like any word), no care for plurals, and test titles,
 /// saved checks and READMEs are not read. Upgrade when a measurement shows it matters.
 pub(super) fn keywords(root: &Path) -> Vec<String> {

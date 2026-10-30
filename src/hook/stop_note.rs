@@ -25,8 +25,8 @@ pub(super) struct Ended<'a> {
     pub(super) flash: Cell<Option<String>>,
 }
 
-/// The user's line for a database turn (L3 N2): at most 100 characters, the command at its end is never cut, long names
-/// are.
+/// The user's line for a database turn (L3 N2): at most 100 characters, the command at its end stays whole, long names
+/// are cut.
 fn db_line(n: u64, names: &[String], tail: &str) -> String {
     let head = format!("Torpor: turn {n} changed ");
     let mut tail = tail.to_string();

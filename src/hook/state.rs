@@ -1,11 +1,11 @@
-//! Our own small files in `<TORPOR_HOME>/muse/` (best effort: a failure here never stops a hook):
+//! Our own small files in `<TORPOR_HOME>/muse/` (best effort: on a failure the hook goes on):
 //! `problems.log` (read by doctor), `seen-keys` (payload keys we have no field for), `session/<id>.json`,
 //! `open/<hash of folder>.json` (the main turn open in a folder, for a subagent's tool events), `db/<hash of
 //! folder>.json` (the folder's last turns that changed a database, kept past SessionEnd), `gate/<hash of folder>.json`
-//! (the folder's engine gate was switched off once, `hook::gate::gate_default`; never swept),
-//! `app/<hash of folder>.json` (the user was told once that the check-writer needs an app with a start script; never
-//! swept), `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; never swept) and
-//! `send/<hash of folder>.json` (the same for what the check-writer sends to Meta; never swept).
+//! (the folder's engine gate was switched off once, `hook::gate::gate_default`; not swept),
+//! `app/<hash of folder>.json` (the user was told once that the check-writer needs an app with a start script; not
+//! swept), `no-key/<hash of folder>.json` (the same for the check-writer being off for lack of a key; not swept) and
+//! `send/<hash of folder>.json` (the same for what the check-writer sends to Meta; not swept).
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions, TryLockError};
