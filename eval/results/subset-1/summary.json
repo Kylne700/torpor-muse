@@ -1,0 +1,11 @@
+{
+ "run_id": "subset-1",
+ "rows": 18,
+ "valid_rows": 18,
+ "invalid_rows": 0,
+ "groups_planned": 9,
+ "groups_complete": 9,
+ "usd_hi": 39.152913,
+ "spend_total_usd_hi": 39.152912,
+ "stopped_early": false
+}

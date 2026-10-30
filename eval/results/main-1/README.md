@@ -2,6 +2,8 @@
 
 The one scored run of the study fixed in [PREREG.md](../../PREREG.md) (written 2026-10-26, before any run). It is published whatever it says: all 168 rows, the analysis output as written, the plan and the spend lines. Excluded units: none (168 of 168 rows valid, 0 excluded, 0 pending, 42 of 42 groups complete, not stopped early; `summary.json`).
 
+The standard-model subset of the same study (arms A and D only, 9 pairs, model `muse-spark-1.3`, directional only) is a separate folder, [subset-1](../subset-1/README.md); it is not pooled with this run.
+
 ## Result
 
 On Muse Code 1.4.13 (1.4.13-R6996.1), with model id `muse-spark-1.3-contributor`, on 42 valid pairs (21 synthetic tasks, 2 repetitions each), the adapter arm kept the app's behaviours (`final_pass`) in 34 of 42 episodes against 32 of 42 for the engine hand-wired without the adapter. The verdict word, as written by the analysis script: **inconclusive at this n**.

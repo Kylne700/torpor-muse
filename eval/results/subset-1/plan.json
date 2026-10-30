@@ -1,0 +1,132 @@
+{
+ "run_id": "subset-1",
+ "seed": 20261027,
+ "tasks": [
+  "notes-ctrl",
+  "notes-dup",
+  "notes-logout",
+  "shop-clear",
+  "shop-coupon",
+  "shop-merge",
+  "todo-ctrl",
+  "todo-persist",
+  "todo-tags"
+ ],
+ "arms": [
+  "A",
+  "D"
+ ],
+ "reps": 1,
+ "model": "muse-spark-1.3",
+ "mode": "keyed",
+ "jobs": [
+  {
+   "task": "notes-ctrl",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 0
+  },
+  {
+   "task": "notes-ctrl",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 1
+  },
+  {
+   "task": "notes-dup",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 2
+  },
+  {
+   "task": "notes-dup",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 3
+  },
+  {
+   "task": "notes-logout",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 4
+  },
+  {
+   "task": "notes-logout",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 5
+  },
+  {
+   "task": "shop-clear",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 6
+  },
+  {
+   "task": "shop-clear",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 7
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 8
+  },
+  {
+   "task": "shop-coupon",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 9
+  },
+  {
+   "task": "shop-merge",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 10
+  },
+  {
+   "task": "shop-merge",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 11
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 12
+  },
+  {
+   "task": "todo-ctrl",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 13
+  },
+  {
+   "task": "todo-persist",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 14
+  },
+  {
+   "task": "todo-persist",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 15
+  },
+  {
+   "task": "todo-tags",
+   "arm": "A",
+   "rep": 1,
+   "order_index": 16
+  },
+  {
+   "task": "todo-tags",
+   "arm": "D",
+   "rep": 1,
+   "order_index": 17
+  }
+ ]
+}
