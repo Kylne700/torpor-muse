@@ -1,18 +1,31 @@
 # Torpor for Muse Code
 
-**You say what works. If the AI breaks it, the AI is told before its turn ends, and it can undo the damage.**
+**You say what works. If the AI breaks it, the AI is told before its turn ends.**
 
 1. You say what works in Muse Code ("login works now"), typed or from a sound clip with `torpor-muse say`.
 2. Muse Spark, Meta's model, writes a check from your words (Node apps for now).
-3. At the end of a later turn that could have broken it, Torpor runs the check. If it fails, the AI is told after its first "Done" and before its turn ends, so it can put it right in the same turn, and "undo that" puts it back.
+3. At the end of a later turn that could have broken it, Torpor runs the check. If it fails, the AI is told after its first "Done" and before its turn ends, so it can put it right in the same turn.
+
+> - **New this week** (the hackathon, October 26 to November 4, 2026; judged): Muse Code hooks that have the engine run your saved check at the end of a turn and tell the AI when it fails; Muse Spark writing that check from your words; the same from a spoken claim. Each part is listed with the run that showed it under [Built during the hackathon](#built-during-the-hackathon-judge-this).
+> - **Older** (from the open-source Torpor engine, before the event, not judged): save points after each turn, "undo that", and running a saved check. The engine is pinned in `engine.lock` ([details](#not-built-during-the-hackathon-declared-open-source-base-not-judged)).
+> - **Check the split yourself:** `sh scripts/new-work.sh` lists the event work from git and fails if the list in this README is not [NEW-VS-OLD.md](NEW-VS-OLD.md).
+
+**Meta's tools in Torpor, and what each does there:**
+
+| Meta product | What Torpor uses it for | File |
+|---|---|---|
+| Muse Code, the host | Torpor registers 11 hook events. The Stop hook blocks a "Done" while a saved check fails (at most twice per turn), and PreToolUse refuses risky deletes. A blocked Stop's note reaches Muse's model as a developer-role context block. Hooks: median 10.8 ms over 426 runs; a Stop that runs a saved check: median 1.2 s, at most 12.7 s over 25 Stops (Muse Code 1.4.13, build 8b119d6, [Measured](#measured)). The proof used real Muse Code (model `muse-spark-1.3-contributor`). | [src/hook/events.rs](src/hook/events.rs), [src/hook/stop.rs](src/hook/stop.rs) |
+| Muse Spark (`muse-spark-1.3`), through the Meta Model API, `POST /v1/responses` | The check-writer. A words-only question comes first: does this say something works? Only a yes goes on. The writer then sees the words and a redacted code excerpt of about 14,000 bytes, and answers in a strict JSON schema at low reasoning effort. One run makes up to three requests. Two pre-registered A/B runs on the real model tuned it: reasons that named a request, not a claim, went from 9 of 25 to 0 of 25 (25 runs per arm), and saved checks for code far into a file from 4 of 20 to 20 of 20 (20 runs per arm; both under [Other measurements](#other-measurements)). | [src/suggest/client/http.rs](src/suggest/client/http.rs), [src/suggest/first.rs](src/suggest/first.rs), [src/suggest/schema.rs](src/suggest/schema.rs), [src/suggest/repo/excerpt.rs](src/suggest/repo/excerpt.rs) |
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`), `POST /v1/asr/transcribe` | `torpor-muse say clip.wav` sends a WAV plus up to 24 project words as keywords. The words heard go to the check-writer as if typed. | [src/suggest/voice/upload.rs](src/suggest/voice/upload.rs), [docs/voice.md](docs/voice.md) |
+| Not used | Muse Image, Muse Wonder, SAM 3.1, open-weight models. The adapter code was written with an AI coding agent (Claude Code), not with Muse Code. | none |
+
+Muse Code also wrote the demo app: the three files [demo/app/server.js](demo/app/server.js), [demo/pane.js](demo/pane.js) and [demo/README.md](demo/README.md) came from English prompts, with no code pasted into a prompt and no line edited by a person ([demo/transcripts/prompts.md](demo/transcripts/prompts.md) has every prompt; [Who builds this](#who-builds-this)).
 
 **Install** (Linux, macOS): `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`, and paste your [Meta API key](#add-your-meta-api-key) when it asks. After that you need no Torpor commands; you can just talk to the AI.
 
 **Cost:** about a third of a cent (USD 0.0035) per prompt for the check-writer, at most. Measured in 2 Muse Code sessions of 20 prompts each on the demo app (build 8b119d6; E3 in [e2e/PROOF.md](e2e/PROOF.md)): at most USD 0.0706 over a 20-prompt session (23 calls) and at most USD 0.0675 in a second one. These are upper bounds from Torpor's own token counts, not Meta's bill. Unless a run stops first ([what is sent to Meta](#what-is-sent-to-meta)), the check-writer sends the cleaned words of each prompt (a prompt over 1,500 characters is cut to its first 1,000 and its last 500) to Meta's API for a yes/no answer to "does this say something works?". File names and up to about 14 KB of your code go in a request only when the answer is yes, or when that question gets no usable answer. It uses your own key, at most USD 2 a day unless you change the cap. The engine makes no AI calls.
 
 **If the Torpor engine fails**, your Muse turn goes on. If that happens at the start of a session, at a prompt or at the end of a turn, you are told once per session that Torpor is not saving.
-
-**Hackathon** (work in progress): the Muse Code hooks, the Muse Spark check-writer and voice were built during the Meta Global AI Developer Hackathon, October 26 to November 4, 2026. The Torpor engine (save points, undo) existed before and is not judged ([details](#built-during-the-hackathon-judge-this)).
 
 Good to know:
 - Optional commands: `torpor log` (what each turn changed), `torpor back N` (put the folder back to an earlier state), `torpor-muse doctor` (check that Torpor works). Everything else: `torpor --help`.
