@@ -151,6 +151,30 @@ With no key file, `torpor-muse doctor` shows a `check-writer off` line with the 
 
 Every claim ends in a saved check (the engine's `Torpor: new promise #N` line) or in one plain line that says why not, except the cases named at the end of this paragraph. The next prompt of that session says it (one line per prompt: a line that waits comes later, unless a newer run ends first and replaces it), once for each kind in the session: Meta refused the key or has no billing for it; the daily spend cap would be passed; the Meta API failed; the run took too long and was stopped; the model's answer could not be used, so no check was written; the check fails on the code as it is now, which can mean that what you claimed does not work yet or that the check is wrong; the Torpor engine did not finish (it timed out or ended in an error); any other end without a saved check, told in one plain sentence (the engine did not save the check, with its first reason, or every step needed a record already in your data); the run ended in an error of its own; an earlier run still held the project, so your last prompt was not looked at; or the run could not be started. In a folder without an app that starts from a script (`start`, `dev`, `serve` or `server` in `package.json`, or a `server.js`) the line comes once per folder, says that no check is written there, and says that save points and undo still work. Apart from the one-time notice in [What is sent to Meta](#what-is-sent-to-meta), these cases are normal and show nothing: a prompt that makes no claim, an answer saying the claim cannot be checked, a prompt where Torpor is not saving, and a prompt whose turn already has a check from your words.
 
+## Check it without a key
+
+You can run all of Torpor's own tests without a Meta key or account. They use a made-up key (a fixed string that is not a key) and a local imitation of the Meta API, [mock/](mock/README.md). The tests that make paid calls are marked `#[ignore]`, so `cargo test` skips them ([tests/writer_live.rs](tests/writer_live.rs), [tests/writer_bank.rs](tests/writer_bank.rs)).
+
+NOT VERIFIED: following this page by hand in a fresh clone. Its commands are the ones that [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on Linux and macOS (the `export` line stands for CI's line that writes `TORPOR_BIN` into `$GITHUB_ENV`), except `git clone` and `cargo build --release --locked` (the line in [drill/harness/README.md](drill/harness/README.md)).
+
+You need git, curl, a stable Rust toolchain and Node 20 or newer (`cargo test` starts the mock with `node`; CI uses Node 22).
+
+```sh
+git clone https://github.com/Kylne700/torpor-muse.git
+cd torpor-muse
+sh scripts/fetch-engine.sh
+export TORPOR_BIN="$PWD/.engine/torpor"
+cargo build --release --locked
+cargo test
+node --test mock/test/*.test.mjs
+```
+
+- `scripts/fetch-engine.sh` downloads the engine pinned in `engine.lock` for your platform (Linux or macOS, x86-64 or arm64) into `.engine/torpor`, checks its sha256 against the lock, and checks that `torpor version` prints the pinned version.
+- `TORPOR_BIN` is the engine the tests use (`.engine/torpor` when it is not set). A test that needs the real engine and finds none prints `SKIPPED: no working Torpor engine` and goes no further, so set it before `cargo test`.
+- `cargo build --release --locked` builds `target/release/torpor-muse`.
+- `cargo test` starts the mock by itself (`node mock/server.mjs --port 0` and more flags, in [tests/writer_common/mod.rs](tests/writer_common/mod.rs)) and points the adapter at it with `TORPOR_MUSE_API_BASE`. That variable is meant for tests: the adapter refuses it unless it is `https`, or `http` on 127.0.0.1.
+- To start the mock by hand: `node mock/server.mjs --port 0`. Its first line of output is `listening <port>`, and it listens on 127.0.0.1 only. The last command of the block above runs its own tests.
+
 ## Where to read Torpor's lines
 
 Torpor's own lines and commands call a check a "promise" (`torpor promise list`). This README says "check".
