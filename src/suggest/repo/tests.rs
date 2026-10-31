@@ -248,11 +248,11 @@ fn the_excerpt_is_capped() {
 
 #[test]
 fn the_root_is_never_slash_or_home() {
-    assert!(resolve_root(Some("/")).is_err());
     let d = ws("root");
     let got = resolve_root(Some(d.to_str().unwrap()));
     // CLAUDE_PROJECT_DIR wins when set, as in the engine; this test only checks the plain case
     if env("CLAUDE_PROJECT_DIR").is_none() {
+        assert!(resolve_root(Some("/")).is_err());
         assert_eq!(got.unwrap(), fs::canonicalize(&d).unwrap());
     }
     let _ = fs::remove_dir_all(&d);
