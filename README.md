@@ -88,8 +88,6 @@ Every code commit in this repo is dated 2026-10-26 17:00 UTC or later.
 
 **One line:** `curl -fsSL https://raw.githubusercontent.com/Kylne700/torpor-muse/v0.1.0/install.sh | sh -eu && export PATH="$HOME/.local/bin:$PATH"`
 
-It works only once tag v0.1.0 exists (cut at the freeze).
-
 The install works on Linux (x64, arm64) and macOS (Apple silicon, Intel) and needs `curl` and `ca-certificates`. On a bare Debian or Ubuntu the first lines install them (as root, or with sudo). The block downloads torpor-muse v0.1.0 and the pinned Torpor engine (the commit and sha256 are in `engine.lock`), checks the sha256 of both, and puts them in `~/.local/bin`.
 
 **Or read and paste the full script.** `install.sh` is the text between `sh -eu <<'EOF'` and `EOF` in this block:
